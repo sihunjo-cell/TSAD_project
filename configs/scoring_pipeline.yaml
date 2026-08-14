@@ -1,0 +1,28 @@
+# 점수 후처리 파이프라인. 근거: DECISIONS.md D-04~D-07, D-09.
+# GraGOD post_process_scores 경로 사용 금지 — 후처리는 전부 우리 코드 소유 (CLAUDE.md 근거 규율).
+
+error:
+  type: absolute  # |prediction - truth| (CLAUDE.md 재현성; GDN calculate_anomaly_score와 동일)
+  gragod_post_process_scores: false  # D-06: 정규화 전 절대 오차를 수령
+
+normalization:  # D-06
+  method: median_iqr  # 채널별
+  estimation_split: train_val  # 테스트셋 추정 금지 (CLAUDE.md 재현성)
+  epsilon: 0.01  # D-07: d-ailin evaluate.py:58-60의 1e-2 채택
+  author_original_appendix: true  # 저자 원본 방식(테스트셋 추정)도 부록 대조용 병행 산출, 파일명으로 구분
+
+smoothing:  # D-04·D-05
+  implementation: ours  # GraGOD smooth_scores 호출 금지 (VERIFICATION 의혹 2 = 참)
+  kind: trailing_mean  # d-ailin evaluate.py:62-65 방식
+  window: 4  # 후행 4-창 (before_num=3)
+  boundary: first_three_timesteps_zero
+  axis: time
+  per_channel: true
+  unit_test_reference: "VERIFICATION.md의 d-ailin 재현 출력과 대조 (D-05)"
+
+aggregation:  # D-09
+  mode: max  # 계획서 7-5. GraGOD swat 설정(mean)과 다름 (RECON [G])
+
+pipeline_order:  # D-04
+  raw: [normalize, aggregate_max]
+  smoothed: [normalize, smooth_per_channel, aggregate_max]

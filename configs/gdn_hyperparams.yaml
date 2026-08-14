@@ -1,0 +1,30 @@
+# GDN 하이퍼파라미터 뼈대.
+# 근거: experiments/exp00_gragod_recon/RECON.md [G] 대조표 (GraGOD params*.yaml /
+# d-ailin main.py·run.sh·train.py / 논문 §4.4).
+# 미정 값은 임의로 채우지 않는다(CLAUDE.md 근거 규율).
+
+model_params:
+  window_size: "TBD(결정 주체: 사전 등록)"
+  embed_dim: "TBD(결정 주체: 사전 등록)"
+  out_layer_num: "TBD(결정 주체: 사전 등록)"
+  out_layer_inter_dim: "TBD(결정 주체: 사전 등록)"
+  heads: "TBD(결정 주체: 사전 등록)"
+  dropout: "TBD(결정 주체: 사전 등록)"
+  negative_slope: "TBD(결정 주체: 사전 등록)"
+  learn_graph: "TBD(결정 주체: 사전 등록)"  # tier 설계에 따름 (RECON [E])
+  topk:
+    rule: "max(5, ceil(0.25 * N))"  # N = 데이터셋 채널 수
+    per_dataset:
+      GHL: 5
+      HAI: "규칙 max(5, ceil(0.25N))에 따라 15~22 범위 — 정확값은 Manifest 확정 후 (D-17, 계획서 7-4)"
+
+train_params:
+  batch_size: "TBD(결정 주체: 사전 등록)"
+  n_epochs: "TBD(결정 주체: 사전 등록)"
+  init_lr: "TBD(결정 주체: 사전 등록)"
+  weight_decay: "TBD(결정 주체: 사전 등록)"
+  betas: "TBD(결정 주체: 사전 등록)"  # RECON [G]: GraGOD 내부에서도 [0.9,0.99]/[0.9,0.999] 불일치
+  early_stop_patience: "TBD(결정 주체: 사전 등록)"
+  early_stop_delta: "TBD(결정 주체: 사전 등록)"
+  val_size: 0.1  # GraGOD 저자 기본 (RECON [G]: models/gdn/params.yaml:6, d-ailin main.py:214 val_ratio 0.1)
+  seeds: "TBD(결정 주체: 사전 등록)"  # D-11: 우리 러너가 set_seeds 직접 호출 (42 하드코딩 사용 안 함)
