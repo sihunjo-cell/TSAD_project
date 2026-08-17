@@ -6,10 +6,11 @@ to-bigs 심화세션 시훈·강혁·지우·주혜 조의 미니 프로젝트 �
 
 ## 읽는 순서
 
-1. [docs/plan_v4.md](docs/plan_v4.md) — 무엇을 왜 재는지. 모든 절 번호 인용(7-1 등)의 원본
-2. [DECISIONS.md](DECISIONS.md) — 결정 19건+의 장부. 값 하나하나가 어디서 왔는지 여기서 추적된다
-3. [docs/score_interface.md](docs/score_interface.md) — 제 점수 파일을 받아 쓸 때 필요한 전부 (지우·주혜 필독)
-4. 각자 역할 문서 — [docs/role_A.md](docs/role_A.md)(강혁), [docs/role_B.md](docs/role_B.md)(지우), [docs/role_C.md](docs/role_C.md)(주혜)
+1. [docs/NEXT_SESSION_PLAN.md](docs/NEXT_SESSION_PLAN.md) — 현재 완료 단계와 다음 시작점
+2. [docs/plan_v4.md](docs/plan_v4.md) — 무엇을 왜 재는지. 모든 절 번호 인용(7-1 등)의 원본
+3. [DECISIONS.md](DECISIONS.md) — 결정 장부. 값 하나하나가 어디서 왔는지 여기서 추적된다
+4. [docs/score_interface.md](docs/score_interface.md) — 제 점수 파일을 받아 쓸 때 필요한 전부 (지우·주혜 필독)
+5. 각자 역할 문서 — [docs/role_A.md](docs/role_A.md)(강혁), [docs/role_B.md](docs/role_B.md)(지우), [docs/role_C.md](docs/role_C.md)(주혜)
 
 GraGOD 코드를 왜 패치해서 쓰는지 궁금하면 [experiments/exp00_gragod_recon/](experiments/exp00_gragod_recon/)의 검증 기록 다섯 편(RECON → VERIFICATION → SHAPEFLOW → PATCH_REVERIFY → ORCHESTRATION)에 근거가 줄 번호 단위로 남아 있다. 요지만 말하면, 포팅 구현의 입력 변환과 smoothing에서 버그 2건을 실행으로 실증했고, 두 줄 패치와 후처리 자체 구현으로 해결했다.
 

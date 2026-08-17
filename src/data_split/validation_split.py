@@ -10,8 +10,8 @@
 val_fraction 의 기본값을 코드에 두지 않는다 — 값(GraGOD 저자 기본 0.1, RECON [G])은
 configs/gdn_hyperparams.yaml 의 val_size 소유이며 호출자가 읽어 넘긴다.
 
-min_train_length 하한값 자체와 미달 시계열의 처리 규칙은 EDA(E1) 후 결정
-사항이므로, 이 모듈은 판정·보고(예외)만 하고 처리하지 않는다.
+min_train_length는 W+1로 둔다(D-22). W=5인 주 설정에서는 6이며, 이 모듈은
+미달 입력을 임의로 늘리거나 버리지 않고 판정·보고(예외)만 한다.
 
 T의 정의는 Manifest 확정 사항(E1·E4) — 이 모듈은 받은 배열을 진리로 취급한다.
 """

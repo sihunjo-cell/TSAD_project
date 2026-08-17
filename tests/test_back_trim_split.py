@@ -27,6 +27,17 @@ class TestBackTrimSplit(unittest.TestCase):
         numpy.testing.assert_array_equal(kept[0], [100, 101, 102])
         numpy.testing.assert_array_equal(kept[-1], [190, 191, 192])
 
+    def test_full_ratio_is_identical_in_both_directions(self):
+        train_array = numpy.arange(21).reshape(7, 3)
+
+        front, front_info = front_trim_split(train_array, 1.0)
+        back, back_info = back_trim_split(train_array, 1.0)
+
+        numpy.testing.assert_array_equal(front, train_array)
+        numpy.testing.assert_array_equal(back, train_array)
+        self.assertEqual(front_info["kept_index_range"], (0, 7))
+        self.assertEqual(back_info["kept_index_range"], (0, 7))
+
     def test_rejects_disallowed_ratios(self):
         with self.assertRaises(ValueError):
             back_trim_split(numpy.zeros((20, 3)), 0.3)

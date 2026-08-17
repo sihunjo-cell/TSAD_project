@@ -1,0 +1,29 @@
+# GHL·HAI 공통 전처리 계약. 근거는 DECISIONS.md D-20·D-21과
+# experiments/exp01b_ghl_preflight/ANALYSIS.md, exp01c_hai_preflight/ANALYSIS.md.
+
+common:
+  downsample_factor: 1
+  initial_trim_points: 0
+  timestamp_as_feature: false
+  label_as_feature: false
+  label_aggregation: null  # downsample_factor=1이라 집계하지 않는다.
+  input_scaling:
+    method: minmax
+    fit_split: train
+    transform_splits: [train, validation, test]
+    clip: false
+
+datasets:
+  GHL:
+    ratios: [5, 10, 20, 50, 100]
+    ratio_application: per_training_session
+    feature_count: 19
+    scaler_fit_scope: current_series_train
+  HAI:
+    ratios: [10, 100]
+    ratio_application: per_training_session
+    training_sessions: 4
+    test_sessions: 2
+    feature_count: 86
+    scaler_fit_scope: all_training_sessions_train
+    cross_session_windows: false

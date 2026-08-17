@@ -2,6 +2,11 @@
 CLAUDE.md
 *.local.md
 
+# 로컬 원본 데이터
+TSB-AD-M/
+TSB-AD-M-other-datasets/
+HAI-23.05/
+
 # 재생성 가능한 실행 산출물
 experiments/*/dryrun_out/
 experiments/*/training/
