@@ -6,7 +6,7 @@
 
 3a의 데이터 정찰·Manifest·비율 EDA와 3b의 GDN 입력·러너·배치 구현은 끝났다. 4단계 전 1·2차 재감사에서 점수 정렬, 실행 봉인, 파일 지문, 환경 원본, 라벨·scaler, YAML 단일 원본, 시간 기록, GHL 대조 팔, 최종 성공 표식을 보강했다. 3차 감사는 이전 commit 산출물의 완료 오인과 HAI Jaccard의 혼합 실행 위험을 닫고 TopK self-edge 설명을 바로잡았다. 4차 감사는 preflight에 남은 `L-W-1` 표본 수를 `L-W`로 고치고 시간·Jaccard 산출물에 실행 신원을 붙였다. 5차 감사는 같은 확정값을 순환 수정한 기록이 없음을 확인하고, manifest 검증 뒤 실제 로드까지 외부 입력이 바뀌는 경계를 닫았다. 6차 감사는 실행 API와 재개 경로를 다시 추적해 새 코드 결함이 없음을 확인하고, 계획서에 남은 HAI 채널 범위만 확정값 86으로 고쳤다. 7차 감사는 패치 근거 경로, Jaccard 산출물의 Git 제외, GHL preflight의 현재 상태, GHL 25개 통계의 일반화 범위를 바로잡았다. 세부 결정은 D-33~D-44, 점검표는 `docs/pre_run_checklist.md`에 있다.
 
-이번 변경은 아직 commit하지 않았고 새 합성 드라이런도 돌리지 않았다. D-31의 과거 봉인은 이전 구현에만 유효하다. 현재 코드를 실행 기준으로 봉인하려면 사용자 검토 뒤 새 commit과 clean 상태의 합성 드라이런이 필요하다.
+3단계 변경은 commit `597d03310201773f337e2256edfb417f088b0cfe`로 봉인했다. 이 commit에서 합성 드라이런과 `GHL series 01·10%·seed 1` 스모크가 모두 통과했다. 이후 문서 commit처럼 HEAD가 바뀌면 현재 실행 가능 여부는 `COMPLETE`와 snapshot의 두 commit이 새 HEAD와 일치하는지 다시 확인해 판정한다.
 
 | 단계 | 상태 | 근거 |
 | --- | --- | --- |
@@ -19,8 +19,9 @@
 | 3b 5차 논리 보강 | 완료. 검증 뒤 입력 변경 차단, 순환 여부 판정과 감사 종료 기준 고정, 고정 환경 단위 테스트 104건 통과 | D-42, `docs/superpowers/plans/2026-08-17-stage3-fifth-audit.md` |
 | 3b 6차 논리 감사 | 완료. 실행·재개 경로에 새 결함 없음, HAI 확정 채널 수 문서 정합화, 고정 환경 단위 테스트 104건 통과 | D-43, `docs/superpowers/plans/2026-08-17-stage3-sixth-audit.md` |
 | 3b 7차 최종 논리 감사 | 완료. 재현 경로·Jaccard Git 제외·preflight 현재성·통계 일반화 범위 보강, 관련 단위 테스트 7건 통과 | D-44, `docs/superpowers/plans/2026-08-17-stage3-seventh-audit.md` |
-| 새 실행본 봉인 | 실행 승인 | 이 변경을 commit한 뒤 clean 합성 드라이런으로 판정한다. |
-| 4 | 스모크 1건 승인 | `GHL series 01·10%·seed 1`의 `COMPLETE`와 현재 commit snapshot이 완료 신호다. 전체 배치는 금지한다. |
+| 새 실행본 봉인 | 완료 | commit `597d03310201773f337e2256edfb417f088b0cfe`의 합성 드라이런 8개 판정 통과 |
+| 4 스모크 | 완료 조건 고정 | `GHL series 01·10%·seed 1`의 `COMPLETE`와 현재 commit snapshot이 완료 신호다. |
+| 4 GHL 주 배치 | 다음 시작점 | 현재 HEAD의 스모크가 완료면 exp02의 375개 조합을 resume 방식으로 실행한다. |
 
 ## 현재 고정 계약
 
@@ -38,15 +39,6 @@
 
 ## 다음 시작점
 
-7차 최종 논리 감사까지 끝났고 사용자가 새 실행본 봉인과 4단계 스모크를 승인했다. D-34 이후 점수 길이 교정은 한 번뿐이고 비율·seed·validation·window·topk는 번복되지 않았다. 새 diff·manifest 불일치·고정 외부 레포 변경·실패 테스트·dryrun 실패가 없으면 같은 정적 감사를 반복해도 읽기 전용 대조만 하고 코드를 고치지 않는다. 같은 대형 CSV를 다시 읽거나 SHA-256을 다시 계산하지 않는다.
+새 세션은 `experiments/exp02_gdn_ghl/runs/series_01/r010/s1/`의 `COMPLETE`와 snapshot을 먼저 확인한다. 현재 HEAD와 맞지 않으면 이 스모크 한 건만 다시 실행한다. 일치하면 `experiments/exp02_gdn_ghl/run_batch.py`로 GHL 주 배치를 시작한다. 배치가 끝날 때까지 tracked 파일을 바꾸지 않는다. 중단되면 같은 명령을 다시 실행해 완료 조합은 건너뛴다.
 
-아래 순서만 수행한다.
-
-1. 전체 단위 테스트, 환경 계약, YAML 파싱, compileall, `git diff --check`를 한 번 확인한다.
-2. 원본 데이터와 모델 산출물이 diff에 없는지 확인하고 변경을 한 commit으로 묶는다.
-3. TSAD와 GraGOD 작업 트리가 clean인지 확인한다.
-4. 합성 드라이런을 한 번 실행한다. test 200·W 8에서 점수 192와 `label_slice=[8,null]`을 확인한다.
-5. snapshot의 두 commit, 입력·환경 계약, timing, 점수 8개, metadata, checkpoint, early stopping 로그, TopK 복원을 대조한다.
-6. 1~5가 통과하면 `GHL series 01·10%·seed 1` 한 건만 실행하고 `COMPLETE`와 현재 commit snapshot을 확인한 뒤 멈춘다.
-
-스모크 확인 전 전체 배치로 넘어가지 않는다. 새 세션은 `experiments/exp02_gdn_ghl/runs/series_01/r010/s1/`의 `COMPLETE`와 snapshot을 먼저 확인해 현재 완료 상태를 판정한다.
+GHL 주 배치 완료 신호는 현재 HEAD 기준 `missing=0/375`다. 그 전에는 HAI 배치나 GHL 대조 팔로 넘어가지 않는다.

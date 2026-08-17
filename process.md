@@ -5,7 +5,7 @@
 - 제외: 4단계 GHL 실데이터 스모크와 전체 모델 학습
 - 결정 원본: `DECISIONS.md`
 
-이 문서는 4단계 전에 무엇을 했고, 어떤 데이터·코드·실행 결과를 보고 결정을 내렸는지 한 흐름으로 정리한다. 수치와 결정은 새로 계산하지 않았다. Manifest, preflight 로그, 고정 외부 저장소, 단위 테스트, D-01~D-44에 이미 남은 근거만 연결했다.
+이 문서는 4단계 전에 무엇을 했고, 어떤 데이터·코드·실행 결과를 보고 결정을 내렸는지 한 흐름으로 정리한다. 수치와 결정은 새로 계산하지 않았다. Manifest, preflight 로그, 고정 외부 저장소, 단위 테스트, D-01~D-46에 이미 남은 근거만 연결했다.
 
 작업 규약의 단계명은 논문의 주차별 실험 단계와 다르다. 여기서 1단계는 구현 의혹의 실행 검증, 2단계는 GDN shape 흐름과 패치 완전성 검증, 3a는 데이터 정찰·Manifest·EDA, 3b는 GDN 러너·배치·실행 봉인이다. 0단계 정찰은 1단계의 입력이므로 필요한 부분만 앞에 적는다.
 
@@ -305,21 +305,15 @@ HAI는 best checkpoint의 embedding으로 TopK edge를 다시 계산한다. self
 | 실행 신원 | 입력 SHA-256·환경·config·두 commit snapshot, 시작·종료 clean 확인 |
 | 완료 기준 | 필수 산출물·graph·종료 검증 뒤 `COMPLETE`, 현재 commit과 snapshot 일치 |
 
-## 4단계 전에 남은 일
+## 4단계 진입 결과
 
-3a와 3b의 설계·코드·정적 검증은 끝났지만 현재 누적 변경은 아직 새 실행본으로 봉인되지 않았다. D-31의 clean 드라이런은 D-34 이전 구현에 해당한다. 4단계를 열기 전에는 아래 순서가 남아 있다.
+3a와 3b의 설계·코드·정적 검증은 commit `597d03310201773f337e2256edfb417f088b0cfe`로 봉인했다. 고정 환경 전체 테스트 104건과 합성 드라이런의 8개 판정이 통과했다. 이어서 `GHL series 01·10%·seed 1`을 실행했고 점수 8개, metadata, timing, checkpoint, early stopping 로그, 현재 두 commit을 담은 snapshot과 `COMPLETE`를 확인했다.
 
-1. 현재 변경을 사용자가 검토한다.
-2. 전체 단위 테스트, 환경·YAML 계약, compile, `git diff --check`를 한 번 실행한다.
-3. 원본 데이터와 모델 산출물을 제외한 변경을 commit하고 두 저장소의 clean 상태를 확인한다.
-4. clean HEAD에서 합성 드라이런을 한 번 실행한다. test 200·W=8이면 점수 192와 `label_slice=[8,null]`이어야 한다.
-5. snapshot·timing·점수 8개·metadata·checkpoint·early stopping·TopK 복원을 대조하고 멈춘다.
-
-이 절차가 끝나기 전에는 4단계 실데이터 학습을 하지 않는다. 4단계가 열리면 GHL 시계열 1·10%·seed 1 한 건의 스모크부터 시작하고, 그 결과를 확인한 뒤에만 전체 배치로 넘어간다.
+GHL 주 배치는 현재 HEAD의 같은 스모크가 완료 상태일 때만 연다. 실행 중에는 tracked 파일을 바꾸지 않으며, 완료 기준은 `missing=0/375`다. GHL 주 배치가 끝나기 전에는 HAI 배치나 GHL 대조 팔로 넘어가지 않는다.
 
 ## 근거 파일 안내
 
-- 결정 원본: `DECISIONS.md` D-01~D-44
+- 결정 원본: `DECISIONS.md` D-01~D-46
 - 코드 정찰: `experiments/exp00_gragod_recon/RECON.md`
 - 1단계 실행 검증: `experiments/exp00_gragod_recon/VERIFICATION.md`
 - 2단계 shape 검증: `experiments/exp00_gragod_recon/SHAPEFLOW.md`

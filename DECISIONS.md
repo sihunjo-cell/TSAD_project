@@ -240,3 +240,8 @@
 - 결정: 3단계 변경을 한 commit으로 봉인하고 clean 합성 드라이런을 통과한 뒤, 4단계의 첫 실행은 `GHL series 01·10%·seed 1` 한 건으로 제한한다. 현재 TSAD·GraGOD commit과 snapshot의 두 hash가 같고 필수 산출물과 `COMPLETE`가 모두 있을 때만 성공으로 판정한다. 이 스모크 결과를 확인하기 전에는 GHL 전체 배치를 실행하지 않는다.
 - 근거: 사용자 실행 지시(2026-08-17); `experiments/exp00_gragod_recon/dryrun_synthetic.py`; `experiments/exp02_gdn_ghl/run_batch.py`; `experiments/exp02_gdn_ghl/check_completeness.py`; `src/common/run_completion.py`
 - 기록일: 2026-08-17
+
+### D-46
+- 결정: commit `597d03310201773f337e2256edfb417f088b0cfe`에서 합성 드라이런과 `GHL series 01·10%·seed 1` 스모크가 통과했다. 스모크는 test 150,001점에서 W=5를 제외한 149,996점의 유한한 점수 8개를 남겼고, early stopping은 epoch 32에서 끝나 best validation loss `0.021611016243696213`를 기록했다. 이후 GHL 주 배치는 현재 HEAD의 같은 스모크가 완료 상태일 때 375개 조합을 resume 방식으로 실행한다. 배치가 끝날 때까지 tracked 파일을 바꾸지 않는다.
+- 근거: `experiments/exp00_gragod_recon/dryrun_out/`; `experiments/exp02_gdn_ghl/runs/series_01/r010/s1/`; `experiments/exp02_gdn_ghl/check_completeness.py:68-89`; 고정 GraGOD 포크 `datasets/dataset.py:41-50,64-77`, `models/train.py:119-204`, `models/gdn/model.py:136-159`; 사용자 다음 단계 지시(2026-08-17)
+- 기록일: 2026-08-17

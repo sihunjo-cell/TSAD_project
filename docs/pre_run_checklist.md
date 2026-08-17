@@ -1,9 +1,9 @@
-# GDN 4단계 진입 전 점검표
+# GDN 4단계 실행 점검표
 
 - 점검일: 2026-08-17
 - 범위: 3a·3b 산출물의 1·2·3·4·5·6·7차 재감사와 보강
-- 제외: 저장공간, 실제 GHL·HAI 학습, 합성 모델 학습
-- 현재 판정: 3b 코드 보강은 끝났지만 새 실행본은 아직 봉인하지 않았다. 4단계는 대기한다.
+- 제외: 저장공간, GHL 전체 배치, HAI 학습
+- 현재 판정: 3b 실행본은 commit `597d03310201773f337e2256edfb417f088b0cfe`에서 봉인됐고 합성 드라이런과 GHL 스모크를 통과했다. 이후에는 현재 HEAD와 스모크 snapshot이 일치할 때 GHL 주 배치를 연다.
 
 ## 확인 결과
 
@@ -29,14 +29,14 @@
 | preflight 현재성 | 수정 | GHL 분석을 다시 만들 때도 정규화 표본 `L-W`와 D-22의 W=5 확정 상태가 남는다. 오래된 “최종 W 미확정” 문구는 현재 분석과 생성기에서 함께 없앴다. `experiments/exp01b_ghl_preflight/run_ghl_preflight.py`, `ANALYSIS.md`, D-22·D-34·D-44 |
 | 통계 해석 범위 | 수정 | Wilcoxon·TOST·bootstrap은 GHL 25개 task 안에서만 해석한다. 같은 simulator family라는 R1 때문에 p값·등가 판정·신뢰구간을 제조 공정 모집단으로 일반화하지 않는다. `docs/plan_v4.md:247-255`, `docs/role_C.md:34-36`, D-44 |
 
-## 남은 봉인 절차
+## 실행 게이트
 
-1. 고정 `tsad_fixed` 환경에서 전체 단위 테스트, YAML·환경 계약, compileall, `git diff --check`를 통과한다.
-2. 사용자가 검토한 변경을 한 commit으로 묶고 TSAD와 GraGOD 작업 트리가 clean인지 확인한다.
-3. clean HEAD에서 `experiments/exp00_gragod_recon/dryrun_synthetic.py`를 한 번 실행한다. 새 계약상 test 200·W 8이면 점수 길이 192, metadata는 `label_slice=[8,null]`이어야 한다.
-4. snapshot의 TSAD hash가 실행 HEAD와 같고 GraGOD hash가 고정값인지 확인한다. 점수 8개, metadata, timing, best checkpoint, early stopping 로그, TopK 복원이 모두 있어야 한다.
+1. TSAD와 GraGOD 작업 트리가 clean이고 GraGOD HEAD가 고정값인지 확인한다.
+2. `GHL series 01·10%·seed 1`의 `COMPLETE`와 snapshot이 현재 두 commit과 일치하는지 확인한다.
+3. 일치하지 않으면 스모크 한 건만 다시 실행한다. 일치하면 exp02의 375개 주 조합을 resume 방식으로 실행한다.
+4. 현재 HEAD 기준 `missing=0/375`가 나오면 GHL 주 배치를 닫는다.
 
-이번 1·2·3·4·5·6·7차 보강은 1번까지만 수행한다. 2·3번은 사용자 검토 뒤 진행하며, 그 전에는 4단계 GHL 스모크를 실행하지 않는다. D-27의 191점 합성 결과는 과거 구현 기록일 뿐 새 봉인 근거가 아니다.
+D-27의 191점 합성 결과는 과거 구현 기록이다. 현재 계약의 봉인값은 test 200·W 8에서 점수 192와 `label_slice=[8,null]`이다.
 
 ## 1차 보강 검증값
 
@@ -117,14 +117,4 @@
 - GHL preflight 관련 단위 테스트 7건 통과, 실패·오류 0건
 - 전체 테스트 104건은 5차와 6차에 통과했고 이번에는 실행 논리를 바꾸지 않아 다시 돌리지 않음
 
-7차 감사도 모델 학습, 합성 드라이런, 원본 CSV·SHA-256 재검사, 새 commit을 수행하지 않았다.
-
-## 다음 실행 명령
-
-```powershell
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' -m unittest discover -s tests -v
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' -m compileall -q src experiments tests
-git diff --check
-```
-
-실제 모델 실행은 위 정적 검증, 사용자 검토, commit 봉인이 끝난 뒤 별도 단계에서 한다.
+7차 감사 뒤 commit `597d03310201773f337e2256edfb417f088b0cfe`에서 전체 테스트 104건, 합성 드라이런, GHL 스모크를 차례로 통과했다. 스모크 점수 길이는 `150001-5=149996`, early stopping의 best validation loss는 `0.021611016243696213`였다.
