@@ -1,15 +1,27 @@
-# 고정 실행 환경. 근거: RECON [H], DECISIONS.md D-10·D-13, PATCH_REVERIFY.md [1].
-# conda env 이름: tsad_fixed
+# 고정 실행 환경. 근거: RECON [H], DECISIONS.md D-10·D-13,
+# experiments/exp00_gragod_recon/PATCH_REVERIFY.md [1].
+# conda env 이름: tsad_fixed. torch build suffix는 장치에 맞추되 공개 버전은 같다.
 
-python: "3.10.20"  # conda env tsad_fixed (GraGOD 허용 범위 >=3.10,<=3.11 — pyproject.toml:16)
-torch: "2.2.2+cpu"  # GraGOD requirements.txt:1
-numpy: "1.26.4"  # torch 2.2.2 휠의 numpy 1.x C-API 요구 — 설치 시 "numpy<2" 핀
-torch_geometric: "2.5.3"  # D-10 확정 — 선정 근거는 PATCH_REVERIFY.md [1] (메타데이터 torch 핀 없음 + PyG 공식 휠 아카이브 torch-2.2.2+cpu 인덱스 존재 + 임포트·기본 연산 확인)
-pytorch_lightning: "git+https://github.com/gonzachiar/pytorch-lightning.git@834dbf3039ee82a2ac5e65eed25f9989222283c6"  # 저자 포크 원본 그대로(버전 표기 2.6.2). 설치 시 PACKAGE_NAME=pytorch 필요 — PATCH_REVERIFY.md [1]
-tensorboardX: "2.6.2.2"  # GraGOD requirements.txt:3
+python: "3.10.20"
+packages:
+  numpy: "1.26.4"
+  torch: "2.2.2"
+  torch-geometric: "2.5.3"
+  pytorch-lightning: "2.6.2"
+  tensorboardX: "2.6.2.2"
+  pandas: "2.3.3"
+  scikit-learn: "1.7.2"
+  PyYAML: "6.0.3"
+  networkx: "3.4.2"
+  colorama: "0.4.6"
 
-# 임포트 체인 요구 (값 계산에 관여하지 않음, 버전 자유):
-# pandas, scikit-learn, pyyaml, networkx, colorama
+sources:
+  pytorch-lightning: "git+https://github.com/gonzachiar/pytorch-lightning.git@834dbf3039ee82a2ac5e65eed25f9989222283c6"
 
-# 주의(D-13): VERIFICATION·SHAPEFLOW는 torch 2.10 스크래치 환경 판정이며,
-# D-12 재검증은 이 파일의 고정 환경에서 수행 완료 (PATCH_REVERIFY.md — 전 항목 통과).
+accelerator:
+  local_verification: cpu
+  experiment: cpu_or_cuda
+
+# torch-geometric 선정과 pytorch-lightning 설치 근거는
+# experiments/exp00_gragod_recon/PATCH_REVERIFY.md [1]에 있다.
+# D-13의 torch 2.10 스크래치 판정은 이 환경 계약에 포함하지 않는다.

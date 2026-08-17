@@ -1,108 +1,130 @@
-# GDN 실험 전 준비 감사
+# GDN 4단계 진입 전 점검표
 
-- 감사일: 2026-08-16
-- 보강 확인일: 2026-08-17
-- 봉인 확인일: 2026-08-17
-- 범위: 3b-0A부터 3b-4까지의 GDN 준비 산출물
-- 원칙: GHL·HAI 원본은 다시 읽지 않았다. 확정 manifest, preflight inventory·snapshot, 합성 드라이런 산출물만 대조했다.
-- 착수 판정: 3b 준비 완료. B-01~B-03을 모두 해제했다. 4단계는 사용자가 실험 실행을 명시한 뒤 시작한다.
+- 점검일: 2026-08-17
+- 범위: 3a·3b 산출물의 1·2·3·4·5·6·7차 재감사와 보강
+- 제외: 저장공간, 실제 GHL·HAI 학습, 합성 모델 학습
+- 현재 판정: 3b 코드 보강은 끝났지만 새 실행본은 아직 봉인하지 않았다. 4단계는 대기한다.
 
-## 차단 항목 해제 기록
+## 확인 결과
 
-| 번호 | 차단 사유 | 확인 근거 | 해제 조건 |
-| --- | --- | --- | --- |
-| B-01 (해제) | 3b 변경 범위에서 원본 데이터와 모델 산출물을 제외하고 한 commit으로 봉인했다. 작업 트리가 clean인 새 HEAD에서 합성 드라이런을 다시 실행했으며 snapshot의 TSAD hash가 그 HEAD와 같다. | `git status --short`; `experiments/exp00_gragod_recon/dryrun_out/snapshots/config_snapshot.json`; D-31 | commit 직후와 드라이런 직후 `git status --short` 출력이 비었고 합성 검사항목 a~g가 모두 통과했다. |
-| B-02 (해제) | snapshot에 `data_preprocessing.yaml`·`scoring_pipeline.yaml` 전문과 입력 경로·feature 이름·`session_splits`를 함께 저장한다. 두 batch는 로더 반환값을 그대로 넘긴다. | `src/gdn_runner/run_gdn_single.py:275-278,329-338`; GHL `run_batch.py:94-106`; HAI `run_batch.py:100-112`; `tests/test_run_gdn_single.py:228-280,301-368`; `tests/test_gdn_batch.py:91-180`; D-29 | 집중 테스트에서 GHL 단일 세션과 HAI 다중 세션의 전달값·snapshot JSON을 대조했다. |
-| B-03 (해제) | GHL `{5,20,100%}` 뒷자르기를 loader·batch·완전성 검사에 연결했다. 5%·20%는 `back_trim_runs/`, 100%는 동일한 주 실행 `runs/`를 쓴다. 실패 로그는 `back_trim_logs/`에 둔다. | `docs/plan_v4.md:213`; `src/data_split/load_ghl_series.py:20-93`; exp02 `check_completeness.py:14-106`, `run_batch.py:48-151`; `tests/test_back_trim_split.py:30-40`; `tests/test_load_gdn_inputs.py:89-149`; `tests/test_gdn_batch.py:142-250`; D-30 | 관련 테스트에서 분할 범위·train-only scaler·225개 조합·100% 공유·resume·실패 로그를 확인했다. |
-
-현재 로컬 `tsad_fixed`는 `torch 2.2.2+cpu`라 전체 395개 주 실행을 GPU 시간 추정치와 곧바로 비교할 수 없다. GPU에서 본 배치를 돌릴 경우 같은 버전의 CUDA 환경에서 합성 드라이런을 먼저 통과시킨다.
-
-## 통과 항목
-
-| 항목 | 판정과 확인값 | 파일 근거 |
+| 항목 | 판정 | 근거 |
 | --- | --- | --- |
-| 설정 미정값 | 통과. 실행 YAML에 TBD·TODO·Manifest 대기 문자열이 없다. `label_aggregation: null`은 `downsample_factor: 1`이라 집계하지 않는다는 확정값이다. | `configs/environment.yaml`; `configs/gdn_hyperparams.yaml:4-32`; `configs/data_preprocessing.yaml:4-29`; `configs/scoring_pipeline.yaml:4-28`; D-20~D-22 |
-| 고정 환경 | 통과. 실측값은 Python 3.10.20, numpy 1.26.4, torch 2.2.2+cpu, torch-geometric 2.5.3, pytorch-lightning 2.6.2, tensorboardX 2.6.2.2다. | `configs/environment.yaml`; `experiments/exp00_gragod_recon/PATCH_REVERIFY.md` 1절 |
-| GraGOD 포크 | 통과. 경로 `../gragod-fork`, branch `fix/gdn-input-transform`, HEAD `485e26b0c6b1d63f4f3531c8d05597db82e9db29`, 작업 트리 clean이다. | `experiments/exp00_gragod_recon/PATCH_REVERIFY.md`; `patches/gdn_input_transform.diff`; D-14 |
-| 데이터 위치·버전 | 통과. GHL·HAI 공유 경로와 포크·고정 Python이 존재한다. GHL inventory는 25행·19채널, HAI 훈련 inventory는 4세션·86채널이다. HAI 23.05 test 2세션과 label 2파일은 LFS 포인터가 아닌 CSV로 검수돼 있다. | `docs/manifest_draft.md:7-72`; `experiments/exp01b_ghl_preflight/logs/inventory.csv`; `experiments/exp01c_hai_preflight/logs/inventory.csv`; 두 preflight `snapshots/config_snapshot.json` |
-| 비율·validation | 통과. 주 설정은 GHL `5·10·20·50·100%`, HAI `10·100%`다. GHL 뒷자르기는 `5·20·100%`만 허용한다. validation 0.1은 줄인 학습 구간의 뒤쪽에서 뗀다. | `configs/data_preprocessing.yaml:18-29`; `configs/gdn_hyperparams.yaml:26`; `src/data_split/load_ghl_series.py:20-69`; 계획서 7-1·7-2 |
-| 전처리 | 통과. downsample 1, 초기 절단 0, timestamp·label 제외, train 부분에만 MinMaxScaler를 fit한다. HAI는 네 train 세션에 `partial_fit`하고 세션 경계를 합치지 않는다. | `configs/data_preprocessing.yaml:4-29`; `src/data_split/load_ghl_series.py:23-84`; `src/data_split/load_hai_sessions.py:71-133`; D-20·D-24 |
-| 모델 설정 | 통과. window 5, embedding 64, GHL·HAI topk 5·22, batch 32, 최대 50 epoch, early stopping patience 10, seed GHL 1~3·HAI 1~10이 설정·결정 기록과 같다. | `configs/gdn_hyperparams.yaml:4-32`; `docs/gdn_hyperparameter_decisions.md`; D-22 |
-| 주 실행 조합 | 통과. GHL은 `25×5×3=375`, HAI는 `2비율×10seed=20`번 fit한다. HAI 한 fit이 test 2세션을 함께 채점한다. | `experiments/exp02_gdn_ghl/check_completeness.py:14-19`; `experiments/exp03_gdn_hai_seed10/check_completeness.py:14-19`; D-25·D-26 |
-| GHL 뒷자르기 통제군 | 통과. 논리 조합은 `25×3×3=225`개다. 100% 75개는 주 실행과 입력이 같아 한 번만 저장하므로 실제 추가 fit은 `25×2×3=150`개다. 추가 점수 배열은 1,200개, metadata는 150개다. | exp02 `check_completeness.py:14-39`; `tests/test_back_trim_split.py:30-40`; `tests/test_load_gdn_inputs.py:134-149`; D-30 |
-| 점수 파일명·개수 | 통과. fit·test 세션마다 raw/smoothed × trainnorm/testnorm × 집계/채널별 8개다. 주 실행 전체는 GHL 3,000개, HAI 320개 점수 배열과 metadata 375·40개다. | `AGENTS.md` 파일명 규약; `src/common/naming.py:13-83`; 두 `check_completeness.py`의 `expected_score_paths`; D-15·D-16 |
-| score-label 정렬 | 통과. 점수 길이는 `T_test-W-1`, 라벨은 `[W:-1]`이다. 합성 test 200·W 8에서 점수 191과 metadata `[8,-1]`이 일치했다. | GraGOD `models/predict.py:121-139`; `src/gdn_runner/run_gdn_single.py:301-313`; `docs/score_interface.md`; D-23·D-27 |
-| 정규화·smoothing·집계 | 통과. 절대 오차, train·validation median-IQR, 후행 4-창, max 집계 순서다. testnorm은 부록용 별도 파일이다. GraGOD post-process는 부르지 않는다. | `configs/scoring_pipeline.yaml:4-28`; `src/gdn_runner/run_gdn_single.py:258-305`; `src/common/save_scores.py:18-56`; D-04~D-07·D-09 |
-| HAI 세션 경계 | 통과. train 4세션과 test 2세션을 tuple로 유지하고 세션마다 `SlidingWindowDataset`을 만든 뒤 dataset만 합친다. test 두 세션도 각각 별도 파일명·metadata를 쓴다. | `src/data_split/load_hai_sessions.py:18-20,81-133`; `src/gdn_runner/run_gdn_single.py:111-130,160-183`; D-24·D-25 |
-| resume·실패 기록 | 통과. 필수 점수·metadata·snapshot·best checkpoint·early stopping 로그를 모두 확인한 뒤에만 skip한다. HAI는 인접행렬 2벌도 요구한다. 실패 조합은 실험별 `logs/failures.csv`에 남는다. | `experiments/exp02_gdn_ghl/run_batch.py:55-108`, `check_completeness.py:49-62`; `experiments/exp03_gdn_hai_seed10/run_batch.py:60-118`, `check_completeness.py:58-73`; D-26 |
-| HAI 그래프 일치도 | 통과. fit 20개마다 self-edge 포함·제거본을 저장한다. 비율별 10 seed의 45쌍, 합계 90개 Jaccard와 중앙값·사분위·범위를 낸다. | GraGOD `models/gdn/model.py:136-155`; `experiments/exp03_gdn_hai_seed10/compute_jaccard_agreement.py:18-64`; D-08·D-18·D-26 |
-| 합성 단일 실행 | 통과. 봉인된 새 HEAD에서 점수 8개, metadata, 두 git hash, best checkpoint, early stopping 로그와 TopK 복원을 다시 확인했다. | `experiments/exp00_gragod_recon/dryrun_synthetic.py`; `dryrun_out/`; `tests/test_dryrun_synthetic.py`; D-27·D-31 |
+| 데이터 경계 | 유지 | GHL은 파일명 `tr_`를 경계로 쓰고 HAI는 train 4세션·test 2세션 사이에 window를 만들지 않는다. `docs/manifest_draft.md`, `src/data_split/load_ghl_series.py`, `src/data_split/load_hai_sessions.py`, D-17·D-20·D-24 |
+| 비율 근거 | 유지 | GHL `5·10·20·50·100%`, HAI `10·100%`, GHL back-trim `5·20·100%`를 쓴다. 5%·10%의 실행 가능성과 대표성 근거는 두 preflight 분석에 있다. `configs/data_preprocessing.yaml`, `experiments/exp01b_ghl_preflight/ANALYSIS.md`, `experiments/exp01c_hai_preflight/ANALYSIS.md`, D-21 |
+| feasibility 표본 수 | 수정 | GHL·HAI 봉인 로그 665행의 정규화 표본 수를 폐기된 `L-W-1`에서 현행 `L-W`로 고쳤다. train·validation window 수와 feasibility 합격 판정은 바뀌지 않았다. 두 preflight 생성기·로그·분석, 고정 GraGOD `datasets/dataset.py:47-50,64-77`, D-34·D-41 |
+| 비율·seed 원본 | 보강 | 배치와 완전성 검사는 YAML에서 조합을 읽는다. 파일명·분할·조합 코드의 허용 비율은 `SUPPORTED_RATIO_PERCENTS` 하나를 공유한다. `src/common/experiment_config.py`, `src/common/naming.py`, `src/data_split/front_trim_split.py`, D-36 |
+| score-label 정렬 | 수정 | 점수 길이는 `L-W`, 라벨은 `[W:]`다. 마지막 1-step forecast를 버리지 않는다. 고정 GraGOD 포크 `datasets/dataset.py:47-50,64-77`, `models/gdn/model.py:292-316`, `src/gdn_runner/run_gdn_single.py`, `docs/score_interface.md`, D-34 |
+| 전처리·라벨 | 보강 | scaler는 반환 배열을 다시 저장한다. 라벨은 길이가 맞는 유한한 0·1만 받는다. train에만 scaler를 fit하고 validation·test에는 transform만 적용한다. `src/data_split/validate_labels.py`, 두 loader, `tests/test_load_gdn_inputs.py`, D-20·D-36 |
+| 실행 전 봉인 | 보강 | Git 조회 실패, dirty 작업 트리, GraGOD hash 불일치, 실행 중 HEAD·작업 트리 변경을 모두 오류로 처리한다. snapshot은 학습 전에 만든다. `src/common/verify_run_context.py`, `src/gdn_runner/run_gdn_single.py`, D-35 |
+| 입력 파일 봉인 | 보강 | `configs/input_manifest.yaml`에 GHL 25개와 HAI 8개의 크기·SHA-256을 고정했다. 배치는 실행할 조합이 있을 때만 SHA-256을 한 번 검증한다. 최초 해시 전후와 실제 로드 직전·직후에는 크기·`mtime_ns`가 같아야 하며, 러너는 파일 지문이 빠진 GHL·HAI 실행을 거부한다. `src/common/verify_input_files.py`, 두 `run_batch.py`, `experiments/exp02_gdn_ghl/run_controls.py`, D-36·D-39·D-42 |
+| 환경 봉인 | 보강 | Python과 package 버전을 대조하며 `pytorch-lightning`은 설치 URL과 commit `834dbf3039ee82a2ac5e65eed25f9989222283c6`도 확인한다. `configs/environment.yaml`, `src/common/verify_run_context.py`, 고정 GraGOD `requirements.txt:2`, D-36 |
+| 포크·러너 계약 | 보강 | 포크의 MSE, horizon 1, Adam, ReduceLROnPlateau `factor=0.5·patience=8`, `Loss/val`, gradient clip 1.0을 실행 전에 대조한다. GraGOD `models/train.py:130-138`과 달리 우리 validation shuffle은 false로 분리한다. `configs/gdn_hyperparams.yaml`, 고정 GraGOD `datasets/dataset.py:23-37`, `models/train.py:130-138,162-192`, `gragod/training/trainer.py:119-138,206-219` |
+| 후처리 고정값 | 보강 | `epsilon=0.01`, smoothing 창 4, testnorm 병행까지 실행 전에 검사한다. 창과 “처음 3점 0” 경계가 갈라지는 설정은 학습 전에 거부한다. `src/common/experiment_config.py`, `configs/scoring_pipeline.yaml`, D-04·D-07·D-15·D-39 |
+| 모델 산출 유효성 | 보강 | 비유한 forecast 오차는 저장하지 않는다. HAI graph는 유한한 2차원 embedding과 0이 아닌 norm에서만 계산한다. `src/gdn_runner/run_gdn_single.py`, `src/gdn_runner/extract_adjacency.py`, 고정 GraGOD `models/gdn/model.py:139-144`, D-39 |
+| 시간·완전성 | 보강 | fit마다 실제 accelerator와 학습·train-reference 추론·test 추론 시간을 `timing.json`에 나눠 저장한다. 필수 파일과 checkpoint가 0바이트가 아니어야 하며, 러너의 종료 검증과 HAI 그래프 저장까지 끝난 뒤 쓴 `COMPLETE` 표식이 있어야 완료다. 재개 전 두 저장소를 한 번 검증하고 snapshot의 두 hash가 현재 값과 같은지도 확인한다. `src/gdn_runner/run_gdn_single.py`, `src/common/run_completion.py`, 두 `check_completeness.py`, D-37·D-39~D-41 |
+| GHL 대조 팔 | 보강 | −TOPK 150 fit, TopK 민감도 450 논리 조합을 고정했다. 민감도의 k=5 150개는 주 실행을 재사용하므로 대조 팔의 실제 추가 fit은 450개다. 파일과 폴더는 모델별로 분리한다. `experiments/exp02_gdn_ghl/check_controls.py`, `run_controls.py`, D-37 |
+| HAI 그래프 | 보강 | best checkpoint의 embedding 유효성을 확인한 뒤 self-edge 포함·제거 인접행렬을 저장하고 제거본으로 seed 10개의 45쌍 Jaccard를 계산한다. TopK가 self를 반드시 고른다고 가정하지 않는다. Jaccard는 현재 commit의 HAI 20개 조합이 모두 끝난 뒤 YAML의 비율·seed로만 계산하며, 두 CSV 각 행에 TSAD·GraGOD commit을 적는다. `src/gdn_runner/extract_adjacency.py`, `experiments/exp03_gdn_hai_seed10/compute_jaccard_agreement.py`, D-18·D-26·D-39~D-41 |
+| 근거 문서 정합성 | 수정 | Manifest 확정 전 계획서에 남은 HAI `59~86ch` 세 곳을 HAI 23.05의 확정값 `86ch`로 고쳤다. 실행 설정의 86채널, `topk=22`, PCA 30은 바뀌지 않았다. `docs/plan_v4.md`, `docs/manifest_draft.md`, D-17·D-43 |
+| 재현 경로·산출물 추적 | 수정 | 패치 재검증 근거는 `experiments/exp00_gragod_recon/PATCH_REVERIFY.md`로 정확히 적는다. Jaccard의 `analysis/`는 재생성 가능한 정상 산출물이므로 `.gitignore`에 넣어 종료 clean 검사를 깨지 않게 했다. `.gitignore`, `AGENTS.md`, `configs/environment.yaml`, D-44 |
+| preflight 현재성 | 수정 | GHL 분석을 다시 만들 때도 정규화 표본 `L-W`와 D-22의 W=5 확정 상태가 남는다. 오래된 “최종 W 미확정” 문구는 현재 분석과 생성기에서 함께 없앴다. `experiments/exp01b_ghl_preflight/run_ghl_preflight.py`, `ANALYSIS.md`, D-22·D-34·D-44 |
+| 통계 해석 범위 | 수정 | Wilcoxon·TOST·bootstrap은 GHL 25개 task 안에서만 해석한다. 같은 simulator family라는 R1 때문에 p값·등가 판정·신뢰구간을 제조 공정 모집단으로 일반화하지 않는다. `docs/plan_v4.md:247-255`, `docs/role_C.md:34-36`, D-44 |
 
-## 실험 명령
+## 남은 봉인 절차
 
-아래 명령은 기록만 한다. 3b-5R3에서는 실행하지 않았다. 사용자가 실험 실행을 명시하고 GPU/CPU 환경을 정한 뒤 위에서 아래 순서로 쓴다.
+1. 고정 `tsad_fixed` 환경에서 전체 단위 테스트, YAML·환경 계약, compileall, `git diff --check`를 통과한다.
+2. 사용자가 검토한 변경을 한 commit으로 묶고 TSAD와 GraGOD 작업 트리가 clean인지 확인한다.
+3. clean HEAD에서 `experiments/exp00_gragod_recon/dryrun_synthetic.py`를 한 번 실행한다. 새 계약상 test 200·W 8이면 점수 길이 192, metadata는 `label_slice=[8,null]`이어야 한다.
+4. snapshot의 TSAD hash가 실행 HEAD와 같고 GraGOD hash가 고정값인지 확인한다. 점수 8개, metadata, timing, best checkpoint, early stopping 로그, TopK 복원이 모두 있어야 한다.
+
+이번 1·2·3·4·5·6·7차 보강은 1번까지만 수행한다. 2·3번은 사용자 검토 뒤 진행하며, 그 전에는 4단계 GHL 스모크를 실행하지 않는다. D-27의 191점 합성 결과는 과거 구현 기록일 뿐 새 봉인 근거가 아니다.
+
+## 1차 보강 검증값
+
+- 고정 `tsad_fixed` 환경 전체 단위 테스트: 91건 통과, 실패·오류 0건
+- runtime: Python 3.10.20과 package 11개 버전 일치
+- `pytorch-lightning` 설치 원본: `https://github.com/gonzachiar/pytorch-lightning.git@834dbf3039ee82a2ac5e65eed25f9989222283c6` 일치
+- YAML: 5개 파싱 통과, manifest GHL 25개·HAI 8개 확인
+- 조합: GHL 주 실행 375, back-trim 225, −TOPK 150, TopK 민감도 450, HAI 20 확인
+- `python -m compileall -q src experiments tests`: 종료 코드 0
+- `git diff --check`: 종료 코드 0
+- GraGOD 포크: HEAD `485e26b0c6b1d63f4f3531c8d05597db82e9db29`, 작업 트리 clean
+
+모델 학습과 전체 CSV 재검사는 실행하지 않았다.
+
+## 2차 보강 검증값
+
+- 봉인 로그 재계산: GHL 25개·19채널·학습 길이 39,938~50,000·범위 이탈 0, feasibility 실패 0. HAI train 4세션·896,400행·86채널·feasibility 실패 0
+- GHL 고정 채널 재대조: 5% `unique=1` 154/475, IQR=0 279/475. 100%는 각각 0/475, 150/475
+- HAI 활성 채널 재대조: 10% 59개, 100% 66개. `topk=ceil(0.25×86)=22`
+- 고정 `tsad_fixed` 환경 전체 단위 테스트: 96건 통과, 실패·오류 0건
+- YAML 5개 파싱, 조합 수 `375·225·150·450·20`, compileall, `git diff --check` 통과
+- GraGOD 포크: HEAD `485e26b0c6b1d63f4f3531c8d05597db82e9db29`, 작업 트리 clean
+
+2차 감사에서도 모델 학습과 전체 CSV·SHA-256 재검사는 실행하지 않았다.
+
+## 3차 보강 검증값
+
+- 3a 재대조: GHL 25개·19채널·학습 길이 39,938~50,000, HAI 86채널·훈련 4세션·테스트 2세션 유지
+- 비율·조합 재대조: GHL `5·10·20·50·100%`, HAI `10·100%`, `topk=5·22`, 조합 수 `375·225·150·450·20` 일치
+- 고정 `tsad_fixed` 환경 전체 단위 테스트: 99건 통과, 실패·오류 0건
+- 이전 commit snapshot과 형식이 깨진 snapshot을 완료로 세지 않고, 미완료 HAI graph를 Jaccard에 섞지 않는 회귀 테스트 통과
+- 고정 Lightning `prediction_loop.py:273-274`의 CPU 이동 확인. CUDA 장치 불일치 의혹은 기각
+- YAML 5개와 Manifest GHL 25개·HAI 8개, 조합 수 `375·225·150·450·20` 재확인
+- Python 3.10.20, package 11개, 고정 Lightning 설치 원본 확인
+- `compileall`과 `git diff --check` 종료 코드 0
+- GraGOD 포크: HEAD `485e26b0c6b1d63f4f3531c8d05597db82e9db29`, 작업 트리 clean
+
+3차 감사도 모델 학습, 전체 CSV·SHA-256 재검사, 새 commit을 수행하지 않았다.
+
+## 4차 보강 검증값
+
+- 실제 kept length 23종에서 validation 10%의 float ceil과 정확 유리수 ceil이 모두 일치
+- GHL 625행·HAI 40행의 kept, train, validation, window, 정규화 표본 수 수식 대조 통과
+- 설정 불변식: `min_train_length=W+1`, `topk={5,22}`, 대조 팔 부분집합과 조합 수 `375·225·150·450·20` 일치
+- 새 회귀 테스트에서 `timing.json.accelerator`와 두 Jaccard CSV의 TSAD·GraGOD commit 확인
+- 고정 `tsad_fixed` 환경 전체 단위 테스트: 100건 통과, 실패·오류 0건
+- YAML 5개, 환경 12항목, compileall, `git diff --check` 통과
+
+4차 감사도 모델 학습, 합성 드라이런, 원본 CSV·SHA-256 재검사, 새 commit을 수행하지 않았다.
+
+## 5차 보강 검증값
+
+- D-34~D-41에서 점수 길이 교정은 한 번뿐이며 비율·seed·validation·window·topk의 번복은 없음을 확인
+- manifest SHA-256 검증 뒤 로드 중 입력을 바꾸는 실패 테스트가 GHL 주 배치·대조군·HAI에서 모델 호출 전에 모두 차단됨
+- 시작 시 SHA-256 1회, 이후 로드 직전·직후 크기·`mtime_ns` 확인으로 장시간 배치의 일반적인 입력 변경을 감지
+- 고정 `tsad_fixed` 환경 전체 단위 테스트: 104건 통과, 실패·오류 0건
+- YAML 5개, 환경 12항목, 조합 수 `375·225·150·450·20`, compileall, `git diff --check` 통과
+- GraGOD 포크: HEAD `485e26b0c6b1d63f4f3531c8d05597db82e9db29`, 작업 트리 clean
+
+5차 감사도 모델 학습, 합성 드라이런, 원본 CSV·SHA-256 재검사, 새 commit을 수행하지 않았다. 새 diff나 실패 증거가 없으면 3단계 정적 감사를 다시 열지 않는다.
+
+## 6차 감사 검증값
+
+- D-34~D-42의 확정값과 설정→loader→GraGOD 학습·예측→점수→snapshot→완료·재개 경로를 다시 대조
+- 비율·seed·validation·window·topk, `L-W` 정렬, 조합 수 `375·225·150·450·20` 유지
+- 실행 코드의 새 결함은 재현되지 않아 코드·테스트를 바꾸지 않음
+- `docs/plan_v4.md`의 HAI 채널 범위 세 곳만 `86ch`로 정정
+- 수정 전 고정 `tsad_fixed` 환경 전체 단위 테스트: 104건 통과, 실패·오류 0건
+
+6차 감사도 모델 학습, 합성 드라이런, 원본 CSV·SHA-256 재검사, 새 commit을 수행하지 않았다. 문서 수정 뒤에는 검증 비용 규율에 따라 경로·수치·diff만 확인한다.
+
+## 7차 최종 감사 검증값
+
+- 설정→loader→GraGOD 학습·예측→점수→snapshot→완료·재개 경로에서 실행 알고리즘의 새 결함은 재현되지 않음
+- 비율·seed·validation·window·topk, `L-W` 정렬, 조합 수 `375·225·150·450·20` 유지
+- `experiments/exp00_gragod_recon/PATCH_REVERIFY.md` 실재와 고정 포크 소스 줄 재확인
+- Jaccard 산출물은 수정 전 `NOT_IGNORED`, 수정 뒤 `.gitignore`의 `experiments/exp03_gdn_hai_seed10/analysis/` 규칙으로 제외됨
+- GHL preflight 관련 단위 테스트 7건 통과, 실패·오류 0건
+- 전체 테스트 104건은 5차와 6차에 통과했고 이번에는 실행 논리를 바꾸지 않아 다시 돌리지 않음
+
+7차 감사도 모델 학습, 합성 드라이런, 원본 CSV·SHA-256 재검사, 새 commit을 수행하지 않았다.
+
+## 다음 실행 명령
 
 ```powershell
-# 0. 실행 직전 봉인 확인: 첫 명령은 출력이 없어야 한다.
-git status --short
-git rev-parse HEAD
-git -c safe.directory=C:/Users/simon/time_series/gragod-fork -C ..\gragod-fork rev-parse HEAD
-
-# 1. GHL 시계열 01·10%·seed 1 스모크만 실행한다.
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' -c "from experiments.exp02_gdn_ghl.run_batch import run_batch; print(run_batch(specs=((1, 10, 1),)))"
-
-# 2. 사람이 스모크 산출물을 확인한 뒤 GHL 주 배치를 실행한다.
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp02_gdn_ghl\run_batch.py
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp02_gdn_ghl\check_completeness.py
-
-# 2-1. 주 실행 완료 뒤 뒷자르기 5%·20%를 추가 실행한다. 100%는 주 실행을 재사용한다.
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp02_gdn_ghl\run_batch.py --trim-direction back
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp02_gdn_ghl\check_completeness.py --trim-direction back
-
-# 3. GHL 완료 뒤 HAI 주 배치와 완전성 검사를 실행한다.
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp03_gdn_hai_seed10\run_batch.py
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp03_gdn_hai_seed10\check_completeness.py
-
-# 4. HAI 누락이 0일 때만 Jaccard 표를 만든다.
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' experiments\exp03_gdn_hai_seed10\compute_jaccard_agreement.py
-```
-
-## 3b-5 검증
-
-이 감사 단계에서는 아래 세 명령만 한 번 실행한다. 결과를 본 뒤 이 절과 D-28을 확정한다.
-
-```powershell
-python -m unittest discover -s tests -v
-& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' -c "from pathlib import Path; import yaml; parsed={path.name:yaml.safe_load(path.read_text(encoding='utf-8')) for path in sorted(Path('configs').glob('*.yaml'))}; g=parsed['gdn_hyperparams.yaml']; d=parsed['data_preprocessing.yaml']; s=parsed['scoring_pipeline.yaml']; assert all(value is not None for value in parsed.values()); assert g['model_params']['topk_by_dataset']=={'GHL':5,'HAI':22}; assert g['train_params']['seeds_by_dataset']=={'GHL':[1,2,3],'HAI':list(range(1,11))}; assert d['datasets']['GHL']['ratios']==[5,10,20,50,100] and d['datasets']['HAI']['ratios']==[10,100]; assert s['error']['type']=='absolute' and s['aggregation']['mode']=='max' and s['smoothing']['window']==4; print('YAML PASS:', ', '.join(parsed))"
+& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' -m unittest discover -s tests -v
+& 'C:\Users\simon\anaconda3\envs\tsad_fixed\python.exe' -m compileall -q src experiments tests
 git diff --check
 ```
 
-실행 결과는 다음과 같다.
-
-- `python -m unittest discover -s tests -v`: 56건 통과, 실패·오류 0건
-- YAML 파싱·핵심값 대조: 4개 파일 통과
-- `git diff --check`: 통과
-
-## 3b-5R1 보강 검증
-
-- RED: runner가 `input_metadata`를 받지 못해 4건이 오류로 끝났고, 두 batch는 전달 누락으로 완료 수가 0이었다.
-- GREEN: `python -m unittest tests.test_run_gdn_single tests.test_gdn_batch tests.test_dryrun_synthetic -v`에서 10건 통과, 실패·오류 0건.
-- 정적 검사: 변경 Python 파일의 `compileall` 통과.
-- 판정: B-02 해제. 실제 모델과 원본 데이터는 실행하지 않았다.
-
-## 3b-5R2 보강 검증
-
-- RED: loader 방향 인자, back 비율 제한, 통제군 완전성 함수, batch 방향 인자가 없는 상태를 각각 확인했다.
-- GREEN: back split·GHL/HAI loader·GHL/HAI batch 관련 테스트 18건 통과, 실패·오류 0건.
-- 정적 검사: 변경 Python 파일의 `compileall` 통과.
-- 판정: B-03 해제. 실제 모델과 원본 데이터는 실행하지 않았다.
-
-## 3b-5R3 봉인 검증
-
-- 범위 감사: 코드·설정·문서와 exp01b·exp01c의 EDA 근거표만 commit했다. 원본 CSV, 점수 배열, checkpoint는 포함하지 않았다.
-- 봉인: 3b 변경을 한 commit으로 묶었고 commit 직후 `git status --short` 출력이 비었다.
-- 초기 실패: 첫 드라이런은 외부 포크의 소유자가 실행 사용자와 달라 포크 hash가 `unknown(커밋 없음)`으로 저장됐고 검사항목 d에서 멈췄다.
-- 수정: `read_git_hash`가 명시된 저장소 경로만 해당 Git 호출의 `safe.directory`로 넘기도록 고쳤다. 전역 Git 설정은 바꾸지 않았다. 전용 RED→GREEN 테스트와 `tests.test_run_gdn_single` 모듈을 통과시켰다.
-- 최종 실행: 고정 `tsad_fixed` 환경에서 합성 드라이런을 다시 실행했다. 검사항목 a~g가 모두 통과했다.
-- 재현성: snapshot의 TSAD hash는 실행 당시 HEAD와 같고 GraGOD hash는 `485e26b0c6b1d63f4f3531c8d05597db82e9db29`다.
-- 판정: B-01 해제. GHL·HAI 원본과 주 배치는 실행하지 않았다.
+실제 모델 실행은 위 정적 검증, 사용자 검토, commit 봉인이 끝난 뒤 별도 단계에서 한다.

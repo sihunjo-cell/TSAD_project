@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy
 import pandas
+from unittest.mock import patch
 
 from src.data_split.load_ghl_series import load_ghl_series
 from src.data_split.load_hai_sessions import load_hai_sessions
@@ -77,7 +78,40 @@ class TestLoadGhlSeries(unittest.TestCase):
         },))
         self.assertAlmostEqual(inputs["train_sessions"][0][-1, 0], 1.0)
         self.assertAlmostEqual(inputs["validation_sessions"][0][0, 0], 4 / 3)
-        self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 11 / 3)
+        self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 11 / 3, places=6)
+
+    def test_rejects_nonbinary_ghl_labels(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            csv_path = Path(temporary_dir) / "032_GHL_id_1_Sensor_tr_11_1st_12.csv"
+            write_ghl_csv(csv_path)
+            frame = pandas.read_csv(csv_path)
+            frame.loc[12, "Label"] = 2
+            frame.to_csv(csv_path, index=False)
+
+            with self.assertRaisesRegex(ValueError, "0 또는 1"):
+                load_ghl_series(
+                    csv_path, ratio_percent=50, val_fraction=1 / 3, min_train_length=4,
+                )
+
+    def test_uses_scaler_return_value_when_transform_copies(self):
+        class CopyingScaler:
+            def fit(self, _array):
+                return self
+
+            def transform(self, array):
+                return array + 1000
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            csv_path = Path(temporary_dir) / "032_GHL_id_1_Sensor_tr_11_1st_12.csv"
+            write_ghl_csv(csv_path)
+            with patch("src.data_split.load_ghl_series.MinMaxScaler", return_value=CopyingScaler()):
+                inputs = load_ghl_series(
+                    csv_path, ratio_percent=50, val_fraction=1 / 3, min_train_length=4,
+                )
+
+        self.assertEqual(inputs["train_sessions"][0][0, 0], 1000)
+        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1004)
+        self.assertEqual(inputs["test_sessions"][0][0, 0], 1011)
 
     def test_rejects_ratio_outside_ghl_plan(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -185,6 +219,40 @@ class TestLoadHaiSessions(unittest.TestCase):
             write_hai_data(dataset_dir)
             with self.assertRaisesRegex(ValueError, "HAI ratio"):
                 load_hai_sessions(dataset_dir, ratio_percent=50, val_fraction=0.1, min_train_length=6)
+
+    def test_rejects_nonbinary_hai_labels(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            dataset_dir = Path(temporary_dir)
+            write_hai_data(dataset_dir)
+            label_path = dataset_dir / "label-test1.csv"
+            labels = pandas.read_csv(label_path)
+            labels.loc[1, "label"] = 2
+            labels.to_csv(label_path, index=False)
+
+            with self.assertRaisesRegex(ValueError, "0 또는 1"):
+                load_hai_sessions(
+                    dataset_dir, ratio_percent=10, val_fraction=0.2, min_train_length=4,
+                )
+
+    def test_hai_uses_scaler_return_values_when_transform_copies(self):
+        class CopyingScaler:
+            def partial_fit(self, _array):
+                return self
+
+            def transform(self, array):
+                return array + 1000
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            dataset_dir = Path(temporary_dir)
+            write_hai_data(dataset_dir)
+            with patch("src.data_split.load_hai_sessions.MinMaxScaler", return_value=CopyingScaler()):
+                inputs = load_hai_sessions(
+                    dataset_dir, ratio_percent=10, val_fraction=0.2, min_train_length=4,
+                )
+
+        self.assertEqual(inputs["train_sessions"][0][0, 0], 1000)
+        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1008)
+        self.assertEqual(inputs["test_sessions"][0][0, 0], 1080)
 
 
 if __name__ == "__main__":

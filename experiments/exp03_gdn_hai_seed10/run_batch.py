@@ -21,6 +21,9 @@ from experiments.exp03_gdn_hai_seed10.check_completeness import (
 from src.data_split.load_hai_sessions import load_hai_sessions
 from src.gdn_runner.extract_adjacency import extract_best_adjacency
 from src.gdn_runner.run_gdn_single import run_gdn_sessions
+from src.common.run_completion import clear_completion_marker, write_completion_marker
+from src.common.verify_input_files import verify_input_file_state, verify_input_files
+from src.common.verify_run_context import verify_run_context
 
 
 def build_run_config(ratio: int) -> dict:
@@ -34,6 +37,7 @@ def build_run_config(ratio: int) -> dict:
         "fork_path": str(REPOSITORY_ROOT.parent / "gragod-fork"),
         "model_params": model_params,
         "train_params": train_params,
+        "fork_contract": hyperparameters["fork_contract"],
         "naming": {"dataset": "HAI", "series": (1, 2), "tier": "t2", "ratio": ratio},
     }  # GraGOD models/train.py:143-145의 모델 인자 보강은 공통 러너가 맡는다.
 
@@ -79,42 +83,57 @@ def run_batch(
     input_loader=load_inputs,
     model_runner=run_gdn_sessions,
     adjacency_extractor=extract_best_adjacency,
+    input_verifier=verify_input_files,
+    context_verifier=verify_run_context,
 ) -> dict:
     experiment_dir = Path(experiment_dir or Path(__file__).resolve().parent)
     data_dir = Path(data_dir or REPOSITORY_ROOT.parent / "shared_data" / "TSAD_project" / "HAI-23.05")
-    specs = build_specs() if specs is None else specs
-    counts = {"completed": 0, "skipped": 0, "failed": 0}
+    specs = list(build_specs() if specs is None else specs)
+    expected_git_hashes = context_verifier(
+        REPOSITORY_ROOT, REPOSITORY_ROOT.parent / "gragod-fork",
+    )
+    pending_specs = [
+        spec for spec in specs
+        if not is_run_complete(experiment_dir, spec, expected_git_hashes)
+    ]
+    counts = {"completed": 0, "skipped": len(specs) - len(pending_specs), "failed": 0}
+    if not pending_specs:
+        return counts
+    input_files = input_verifier("HAI", data_dir)
     cached_ratio = None
     cached_inputs = None
 
-    for spec in specs:
-        if is_run_complete(experiment_dir, spec):
-            counts["skipped"] += 1
-            continue
+    for spec in pending_specs:
         ratio, seed = spec
         config = build_run_config(ratio)
+        run_dir = run_directory(experiment_dir, spec)
+        clear_completion_marker(run_dir)
         try:
             if cached_ratio != ratio:
+                verify_input_file_state(data_dir, input_files)
                 cached_inputs = input_loader(data_dir, ratio, config)
+                verify_input_file_state(data_dir, input_files)
                 cached_ratio = ratio
             result = model_runner(
                 config=config,
                 train_sessions=cached_inputs["train_sessions"],
                 validation_sessions=cached_inputs["validation_sessions"],
                 test_sessions=cached_inputs["test_sessions"],
-                output_dir=str(run_directory(experiment_dir, spec)),
+                output_dir=str(run_dir),
                 seed=seed,
                 input_metadata={
                     "path": str(data_dir.resolve()),
                     "feature_names": cached_inputs["feature_names"],
                     "session_splits": cached_inputs["session_splits"],
+                    "files": input_files,
                 },
             )
             edge_sets = adjacency_extractor(
                 result["best_checkpoint_path"], config["model_params"]["topk"],
             )
             save_adjacency(experiment_dir, ratio, seed, edge_sets)
-            if not is_run_complete(experiment_dir, spec):
+            write_completion_marker(run_dir)
+            if not is_run_complete(experiment_dir, spec, expected_git_hashes):
                 raise RuntimeError("실행이 끝났지만 필수 산출물이 빠졌다")
             counts["completed"] += 1
         except Exception as error:

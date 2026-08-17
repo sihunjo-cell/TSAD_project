@@ -34,11 +34,17 @@
   보조 산출물로 보존한다 (D-16).
 - smoothed 구현은 **D-05 승인됨 — 구현은 자체 구현만, GraGOD smooth_scores 호출 금지.**
   (정의는 D-04: d-ailin 후행 4-창, 처음 3개 시점 0, 정규화 → smoothing → 집계 순서)
+- GDN 1-step forecast 점수 길이는 `L-W`, 라벨은 `labels[W:]`다(D-34).
+- 대조 팔은 model 필드로 구분한다: `GDN_NOTOPK`, `GDN_K2`, `GDN_K10`.
+  back-trim은 `back_trim_runs/` 상대경로까지 식별자에 포함하며 파일을 평탄화하지 않는다.
 
 ## 재현성
 
-- 모든 실행은 실행 시점의 config 전체 + git commit hash를 해당 실험의 `snapshots/`에
-  JSON으로 자동 저장한다.
+- 모든 실행은 학습 전에 config 전체, 입력 SHA-256, package 버전, 두 저장소 commit을
+  `snapshots/`에 JSON으로 저장한다. 두 저장소가 clean하지 않거나 GraGOD commit이
+  `485e26b0c6b1d63f4f3531c8d05597db82e9db29`와 다르면 실행하지 않는다.
+- 학습이 끝날 때 두 저장소의 commit과 clean 상태를 다시 검사한다. 실행 산출물 경로는
+  `.gitignore`에 명시해 정상 산출물이 clean 판정을 깨지 않게 한다.
 - 정규화 통계(median·IQR)는 **학습/검증 구간에서만** 추정한다. 테스트셋 추정 금지.
 - 채널 집계는 `max`, 오차는 절대값.
 
@@ -49,7 +55,8 @@
   - `d-ailin/GDN` (main)
   - `GraGOD` (develop, 커밋 해시: **D-01 — `ec8cd452` 베이스 + D-03 패치를 얹은
     우리 포크의 커밋 `485e26b0c6b1d63f4f3531c8d05597db82e9db29` 을 최종 고정 대상으로
-    한다** — 브랜치 `fix/gdn-input-transform`, 재검증은 PATCH_REVERIFY.md)
+    한다** — 브랜치 `fix/gdn-input-transform`, 재검증은
+    `experiments/exp00_gragod_recon/PATCH_REVERIFY.md`)
   - `TheDatumOrg/TSB-AD` (main)
 - 레포에서 확인한 값은 **"어느 레포, 어느 파일, 몇 번째 줄"** 을 코드 주석으로 남긴다.
 - 확인 과정에서 내린 결정은 `DECISIONS.md`에 한 줄씩 적립한다.

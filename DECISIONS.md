@@ -7,7 +7,7 @@
 - 2026-08-14 규약 변경: 문서 작성 스타일 절을 새로 만들었다. 한국어 산문은 humanize-korean 룰북(github.com/epoko77-ai/im-not-ai, 로컬 클론 ../im-not-ai @53e24e8)을 쓰는 시점부터 적용한다. 이것도 사용자 직접 지시다.
 - 2026-08-14 윤문 승인: 동결돼 있던 plan_v4.md·role_A/B/C.md·DECISIONS.md 결정 문구를 "의미 불변 + 문체만" 조건으로 humanize-korean 윤문했다. 사용자가 직접 승인했다(D-19의 재구성 금지·부탁문 원문 유지 지시에 대한 1회 예외이며, 수치·해시·절 번호·참조는 그대로다).
 - 2026-08-16 exp01b: GHL 파일명의 `tr_`는 앞쪽 학습 행 수, `1st_`는 전체 파일의 0-based 첫 이상 인덱스로 읽는다. 공식 목록 `TheDatumOrg/TSB-AD/Datasets/File_List/TSB-AD-M.csv:33-57`과 실데이터 25개를 대조해 모두 일치했다(`experiments/exp01b_ghl_preflight/ANALYSIS.md:18-22`).
-- 2026-08-16 exp01b: 비율별 앞쪽 학습 구간에서 median·IQR을 다시 추정하고 IQR=0 채널도 임의로 버리지 않는다. 5% 구간에서 126/475행이 완전히 고정됐지만 학습 전체에서는 0/475행이었다(`experiments/exp01b_ghl_preflight/ANALYSIS.md:23-24`).
+- 2026-08-16 exp01b, 2026-08-17 집계 문구 정정: 비율별 앞쪽 학습 구간에서 median·IQR을 다시 추정하고 IQR=0 채널도 임의로 버리지 않는다. 5% 구간에서 `unique_value_count=1`인 완전 고정 행은 154/475개지만 학습 전체에서는 0/475개다. IQR=0은 279/475개다(`experiments/exp01b_ghl_preflight/logs/train_channel_quality.csv`; `ANALYSIS.md:23-25`).
 - 2026-08-16 exp01b: 5·10·20·50·100% 격자는 잠정 유지한다. 학습 구간 EDA에서 5%는 스트레스 하한, 10%는 저데이터 기준점, 20%는 구조 회복 지점, 50%는 고데이터 대조, 100%는 전체 기준으로 판정했다(`experiments/exp01b_ghl_preflight/ANALYSIS.md:28-46`). 강혁 산출물이 데이터 계약이나 안정화 전처리 근거를 바꾸면 같은 검사를 다시 돌려 수정한다(`experiments/exp01b_ghl_preflight/ANALYSIS.md:52`).
 
 ## 확정 결정 (2026-08-14, 결정 기록 세션)
@@ -16,7 +16,7 @@
 - 결정: GraGOD는 ec8cd452 커밋을 베이스로 잡고, 여기에 D-03 패치를 얹은 우리 포크의 커밋을 최종 고정 대상으로 삼는다. 패치 커밋 해시는 패치 세션을 마친 뒤 이 항목에 덧붙인다.
 - 근거: RECON [A]. SHAPEFLOW 검증도 이 커밋 위에서 수행됐다.
 - 기록일: 2026-08-14
-- 패치 커밋 해시: 485e26b0c6b1d63f4f3531c8d05597db82e9db29 — 브랜치 fix/gdn-input-transform, 베이스 ec8cd452. 2026-08-14 패치 세션에서 기입했고, PATCH_REVERIFY.md의 재검증을 전 항목 통과했다.
+- 패치 커밋 해시: 485e26b0c6b1d63f4f3531c8d05597db82e9db29 — 브랜치 fix/gdn-input-transform, 베이스 ec8cd452. 2026-08-14 패치 세션에서 기입했고, `experiments/exp00_gragod_recon/PATCH_REVERIFY.md`의 재검증을 전 항목 통과했다.
 
 ### D-02
 - 결정: 데이터 주입은 RECON [B]의 후보 (ii)로 간다. GraGOD의 get_data_loader에 우리가 앞자르기한 텐서를 직접 넣는 자체 러너를 만들고, GraGOD의 train.py/predict.py 오케스트레이션은 쓰지 않는다.
@@ -49,7 +49,7 @@
 - 기록일: 2026-08-14
 
 ### D-08
-- 결정: 인접행렬 추출은 RECON [F]의 후보 2로 간다. best.ckpt의 embedding.weight로 cos-sim → topk를 다시 계산한 "best validation 시점의 그래프"를 exp03 산출물로 삼고, 재계산 로직의 출처(model.py:137-144)를 주석으로 남긴다. Jaccard를 계산하기 전에 self-edge는 제거한다 — 모든 seed에 똑같이 존재하는 상수 edge라 일치도를 부풀리기 때문이다.
+- 결정: 인접행렬 추출은 RECON [F]의 후보 2로 간다. best.ckpt의 embedding.weight로 cos-sim → topk를 다시 계산한 "best validation 시점의 그래프"를 exp03 산출물로 삼고, 재계산 로직의 출처(model.py:137-144)를 주석으로 남긴다. Jaccard를 계산하기 전에 실제 self-edge를 제거한다. self-edge는 채널 관계가 아니며 `GraphLayer.forward`가 TopK 입력에서 제거한 뒤 모든 노드에 다시 붙이므로 시드 간 관계 일치도에 넣지 않는다.
 - 근거: RECON [F]. SHAPEFLOW 1부 a에서 그래프가 embedding에만 의존한다는 것을 확인했으므로 재계산은 결정적이다.
 - 기록일: 2026-08-14
 
@@ -62,7 +62,7 @@
 - 결정: torch-geometric은 GraGOD 어디에도 선언돼 있지 않으므로, torch 2.2.2와 호환되는 버전을 우리가 골라 configs/environment에 정확히 고정한다. 버전 선정은 패치 세션에서 설치 검증과 함께 한다.
 - 근거: RECON [H]. SHAPEFLOW는 스크래치 2.8.0.post1로 수행됐고 고정 환경 판정이 아니라는 것을 스스로 밝혀 뒀다.
 - 기록일: 2026-08-14
-- 확정 버전(2026-08-14 패치 세션): torch-geometric==2.5.3. 전체 고정 환경은 configs/environment.yaml에 있다 — python 3.10.20, torch 2.2.2+cpu, numpy 1.26.4, pytorch-lightning은 저자 포크 커밋 834dbf30(설치 성공, 대체 없음), tensorboardX 2.6.2.2. 선정 근거는 PATCH_REVERIFY.md [1].
+- 확정 버전(2026-08-14 패치 세션): torch-geometric==2.5.3. 전체 고정 환경은 configs/environment.yaml에 있다 — python 3.10.20, torch 2.2.2+cpu, numpy 1.26.4, pytorch-lightning은 저자 포크 커밋 834dbf30(설치 성공, 대체 없음), tensorboardX 2.6.2.2. 선정 근거는 `experiments/exp00_gragod_recon/PATCH_REVERIFY.md` [1].
 
 ### D-11
 - 결정: GraGOD에 하드코딩된 시드 42는 쓰지 않는다. 우리 러너가 set_seeds를 우리 시드로 직접 부른다.
@@ -125,6 +125,7 @@
 - 기록일: 2026-08-16
 
 ### D-23
+- 상태: 점수 길이와 라벨 범위는 D-34가 대체한다. 나머지 러너 책임은 유지한다.
 - 결정: GDN 단일 러너는 비율 적용과 전처리가 끝난 train·test 배열만 받는다. config의 `val_size`만큼 train 뒤쪽을 validation으로 떼고, 축소된 train 전체의 예측 오차로 trainnorm 통계를 추정한다. GraGOD 의존성은 `load_gdn_dependencies` 한 곳에서 불러온다. 모델 생성 시 `edge_index`, `n_features`, `out_dim`을 주입하며, 점수 길이는 `T_test-W-1`, label 범위는 `[W:-1]`로 기록한다. 반환값에는 8개 점수 경로, metadata, best checkpoint, early stopping 로그, config·두 저장소 git hash snapshot 경로를 넣는다.
 - 근거: `tests/test_run_gdn_single.py`; `src/gdn_runner/run_gdn_single.py`; GraGOD `models/train.py:115-204`, `models/predict.py:121-139,363-366`, `gragod/training/callbacks.py:11-59`, `gragod/training/trainer.py:163-228`; `experiments/exp00_gragod_recon/ORCHESTRATION.md`
 - 기록일: 2026-08-16
@@ -145,6 +146,7 @@
 - 기록일: 2026-08-16
 
 ### D-27
+- 상태: 이 실행은 당시 구현을 기록한 과거 검증이다. 점수 정렬 판정은 D-34가 대체하며 새 구현의 봉인 드라이런으로 쓰지 않는다.
 - 결정: 3b-4 합성 드라이런은 `tsad_fixed`의 Python 3.10.20에서 train `(300, 5)`, test `(200, 5)`, window 8, 2 epoch로 한 번 실행했다. 집계 배열 4개는 `(191,)`, 채널별 배열 4개는 `(191, 5)`였고 전 값이 유한했다. `191=200-8-1`이며 metadata의 `test_length=200`, `score_length=191`, `label_slice=[8,-1]`과 일치한다. snapshot에는 현재 저장소 `6876b3de9d6968cd1f20dcf8c3cd3817c440227e`와 고정 포크 `485e26b0c6b1d63f4f3531c8d05597db82e9db29`가 기록됐다. best checkpoint와 early stopping 로그가 남았고, checkpoint에서 TopK edge 10개와 self-edge 제거본 5개를 복원했다. 검사항목이 하나라도 틀리면 드라이런을 실패시키도록 판정 함수도 고쳤다. 실제 Lightning checkpoint를 별도 프로세스에서 열 때는 고정 포크 경로를 먼저 import 경로에 넣어야 한다. 드라이런과 HAI 배치는 `run_gdn_sessions`가 같은 프로세스에서 포크를 먼저 등록하므로 이 조건을 충족한다.
 - 근거: `experiments/exp00_gragod_recon/dryrun_synthetic.py`; `tests/test_dryrun_synthetic.py`; `experiments/exp00_gragod_recon/dryrun_out/`; GraGOD `models/predict.py:121-139,363-366`, `models/gdn/model.py:313-316`, `gragod/training/callbacks.py:35-50`; D-08·D-23·D-25
 - 기록일: 2026-08-16
@@ -172,4 +174,69 @@
 ### D-32
 - 결정: 실행 snapshot에서 외부 저장소 hash를 읽을 때는 호출자가 명시한 저장소의 절대 경로만 `git -c safe.directory=<경로>`에 넘긴다. sandbox·container처럼 실행 사용자와 포크 소유자가 다른 환경에서도 hash를 기록하되 전역 Git 설정은 바꾸지 않는다. 첫 봉인 드라이런에서 포크 hash가 `unknown(커밋 없음)`으로 기록된 실제 실패를 재현한 뒤 이 범위만 고쳤다.
 - 근거: `src/gdn_runner/run_gdn_single.py:76-85`; `tests/test_run_gdn_single.py`의 `TestReadGitHash`; 첫 실패 snapshot과 Git stderr의 `detected dubious ownership`; 최종 `experiments/exp00_gragod_recon/dryrun_out/snapshots/config_snapshot.json`
+- 기록일: 2026-08-17
+
+### D-33
+- 결정: 4단계 전 1차 재감사는 3b 구현 전체를 다시 열어 데이터 경계, 점수 정렬, 실행 봉인, 설정 원본, 대조 팔을 한 흐름으로 점검한다. 현재 변경은 새 commit과 clean 상태의 합성 드라이런 전까지 봉인된 실행본으로 보지 않는다. D-31의 과거 봉인은 그 당시 commit에만 유효하다.
+- 근거: `docs/superpowers/specs/2026-08-17-stage3-hardening-design.md`; `docs/superpowers/plans/2026-08-17-stage3-hardening.md`; `docs/pre_run_checklist.md`
+- 기록일: 2026-08-17
+
+### D-34
+- 결정: GDN 1-step forecast의 점수 길이는 `L-W`, 라벨 범위는 `[W:]`로 고친다. `SlidingWindowDataset`은 길이 L에서 `L-W`개 target을 만들며 마지막 target은 `X[L-1]`이다. GraGOD GDN의 `post_process_predictions`와 공통 predict 경로가 마지막 값을 버리는 동작은 reconstruction 설명에서 온 것이므로 쓰지 않는다. 러너가 predict 출력 전체를 이어 붙여 `X[W:]`와 직접 절대 오차를 계산한다.
+- 근거: 고정 GraGOD 포크 `datasets/dataset.py:47-50,64-77`; `models/gdn/model.py:292-316`; `models/predict.py:121-145`; `src/gdn_runner/run_gdn_single.py`; `tests/test_run_gdn_single.py`; `docs/score_interface.md`
+- 기록일: 2026-08-17
+
+### D-35
+- 결정: 학습은 TSAD와 GraGOD 작업 트리가 모두 clean이고 GraGOD HEAD가 `485e26b0c6b1d63f4f3531c8d05597db82e9db29`일 때만 시작한다. snapshot은 의존성 import와 학습보다 먼저 저장한다. 실행 종료 때 두 HEAD와 clean 상태를 다시 검사한다. Git 조회 실패를 `unknown`으로 바꾸지 않는다.
+- 근거: `src/common/verify_run_context.py`; `src/gdn_runner/run_gdn_single.py`; `tests/test_verify_run_context.py`; D-01·D-14·D-32
+- 기록일: 2026-08-17
+
+### D-36
+- 결정: 실행 입력은 `configs/input_manifest.yaml`의 크기와 SHA-256이 모두 맞아야 한다. GHL·HAI 러너는 검증한 파일 지문이 snapshot 입력에 없거나 형식이 틀리면 학습 전에 멈춘다. label은 길이가 맞는 유한한 0·1만 허용하고 scaler의 반환 배열을 반드시 사용한다. 실행 비율과 seed는 YAML만 읽으며 허용 비율 `5·10·20·50·100`은 파일명·분할·조합 코드가 한 상수를 공유한다. 환경은 package 버전뿐 아니라 저자 `pytorch-lightning` 포크의 설치 URL과 commit도 대조한다.
+- 근거: `configs/input_manifest.yaml`; `configs/environment.yaml`; `src/common/verify_input_files.py`; `src/common/verify_run_context.py`; `src/common/experiment_config.py`; `src/data_split/validate_labels.py`; `tests/test_verify_input_files.py`; `tests/test_verify_run_context.py`; `tests/test_experiment_config.py`; `tests/test_load_gdn_inputs.py`
+- 기록일: 2026-08-17
+
+### D-37
+- 결정: 모든 fit은 학습, train-reference 추론, test 추론 시간을 `timing.json`에 나눠 저장한다. 완전성 검사는 필수 파일과 checkpoint가 존재하며 0바이트가 아닌지도 확인한다. GHL −TOPK는 25시계열×2비율×3seed=150회다. TopK 민감도는 `k={2,5,10}`의 논리 조합 450개이며 k=5 주 실행 150개를 재사용하므로 추가 fit은 300회다. −TOPK의 실제 추가 fit까지 합치면 450회다. 대조 팔은 `GDN_NOTOPK`, `GDN_K2`, `GDN_K10`으로 분리하고 −TOPK snapshot의 사용되지 않는 topk도 기준 YAML 값을 그대로 기록한다.
+- 근거: `configs/gdn_hyperparams.yaml`; `experiments/exp02_gdn_ghl/check_controls.py`; `experiments/exp02_gdn_ghl/run_controls.py`; `experiments/exp02_gdn_ghl/check_completeness.py`; `src/gdn_runner/run_gdn_single.py`; `tests/test_gdn_batch.py`; 고정 GraGOD 포크 `models/gdn/model.py:136-159`
+- 기록일: 2026-08-17
+
+### D-38
+- 결정: 이번 1차 보강에서는 실제 GHL·HAI 학습과 합성 모델 학습을 실행하지 않는다. 단위 테스트, YAML·환경 계약, Python compile, diff 정적 검사까지만 수행한다. 4단계는 변경 commit, clean 작업 트리, 새 계약으로 고친 합성 드라이런을 차례로 통과한 뒤에만 연다.
+- 근거: `docs/pre_run_checklist.md`; `docs/NEXT_SESSION_PLAN.md`; 사용자 지시(2026-08-17)
+- 기록일: 2026-08-17
+
+### D-39
+- 결정: 4단계 전 2차 감사에서는 3a의 Manifest·비율 근거를 봉인 로그로 다시 계산하고 3b의 입력부터 완료 판정까지 전 경로를 추적했다. 3a 수치와 비율 역할은 유지한다. 3b는 네 지점을 보강한다. 실행 전 계약은 `epsilon=0.01`, smoothing 창 4, testnorm 병행을 함께 검사한다. forecast 오차가 비유한 값이면 점수를 저장하지 않으며, HAI embedding이 비유한 값이거나 norm 0이면 정의되지 않은 cosine graph를 저장하지 않는다. 배치는 러너의 종료 검증과 HAI 그래프 저장이 끝난 뒤에만 `COMPLETE` 표식을 쓰고, 표식 없는 산출물은 재개 대상에서 완료로 세지 않는다. 모든 조합이 이미 끝났다면 원본 입력 SHA-256을 다시 계산하지 않는다.
+- 근거: `src/common/experiment_config.py`; `src/gdn_runner/run_gdn_single.py`; `src/gdn_runner/extract_adjacency.py`; `src/common/run_completion.py`; exp02·exp03의 `run_batch.py`와 `check_completeness.py`; `tests/test_experiment_config.py`; `tests/test_run_gdn_single.py`; `tests/test_extract_adjacency.py`; `tests/test_gdn_batch.py`; 고정 GraGOD 포크 `models/gdn/model.py:139-144`, `datasets/dataset.py:47-50,64-77`; `docs/superpowers/plans/2026-08-17-stage3-second-audit.md`
+- 기록일: 2026-08-17
+
+### D-40
+- 결정: 4단계 전 3차 감사에서 3a의 데이터 수치·비율 역할·하이퍼파라미터는 유지했다. 3b 재개 판정은 현재 clean TSAD·GraGOD hash와 snapshot의 두 hash가 같을 때만 `COMPLETE`를 인정하도록 고쳤다. 이전 commit 산출물과 형식이 깨진 snapshot은 재실행 대상으로 돌린다. 완료 검사 CLI와 HAI Jaccard도 같은 신원을 확인하며, Jaccard는 현재 commit의 HAI 조합이 모두 끝나야 계산한다. TopK는 대각선을 가리지 않아 보통 self-edge가 포함되지만 cosine 동률에서는 보장되지 않으므로 “항상 k−1개 + 자기 1개”라는 설명을 폐기하고 실제 추출 edge에서 self-edge를 제거한다. `k=max(5, ceil(0.25N))`의 0.25는 원 논문의 WADI `30/127=23.6%`와 SWaT `15/51=29.4%` 사이에 둔 사전 기준이며 데이터에서 고른 최적값이 아니다.
+- 근거: `src/common/run_completion.py`; exp02·exp03의 `run_batch.py`와 `check_completeness.py`; `experiments/exp02_gdn_ghl/run_controls.py`; `experiments/exp03_gdn_hai_seed10/compute_jaccard_agreement.py`; `tests/test_gdn_batch.py`; `docs/gdn_hyperparameter_decisions.md`; 고정 GraGOD 포크 `models/gdn/model.py:136-159`, `models/gdn/modules.py:213-214`; 고정 Lightning `pytorch_lightning/loops/prediction_loop.py:273-274`; `docs/superpowers/plans/2026-08-17-stage3-third-audit.md`
+- 기록일: 2026-08-17
+
+### D-41
+- 결정: 4단계 전 4차 감사에서 폐기된 `L-W-1` 계산이 GHL·HAI preflight의 정규화 표본 수에 남은 것을 고쳤다. 두 생성식과 봉인 로그 665행은 현행 1-step forecast 계약인 `L-W`로 통일한다. 모든 feasibility 판정은 그대로 통과한다. 실행 시간에는 실제 `accelerator`를 함께 기록하고, HAI Jaccard의 쌍별·요약 CSV 각 행에는 TSAD와 GraGOD commit을 넣어 서로 다른 실행의 표를 구분한다. 실제 입력 길이 23종에서 validation 10%의 부동소수점 ceil과 정확 유리수 계산은 모두 같았으므로 split은 바꾸지 않았다. 비율·seed·채널·topk·window·대조 팔 조합도 유지한다.
+- 근거: `experiments/exp01b_ghl_preflight/run_ghl_preflight.py`, `logs/ratio_feasibility.csv`, `ANALYSIS.md`; `experiments/exp01c_hai_preflight/run_hai_preflight.py`, `logs/ratio_feasibility.csv`, `ANALYSIS.md`; `src/gdn_runner/run_gdn_single.py`; `experiments/exp03_gdn_hai_seed10/compute_jaccard_agreement.py`; `tests/test_ghl_preflight.py`; `tests/test_hai_preflight.py`; `tests/test_run_gdn_single.py`; `tests/test_gdn_batch.py`; 고정 GraGOD 포크 `datasets/dataset.py:47-50,64-77`, `gragod/utils.py:83-92`; `docs/superpowers/plans/2026-08-17-stage3-fourth-audit.md`
+- 기록일: 2026-08-17
+
+### D-42
+- 결정: 4단계 전 5차 감사에서 D-34~D-41의 확정값을 대조한 결과, 같은 파라미터를 되돌린 순환 수정은 없었다. 비율·seed·validation·window·topk는 유지하고, 장시간 배치에서 manifest 검증 뒤 실제 로드 전에 외부 입력이 바뀔 수 있는 경계만 보강한다. 최초 SHA-256 계산 전후의 크기와 `mtime_ns`가 같아야 지문을 발급하며, GHL 주 배치·대조군과 HAI 배치는 새 입력을 읽기 직전과 직후에 같은 상태를 확인한다. 이 검사는 일반적인 파일 교체·수정·삭제를 막되 SHA-256을 로드마다 다시 계산하지 않는다. 새 diff·manifest 불일치·고정 외부 레포 변경·실패 테스트·dryrun 실패가 없으면 3단계 정적 감사를 다시 열지 않는다.
+- 근거: `src/common/verify_input_files.py`; `experiments/exp02_gdn_ghl/run_batch.py`; `experiments/exp02_gdn_ghl/run_controls.py`; `experiments/exp03_gdn_hai_seed10/run_batch.py`; `tests/test_verify_input_files.py`; `tests/test_gdn_batch.py`; 고정 GraGOD 포크 `datasets/dataset.py:47-50,64-77`, `models/train.py:119-145`; `docs/superpowers/plans/2026-08-17-stage3-fifth-audit.md`
+- 기록일: 2026-08-17
+
+### D-43
+- 결정: 4단계 전 6차 감사에서 설정→loader→GraGOD 학습·예측→점수→snapshot→완료·재개 경로를 다시 대조했으나 실행 코드의 새 결함은 재현되지 않았다. 비율·seed·validation·window·topk, `L-W` 정렬과 실험 조합은 유지한다. 계획서에 남은 Manifest 확정 전 HAI 범위 `59~86ch`만 HAI 23.05의 확정값 `86ch`로 바로잡는다. `COMPLETE` 뒤 외부 파일 변조까지 잡기 위한 출력 전체 재검사는 D-37의 범위와 검증 비용 규율을 벗어나므로 추가하지 않는다.
+- 근거: `docs/plan_v4.md:159,164,172,225`; `docs/manifest_draft.md:43-66`; `configs/data_preprocessing.yaml`; `configs/gdn_hyperparams.yaml`; `src/gdn_runner/run_gdn_single.py`; `src/common/run_completion.py`; exp02·exp03의 `run_batch.py`와 `check_completeness.py`; `tests/test_gdn_batch.py`; 고정 GraGOD 포크 `datasets/dataset.py:47-50,64-77`, `models/gdn/model.py:100-200,271,304`, `gragod/training/trainer.py:119-138,206-228`; `docs/superpowers/plans/2026-08-17-stage3-sixth-audit.md`
+- 기록일: 2026-08-17
+
+### D-44
+- 결정: 4단계 전 7차 감사에서도 비율·seed·validation·window·topk와 `L-W` 정렬은 유지한다. 실행 알고리즘의 새 결함은 재현되지 않았다. 대신 재현 경로와 해석 계약의 네 공백을 닫는다. 패치 재검증 문서는 저장소 안의 정확한 경로를 적고, Jaccard의 `analysis/`는 정상 실행 산출물로 Git에서 제외한다. GHL preflight 생성기와 현재 분석의 미확정 W 문구는 D-22의 W=5 확정 상태로 바꾸고 `L-W` 정규화 표본 문구가 재생성 때도 유지되게 한다. GHL 25개는 같은 simulator family의 benchmark task이므로 Wilcoxon·TOST·bootstrap은 GHL 내부 민감도 요약으로만 읽고 제조 공정 모집단으로 일반화하지 않는다.
+- 근거: `AGENTS.md`; `configs/environment.yaml`; `experiments/exp00_gragod_recon/PATCH_REVERIFY.md`; `.gitignore`; `experiments/exp03_gdn_hai_seed10/compute_jaccard_agreement.py:94-105`; `experiments/exp01b_ghl_preflight/run_ghl_preflight.py:370-374`, `ANALYSIS.md:47-52`; `docs/plan_v4.md:247-255`; `docs/role_C.md:34-36`; 고정 GraGOD 포크 `datasets/dataset.py:47-50,64-77`, `models/gdn/model.py:100-200,271,304`, `gragod/training/trainer.py:119-138,206-228`; `docs/superpowers/plans/2026-08-17-stage3-seventh-audit.md`
+- 기록일: 2026-08-17
+
+### D-45
+- 결정: 3단계 변경을 한 commit으로 봉인하고 clean 합성 드라이런을 통과한 뒤, 4단계의 첫 실행은 `GHL series 01·10%·seed 1` 한 건으로 제한한다. 현재 TSAD·GraGOD commit과 snapshot의 두 hash가 같고 필수 산출물과 `COMPLETE`가 모두 있을 때만 성공으로 판정한다. 이 스모크 결과를 확인하기 전에는 GHL 전체 배치를 실행하지 않는다.
+- 근거: 사용자 실행 지시(2026-08-17); `experiments/exp00_gragod_recon/dryrun_synthetic.py`; `experiments/exp02_gdn_ghl/run_batch.py`; `experiments/exp02_gdn_ghl/check_completeness.py`; `src/common/run_completion.py`
 - 기록일: 2026-08-17

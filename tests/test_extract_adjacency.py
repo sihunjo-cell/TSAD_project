@@ -14,7 +14,7 @@ class TestExtractBestAdjacency(unittest.TestCase):
         # N=4, 유사도 순위 손계산:
         # e0=[1,0], e1=[1,0.1], e2=[0,1], e3=[-1,0]
         # cos(e0,e1)≈0.995, cos(e0,e2)=0, cos(e0,e3)=-1, cos(e1,e2)≈0.0995, cos(e2,e3)=0
-        # topk=2 (자기 자신 cos=1 이 항상 1위 — RECON [F]):
+        # 이 fixture에서는 self 유사도 1이 유일한 최댓값인 topk=2:
         #   노드0 → {0,1} / 노드1 → {1,0} / 노드2 → {2,1} / 노드3 → {3,2}
         embedding = torch.tensor([[1.0, 0.0], [1.0, 0.1], [0.0, 1.0], [-1.0, 0.0]])
         checkpoint = {"state_dict": {"model.embedding.weight": embedding}}
@@ -32,6 +32,18 @@ class TestExtractBestAdjacency(unittest.TestCase):
         }
         self.assertEqual(edges_with_self, expected_with_self)
         self.assertEqual(edges_without_self, {(1, 0), (0, 1), (1, 2), (2, 3)})
+
+    def test_rejects_checkpoint_with_undefined_cosine_similarity(self):
+        checkpoint = {
+            "state_dict": {
+                "model.embedding.weight": torch.tensor([[1.0, 0.0], [0.0, 0.0]]),
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            checkpoint_path = Path(temporary_dir) / "best.ckpt"
+            torch.save(checkpoint, checkpoint_path)
+            with self.assertRaisesRegex(ValueError, "embedding norm"):
+                extract_best_adjacency(str(checkpoint_path), topk=1)
 
 
 if __name__ == "__main__":

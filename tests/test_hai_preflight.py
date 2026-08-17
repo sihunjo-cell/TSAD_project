@@ -55,7 +55,7 @@ class TestBuildRatioFeasibilityRows(unittest.TestCase):
         self.assertEqual(row["model_train_length"], 11340)
         self.assertEqual(row["train_window_count"], 11185)
         self.assertEqual(row["validation_window_count"], 1105)
-        self.assertEqual(row["normalization_sample_count"], 12444)
+        self.assertEqual(row["normalization_sample_count"], 12445)
         self.assertTrue(row["feasible"])
 
 

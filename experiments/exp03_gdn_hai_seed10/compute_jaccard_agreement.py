@@ -12,7 +12,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from experiments.exp03_gdn_hai_seed10.check_completeness import adjacency_path
+from experiments.exp03_gdn_hai_seed10.check_completeness import (
+    adjacency_path,
+    build_specs,
+    find_missing_runs,
+)
+from src.common.verify_run_context import verify_run_context
 
 
 def calculate_jaccard(first_edges: set, second_edges: set) -> float:
@@ -74,12 +79,27 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment-dir", type=Path, default=Path(__file__).resolve().parent)
     arguments = parser.parse_args()
+    specs = build_specs()
+    expected_git_hashes = verify_run_context(
+        REPOSITORY_ROOT, REPOSITORY_ROOT.parent / "gragod-fork",
+    )
+    missing = find_missing_runs(
+        arguments.experiment_dir, specs, expected_git_hashes,
+    )
+    if missing:
+        raise RuntimeError(f"현재 commit에서 끝나지 않은 HAI 실행이 있다: {len(missing)}개")
     pairwise_rows = []
     summary_rows = []
-    for ratio in (10, 100):
-        ratio_rows = compute_pairwise_rows(arguments.experiment_dir, ratio)
+    for ratio in sorted({ratio for ratio, _seed in specs}):
+        seeds = (seed for spec_ratio, seed in specs if spec_ratio == ratio)
+        ratio_rows = compute_pairwise_rows(arguments.experiment_dir, ratio, seeds)
         pairwise_rows.extend(ratio_rows)
         summary_rows.append(summarize_rows(ratio_rows))
+    for row in pairwise_rows + summary_rows:
+        row.update({
+            "tsad_commit": expected_git_hashes["tsad_project"],
+            "gragod_commit": expected_git_hashes["gragod_fork"],
+        })
     analysis_dir = arguments.experiment_dir / "analysis"
     write_csv(analysis_dir / "jaccard_pairs.csv", pairwise_rows)
     write_csv(analysis_dir / "jaccard_summary.csv", summary_rows)

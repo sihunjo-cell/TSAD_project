@@ -71,7 +71,9 @@ class TestBuildRatioFeasibilityRows(unittest.TestCase):
         self.assertEqual(by_window[5]["validation_length"], 200)
         self.assertEqual(by_window[5]["model_train_length"], 1797)
         self.assertEqual(by_window[5]["train_window_count"], 1792)
+        self.assertEqual(by_window[5]["normalization_sample_count"], 1992)
         self.assertEqual(by_window[155]["validation_window_count"], 45)
+        self.assertEqual(by_window[155]["normalization_sample_count"], 1842)
         self.assertTrue(by_window[155]["feasible"])
 
 

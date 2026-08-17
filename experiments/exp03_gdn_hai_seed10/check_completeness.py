@@ -10,13 +10,14 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.common.naming import build_score_filename
-
-RATIOS = (10, 100)
-SEEDS = tuple(range(1, 11))
+from src.common.experiment_config import load_planned_ratios_and_seeds
+from src.common.run_completion import has_completion_marker, snapshot_matches_git_hashes
+from src.common.verify_run_context import verify_run_context
 
 
 def build_specs():
-    return list(itertools.product(RATIOS, SEEDS))
+    ratios, seeds = load_planned_ratios_and_seeds("HAI")
+    return list(itertools.product(ratios, seeds))
 
 
 def run_directory(experiment_dir, spec) -> Path:
@@ -55,29 +56,42 @@ def expected_score_paths(run_dir: Path, ratio: int, seed: int) -> list[Path]:
     return paths
 
 
-def is_run_complete(experiment_dir, spec) -> bool:
+def is_run_complete(experiment_dir, spec, expected_git_hashes=None) -> bool:
     ratio, seed = spec
     run_dir = run_directory(experiment_dir, spec)
     fixed_paths = expected_score_paths(run_dir, ratio, seed) + [
         run_dir / "early_stopping_log.json",
+        run_dir / "timing.json",
         run_dir / "snapshots" / "config_snapshot.json",
         adjacency_path(experiment_dir, ratio, seed, self_edges=True),
         adjacency_path(experiment_dir, ratio, seed, self_edges=False),
     ]
     checkpoints = (run_dir / "training" / "gdn").glob("version_*/best.ckpt")
-    return all(path.is_file() for path in fixed_paths) and any(checkpoints)
+    return has_completion_marker(run_dir) and snapshot_matches_git_hashes(
+        run_dir, expected_git_hashes,
+    ) and all(
+        path.is_file() and path.stat().st_size > 0 for path in fixed_paths
+    ) and any(path.is_file() and path.stat().st_size > 0 for path in checkpoints)
 
 
-def find_missing_runs(experiment_dir, specs=None) -> list[tuple[int, int]]:
+def find_missing_runs(experiment_dir, specs=None, expected_git_hashes=None) -> list[tuple[int, int]]:
     specs = build_specs() if specs is None else specs
-    return [spec for spec in specs if not is_run_complete(experiment_dir, spec)]
+    return [
+        spec for spec in specs
+        if not is_run_complete(experiment_dir, spec, expected_git_hashes)
+    ]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment-dir", type=Path, default=Path(__file__).resolve().parent)
     arguments = parser.parse_args()
-    missing = find_missing_runs(arguments.experiment_dir)
+    expected_git_hashes = verify_run_context(
+        REPOSITORY_ROOT, REPOSITORY_ROOT.parent / "gragod-fork",
+    )
+    missing = find_missing_runs(
+        arguments.experiment_dir, expected_git_hashes=expected_git_hashes,
+    )
     for ratio, seed in missing:
         print(f"ratio={ratio:03d}, seed={seed}")
     print(f"missing={len(missing)}/{len(build_specs())}")

@@ -34,8 +34,8 @@
 | 363-366 | `GDN_PLModule.load_from_checkpoint(best_ckpt, map_location=device)` | 동일 (checkpoint_cb.best_model_path 사용) |
 | 121-124 | `start_index` 앞자름 | start_index = window_size(최솟값, predict.py:441-444) → 원배열 그대로 |
 | 127-136 | 점수용 로더 (clean=NONE, shuffle=False) | 동일 — 학습/검증 구간(축소 배열 전체)과 test 각각 |
-| 139 | `X_true = X_true[window_size:-1, :]` | 동일 슬라이스 |
-| 55-68 | `trainer.predict` → `calculate_anomaly_score` → (post_process_scores 분기) | predict 후 `calculate_anomaly_score`(models/gdn/model.py:313-316, \|오차\|)까지만. post_process_scores는 호출하지 않는다(D-05·D-06 금지) — 정규화·smoothing은 src/common 소유 |
+| 139 | `X_true = X_true[window_size:-1, :]` | 이 슬라이스는 쓰지 않는다. `SlidingWindowDataset`이 만든 `L-W`개 forecast를 모두 보존하고 정답은 `X_true[window_size:]`로 맞춘다(D-34). |
+| 55-68 | `trainer.predict` → `calculate_anomaly_score` → (post_process_scores 분기) | predict 출력을 이어 붙인 뒤 같은 절대 오차식 `abs(predictions - X_true[window_size:])`을 직접 계산한다. `calculate_anomaly_score`와 post_process_scores는 호출하지 않으며 정규화·smoothing은 src/common이 맡는다(D-05·D-06·D-34). |
 
 ## 확인 불가 항목
 

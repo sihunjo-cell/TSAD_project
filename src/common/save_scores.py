@@ -2,7 +2,7 @@
 
 근거: DECISIONS D-04(정규화 → smoothing → 집계 순서; 입력은 이미 정규화된
 채널별 점수), D-09(집계는 max 고정), D-15·D-16(파일명 규약·__channels 보조
-산출물), CLAUDE.md 재현성(config 전체 + git hash 를 snapshots/에 JSON 저장).
+산출물), AGENTS.md 재현성(config 전체 + git hash 를 snapshots/에 JSON 저장).
 """
 
 import datetime
@@ -81,7 +81,7 @@ def save_score_metadata(
 
 
 def snapshot_config(config_dict: dict, git_hash: str, output_dir: str) -> str:
-    """실행 시점의 config 전체 + git commit hash 를 JSON 으로 저장한다 (CLAUDE.md 재현성)."""
+    """실행 시점의 config 전체 + git commit hash 를 JSON 으로 저장한다 (AGENTS.md 재현성)."""
     os.makedirs(output_dir, exist_ok=True)
     snapshot = {
         "saved_at": datetime.datetime.now().isoformat(timespec="seconds"),

@@ -78,7 +78,8 @@ def build_ratio_feasibility_rows(
         for window_size in window_sizes:
             train_window_count = model_train_length - window_size
             validation_window_count = validation_length - window_size
-            normalization_sample_count = kept_length - window_size - 1
+            # D-34: 1-step forecast 전체를 써서 정규화 표본은 L-W개다.
+            normalization_sample_count = kept_length - window_size
             rows.append({
                 "session": session,
                 "ratio": ratio,

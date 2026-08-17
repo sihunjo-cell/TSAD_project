@@ -1,13 +1,13 @@
 # 점수 후처리 파이프라인. 근거: DECISIONS.md D-04~D-07, D-09.
-# GraGOD post_process_scores 경로 사용 금지 — 후처리는 전부 우리 코드 소유 (CLAUDE.md 근거 규율).
+# GraGOD post_process_scores 경로 사용 금지 — 후처리는 전부 우리 코드 소유 (AGENTS.md 근거 규율).
 
 error:
-  type: absolute  # |prediction - truth| (CLAUDE.md 재현성; GDN calculate_anomaly_score와 동일)
+  type: absolute  # |prediction - truth| (AGENTS.md 재현성; GDN calculate_anomaly_score와 동일)
   gragod_post_process_scores: false  # D-06: 정규화 전 절대 오차를 수령
 
 normalization:  # D-06
   method: median_iqr  # 채널별
-  estimation_split: train_val  # 테스트셋 추정 금지 (CLAUDE.md 재현성)
+  estimation_split: train_val  # 테스트셋 추정 금지 (AGENTS.md 재현성)
   epsilon: 0.01  # D-07: d-ailin evaluate.py:58-60의 1e-2 채택
   author_original_appendix: true  # 저자 원본 방식(테스트셋 추정)도 부록 대조용 병행 산출, 파일명으로 구분
 

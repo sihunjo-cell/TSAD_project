@@ -194,7 +194,7 @@
 
 ### TopK의 자기 자신(대각선) 포함 여부 — 제외하지 않는다
 
-- cos-sim 행렬의 대각선은 자기 자신과의 유사도 = 1로 항상 최댓값인데, topk 전에 대각선을 제거하는 코드가 양쪽 레포 어디에도 없다 (GraGOD `model.py:139-144`; d-ailin `GDN.py:150-157`). topk k개 중 1개는 항상 자기 자신이고, 실효 이웃은 k−1개다.
+- cos-sim 행렬의 대각선을 topk 전에 제거하는 코드는 양쪽 레포 어디에도 없다(GraGOD `model.py:139-144`; d-ailin `GDN.py:150-157`). 비퇴화 embedding에서는 자기 유사도 1이 보통 선택돼 다른 이웃은 k−1개가 된다. 다만 다른 embedding과 cosine이 정확히 같은 동률에서는 `torch.topk`가 self를 반드시 고른다고 보장하지 않으므로, 추출 결과에서 실제 self-edge를 세고 제거해야 한다.
 - 이후 `GraphLayer.forward`가 self-loop을 일괄 제거하고 다시 추가한다 (GraGOD `modules.py:213-214`; d-ailin `gdn/models/graph_layer.py:61-62`). 즉 topk가 소모한 자기-엣지는 제거되고, 모든 노드에 균일한 self-loop이 재부여된다.
 
 ---

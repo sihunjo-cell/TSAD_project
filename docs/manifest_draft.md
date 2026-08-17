@@ -38,6 +38,7 @@
 | 25 | `056_GHL_id_25_Sensor_tr_50000_1st_105568.csv` | 200,001 | 20 | `[0, 50,000)` | `[50,000, 200,001)` | 범위 안 |
 
 범위 밖 시계열은 없다. 학습 길이는 39,938, 43,750, 50,000 세 값이며 최솟값과 최댓값이 계획서 범위의 양 끝과 정확히 맞는다. 원본 25개를 다시 읽어 행·열 수와 파일명 경계를 `experiments/exp01b_ghl_preflight/logs/inventory.csv`와 대조했다.
+실행에 쓰는 25개 파일의 바이트 크기와 SHA-256은 `configs/input_manifest.yaml`에 고정했다.
 
 ## HAI
 
@@ -58,6 +59,7 @@
 | 테스트 2 라벨 | `label-test2.csv` | 230,400 | 2 | timestamp 1 + label 1 | CSV 실물 |
 
 8개 CSV의 첫 줄은 모두 `timestamp,...` 헤더였고 `version https://git-lfs.github.com/spec/v1` 포인터 문구는 없었다. 테스트 파일과 짝이 되는 라벨 파일의 행 수도 각각 54,000과 230,400으로 같다. 훈련은 896,400행, 테스트는 284,400행이다.
+실행에 쓰는 train·test·label 8개 파일의 바이트 크기와 SHA-256은 `configs/input_manifest.yaml`에 고정했다.
 
 ### 버전과 시계열 단위 결정
 

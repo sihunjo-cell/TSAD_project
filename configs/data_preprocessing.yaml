@@ -16,6 +16,7 @@ common:
 datasets:
   GHL:
     ratios: [5, 10, 20, 50, 100]
+    back_trim_ratios: [5, 20, 100]  # plan_v4 7-1 통제군
     ratio_application: per_training_session
     feature_count: 19
     scaler_fit_scope: current_series_train

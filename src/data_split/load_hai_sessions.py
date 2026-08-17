@@ -11,14 +11,16 @@ import numpy
 import pandas
 from sklearn.preprocessing import MinMaxScaler
 
+from src.common.experiment_config import load_dataset_ratios
 from src.data_split.front_trim_split import front_trim_split
+from src.data_split.validate_labels import validate_binary_labels
 from src.data_split.validation_split import validation_split
 
 
 TRAIN_FILENAMES = tuple(f"hai-train{session}.csv" for session in range(1, 5))
 TEST_FILENAMES = tuple(f"hai-test{session}.csv" for session in range(1, 3))
 LABEL_FILENAMES = tuple(f"label-test{session}.csv" for session in range(1, 3))
-ALLOWED_RATIO_PERCENTS = (10, 100)
+ALLOWED_RATIO_PERCENTS = load_dataset_ratios("HAI")
 
 
 def read_feature_names(csv_path: Path) -> tuple[str, ...]:
@@ -65,7 +67,8 @@ def read_test_session(
     features = test_frame.loc[:, feature_names].to_numpy(copy=False)
     if not numpy.isfinite(features).all():
         raise ValueError(f"센서 값에 결측 또는 비유한 값이 있다: {test_path.name}")
-    return features, label_frame["label"].to_numpy(copy=True)
+    labels = validate_binary_labels(label_frame["label"], len(features), label_path.name)
+    return features, labels
 
 
 def load_hai_sessions(
@@ -107,9 +110,9 @@ def load_hai_sessions(
     scaler = MinMaxScaler(copy=False)
     for train_part in train_sessions:
         scaler.partial_fit(train_part)
-    for train_part, validation_part in zip(train_sessions, validation_sessions):
-        scaler.transform(train_part)
-        scaler.transform(validation_part)
+    for index, (train_part, validation_part) in enumerate(zip(train_sessions, validation_sessions)):
+        train_sessions[index] = scaler.transform(train_part)
+        validation_sessions[index] = scaler.transform(validation_part)
 
     test_sessions = []
     test_labels = []
@@ -119,8 +122,7 @@ def load_hai_sessions(
             dataset_dir / label_filename,
             feature_names,
         )
-        scaler.transform(test_part)
-        test_sessions.append(test_part)
+        test_sessions.append(scaler.transform(test_part))
         test_labels.append(labels)
 
     return {

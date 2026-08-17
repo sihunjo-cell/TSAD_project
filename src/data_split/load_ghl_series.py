@@ -12,14 +12,16 @@ import numpy
 import pandas
 from sklearn.preprocessing import MinMaxScaler
 
+from src.common.experiment_config import load_dataset_ratios
 from src.data_split.back_trim_split import back_trim_split
 from src.data_split.front_trim_split import front_trim_split
+from src.data_split.validate_labels import validate_binary_labels
 from src.data_split.validation_split import validation_split
 
 
 TRAIN_BOUNDARY_PATTERN = re.compile(r"_tr_(\d+)_")
-ALLOWED_RATIO_PERCENTS = (5, 10, 20, 50, 100)
-BACK_TRIM_RATIO_PERCENTS = (5, 20, 100)  # docs/plan_v4.md:213
+ALLOWED_RATIO_PERCENTS = load_dataset_ratios("GHL")
+BACK_TRIM_RATIO_PERCENTS = load_dataset_ratios("GHL", ratio_key="back_trim_ratios")
 
 
 def load_ghl_series(
@@ -51,6 +53,7 @@ def load_ghl_series(
     features = frame.loc[:, feature_names].to_numpy(dtype=numpy.float32)
     if not numpy.isfinite(features).all():
         raise ValueError(f"센서 값에 결측 또는 비유한 값이 있다: {csv_path.name}")
+    labels = validate_binary_labels(frame["Label"], len(frame), csv_path.name)
 
     train_boundary = int(boundary_match.group(1))
     if not 0 < train_boundary < len(frame):
@@ -71,9 +74,9 @@ def load_ghl_series(
     test_part = features[train_boundary:]
 
     scaler = MinMaxScaler(copy=False).fit(train_part)  # D-20; GraGOD data_processing.py:54-70
-    scaler.transform(train_part)
-    scaler.transform(validation_part)
-    scaler.transform(test_part)
+    train_part = scaler.transform(train_part)
+    validation_part = scaler.transform(validation_part)
+    test_part = scaler.transform(test_part)
 
     train_length = len(train_part)
     kept_start, kept_end = split_info["kept_index_range"]
@@ -82,7 +85,7 @@ def load_ghl_series(
         "train_sessions": (train_part,),
         "validation_sessions": (validation_part,),
         "test_sessions": (test_part,),
-        "test_labels": (frame["Label"].iloc[train_boundary:].to_numpy(copy=True),),
+        "test_labels": (labels[train_boundary:],),
         "session_splits": ({
             "source": csv_path.name,
             "original_train_range": (0, train_boundary),

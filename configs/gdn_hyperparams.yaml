@@ -30,3 +30,26 @@ train_params:
   seeds_by_dataset:
     GHL: [1, 2, 3]
     HAI: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+# 고정 GraGOD 포크의 내부값과 우리 러너의 validation 순서 계약이다.
+# 포크값은 hash로, validation_shuffle=false는 runner 테스트로 보증한다.
+# 근거: datasets/dataset.py:23-37, models/train.py:130-138,162-192,
+# gragod/training/trainer.py:119-138,206-219.
+fork_contract:
+  loss: mse
+  forecast_horizon: 1
+  n_workers: 0
+  validation_shuffle: false
+  optimizer: adam
+  scheduler:
+    name: reduce_lr_on_plateau
+    factor: 0.5
+    patience: 8
+    monitor: Loss/val
+  gradient_clip_val: 1.0
+
+analysis_arms:
+  GHL:
+    ratios: [10, 100]
+    notopk_model: GDN_NOTOPK
+    topk_values: [2, 5, 10]

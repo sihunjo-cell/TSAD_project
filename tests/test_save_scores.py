@@ -12,19 +12,19 @@ from src.common.save_scores import save_score_arrays, save_score_metadata, snaps
 
 class TestSaveScoreMetadata(unittest.TestCase):
     def test_sidecar_created_with_dryrun_settings(self):
-        # 드라이런과 같은 설정: window_size=8, test 200행 → 점수 길이 191.
+        # 1-step forecast: window_size=8, test 200행 → 점수 길이 192.
         with tempfile.TemporaryDirectory() as output_dir:
             path = save_score_metadata(
                 output_dir, dataset="SYNTH", series=0, model="GDN", tier="t0",
                 ratio=100, seed=1, window_size=8, test_length=200,
-                score_length=191, label_slice=(8, -1),
+                score_length=192, label_slice=(8, None),
             )
             self.assertEqual(os.path.basename(path),
                              "SYNTH__00__GDN__t0__r100__s1__raw__trainnorm.meta.json")
             with open(path, encoding="utf-8") as metadata_file:
                 metadata = json.load(metadata_file)
-            self.assertEqual(metadata["label_slice"], [8, -1])
-            self.assertEqual(metadata["score_length"], 191)
+            self.assertEqual(metadata["label_slice"], [8, None])
+            self.assertEqual(metadata["score_length"], 192)
 
 
 class TestSaveScoreArrays(unittest.TestCase):

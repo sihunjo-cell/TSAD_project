@@ -10,15 +10,13 @@ from fractions import Fraction
 
 import numpy
 
+from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
+
 # 허용 비율(계획서 7-1: 100/50/20/10/5%). Fraction 으로 두는 이유: float 곱의
 # 이진 반올림 먼지가 ceil 경계를 넘는 사고(예: 0.05*T 가 정수보다 1ulp 크게 계산)를
 # 원천 차단하기 위해 ceil(p*T)를 유리수 정확 연산으로 수행한다.
 ALLOWED_RATIO_FRACTIONS = {
-    0.05: Fraction(1, 20),
-    0.10: Fraction(1, 10),
-    0.20: Fraction(1, 5),
-    0.50: Fraction(1, 2),
-    1.00: Fraction(1, 1),
+    percent / 100: Fraction(percent, 100) for percent in SUPPORTED_RATIO_PERCENTS
 }
 
 

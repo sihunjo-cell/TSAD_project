@@ -27,7 +27,7 @@
 | 133 | `weights_arr = all_embeddings.detach().clone()` | (N, D) | (N, D) | 동일 |
 | 134 | `all_embeddings.repeat(batch_num, 1)` | (N, D) | (B·N, D) | repeat는 [0..N-1] 순서를 B번 이어붙임 → 행 b·N+n ↔ 노드 n — 117행의 x 행 배치와 일치 |
 | 137-143 | cos-sim 행렬 (learn_graph=True) | (N, D) | (N, N) | [i,j] = 노드 i·j embedding 유사도 |
-| 144 | `torch.topk(cos_ji_mat, k, dim=-1)[1]` | (N, N) | (N, k) | 행 i = 노드 i의 이웃 k개(자기 포함 — RECON [F]) |
+| 144 | `torch.topk(cos_ji_mat, k, dim=-1)[1]` | (N, N) | (N, k) | 행 i = 노드 i의 이웃 k개. 대각선을 가리지 않아 보통 self가 포함되지만 cosine 동률에서는 보장되지 않음(RECON [F]) |
 | 146-155 | gated_edge_index 구성 | (N, k) | (2, N·k) | [0]=j(출발), [1]=i(도착) |
 | 158-159 | learn_graph=False 분기 | — | (2, E) | 주입 그래프 그대로 |
 | 161-163 | 배치 확장 | (2, N·k) | (2, N·k·B) | 위와 동일한 오프셋 규칙 |

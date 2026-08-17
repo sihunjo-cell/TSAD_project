@@ -10,6 +10,15 @@ HAI-23.05/
 # 재생성 가능한 실행 산출물
 experiments/*/dryrun_out/
 experiments/*/training/
+experiments/*/runs/
+experiments/*/back_trim_runs/
+experiments/*/control_runs/
+experiments/*/back_trim_logs/
+experiments/*/control_logs/
+experiments/*/adjacency/
+experiments/exp03_gdn_hai_seed10/analysis/
+experiments/exp02_gdn_ghl/logs/failures.csv
+experiments/exp03_gdn_hai_seed10/logs/failures.csv
 lightning_logs/
 *.ckpt
 

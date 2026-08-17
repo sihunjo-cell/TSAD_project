@@ -21,6 +21,9 @@ from experiments.exp02_gdn_ghl.check_completeness import (
 )
 from src.data_split.load_ghl_series import load_ghl_series
 from src.gdn_runner.run_gdn_single import run_gdn_sessions
+from src.common.run_completion import clear_completion_marker, write_completion_marker
+from src.common.verify_input_files import verify_input_file_state, verify_input_files
+from src.common.verify_run_context import verify_run_context
 
 
 def build_run_config(series: int, ratio: int) -> dict:
@@ -34,6 +37,7 @@ def build_run_config(series: int, ratio: int) -> dict:
         "fork_path": str(REPOSITORY_ROOT.parent / "gragod-fork"),
         "model_params": model_params,
         "train_params": train_params,
+        "fork_contract": hyperparameters["fork_contract"],
         "naming": {"dataset": "GHL", "series": series, "tier": "t2", "ratio": ratio},
     }  # GraGOD models/train.py:143-145의 모델 인자 보강은 공통 러너가 맡는다.
 
@@ -83,6 +87,8 @@ def run_batch(
     input_loader=load_inputs,
     model_runner=run_gdn_sessions,
     trim_direction="front",
+    input_verifier=verify_input_files,
+    context_verifier=verify_run_context,
 ) -> dict:
     experiment_dir = Path(experiment_dir or Path(__file__).resolve().parent)
     data_dir = Path(data_dir or REPOSITORY_ROOT.parent / "shared_data" / "TSAD_project" / "TSB-AD-M")
@@ -96,38 +102,58 @@ def run_batch(
         )
     else:
         raise ValueError(f"trim_direction은 front 또는 back이어야 한다: {trim_direction}")
-    specs = spec_builder() if specs is None else specs
-    counts = {"completed": 0, "skipped": 0, "failed": 0}
+    specs = list(spec_builder() if specs is None else specs)
+    expected_git_hashes = context_verifier(
+        REPOSITORY_ROOT, REPOSITORY_ROOT.parent / "gragod-fork",
+    )
+    pending_specs = [
+        spec for spec in specs
+        if not completeness_checker(
+            experiment_dir, spec, expected_git_hashes=expected_git_hashes,
+        )
+    ]
+    counts = {"completed": 0, "skipped": len(specs) - len(pending_specs), "failed": 0}
+    if not pending_specs:
+        return counts
+    input_files = input_verifier("GHL", data_dir)
     cached_key = None
     cached_inputs = None
 
-    for spec in specs:
-        if completeness_checker(experiment_dir, spec):
-            counts["skipped"] += 1
-            continue
+    for spec in pending_specs:
         series, ratio, seed = spec
         config = build_run_config(series, ratio)
         config["trim_direction"] = trim_direction
+        run_dir = directory_builder(experiment_dir, spec)
+        clear_completion_marker(run_dir)
         try:
             if cached_key != (series, ratio):
+                verify_input_file_state(data_dir, input_files)
                 cached_inputs = input_loader(
                     data_dir, series, ratio, config, trim_direction=trim_direction,
                 )
+                verify_input_file_state(data_dir, input_files)
                 cached_key = (series, ratio)
             model_runner(
                 config=config,
                 train_sessions=cached_inputs["train_sessions"],
                 validation_sessions=cached_inputs["validation_sessions"],
                 test_sessions=cached_inputs["test_sessions"],
-                output_dir=str(directory_builder(experiment_dir, spec)),
+                output_dir=str(run_dir),
                 seed=seed,
                 input_metadata={
                     "path": str(data_dir.resolve()),
                     "feature_names": cached_inputs["feature_names"],
                     "session_splits": cached_inputs["session_splits"],
+                    "files": tuple(
+                        item for item in input_files
+                        if item["name"] == cached_inputs["session_splits"][0]["source"]
+                    ),
                 },
             )
-            if not completeness_checker(experiment_dir, spec):
+            write_completion_marker(run_dir)
+            if not completeness_checker(
+                experiment_dir, spec, expected_git_hashes=expected_git_hashes,
+            ):
                 raise RuntimeError("실행이 끝났지만 필수 산출물이 빠졌다")
             counts["completed"] += 1
         except Exception as error:

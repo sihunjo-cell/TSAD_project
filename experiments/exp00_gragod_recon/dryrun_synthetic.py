@@ -34,6 +34,15 @@ DRYRUN_CONFIG = {
         "early_stop_delta": 0.0001, "val_size": 0.1, "min_train_length": 10,
         "shuffle": True, "log_every_n_steps": 1, "n_workers": 0,
     },
+    "fork_contract": {
+        "loss": "mse", "forecast_horizon": 1, "n_workers": 0,
+        "validation_shuffle": False, "optimizer": "adam",
+        "scheduler": {
+            "name": "reduce_lr_on_plateau", "factor": 0.5,
+            "patience": 8, "monitor": "Loss/val",
+        },
+        "gradient_clip_val": 1.0,
+    },
 }
 DRYRUN_SEED = 1
 
@@ -80,7 +89,7 @@ def run_dryrun() -> None:
         Path(path).exists() for path in result["score_paths"])
     check("a. 규약 이름 산출 파일 trainnorm 4벌 + testnorm 4벌", all_files_exist)
 
-    expected_score_length = len(test_array) - DRYRUN_CONFIG["model_params"]["window_size"] - 1
+    expected_score_length = len(test_array) - DRYRUN_CONFIG["model_params"]["window_size"]
     score_shapes_match = all_files_exist and all(
         (score_array := numpy.load(path)).shape == (
             (expected_score_length, test_array.shape[1])
@@ -100,7 +109,7 @@ def run_dryrun() -> None:
         "window_size": DRYRUN_CONFIG["model_params"]["window_size"],
         "test_length": len(test_array),
         "score_length": expected_score_length,
-        "label_slice": [DRYRUN_CONFIG["model_params"]["window_size"], -1],
+        "label_slice": [DRYRUN_CONFIG["model_params"]["window_size"], None],
     })
 
     with open(result["snapshot_path"], encoding="utf-8") as snapshot_file:
@@ -118,9 +127,19 @@ def run_dryrun() -> None:
     early_log = json.loads(early_log_path.read_text(encoding="utf-8")) if early_log_path.exists() else {}
     check("f. early stopping 스텝 로그 존재", "stopped_epoch" in early_log and "best_score" in early_log)
 
+    timing_path = Path(result["timing_path"])
+    timing = json.loads(timing_path.read_text(encoding="utf-8")) if timing_path.exists() else {}
+    timing_fields = (
+        "training_seconds", "train_reference_inference_seconds", "test_inference_seconds",
+    )
+    check("g. 실행 장치와 학습·기준오차·테스트 추론 시간 존재", set(timing) == {
+        "accelerator", *timing_fields,
+    } and timing["accelerator"] in {"cpu", "cuda"}
+        and all(timing[field] >= 0 for field in timing_fields))
+
     edges_with_self, edges_without_self = extract_best_adjacency(
         result["best_checkpoint_path"], topk=DRYRUN_CONFIG["model_params"]["topk"])
-    check("g. extract_best_adjacency가 best.ckpt에서 edge 집합 반환",
+    check("h. extract_best_adjacency가 best.ckpt에서 edge 집합 반환",
           len(edges_with_self) == 5 * 2 and len(edges_without_self) > 0)
 
     print(f"\n산출 파일 목록 ({len(result['score_paths'])}개):")

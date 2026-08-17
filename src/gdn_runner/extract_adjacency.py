@@ -16,10 +16,16 @@ def extract_best_adjacency(checkpoint_path: str, topk: int) -> tuple[set, set]:
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     # GDN_PLModule 은 GDN 을 self.model 로 들고 있으므로 키가 "model." 접두 (trainer.py:41)
     embedding_weight = checkpoint["state_dict"]["model.embedding.weight"]
+    if embedding_weight.ndim != 2 or not torch.isfinite(embedding_weight).all():
+        raise ValueError("GDN embedding은 유한한 2차원 배열이어야 한다")
+    if not 1 <= topk <= embedding_weight.shape[0]:
+        raise ValueError(f"topk는 1~채널 수 범위여야 한다: {topk}")
 
     # 이하 model.py:139-144 재현: cos-sim 행렬 → topk 이웃 인덱스
     cos_similarity = torch.matmul(embedding_weight, embedding_weight.T)
     norms = embedding_weight.norm(dim=-1)
+    if torch.any(norms == 0):
+        raise ValueError("GDN embedding norm이 0이면 cosine graph를 정의할 수 없다")
     cos_similarity = cos_similarity / torch.matmul(norms.view(-1, 1), norms.view(1, -1))
     topk_indices = torch.topk(cos_similarity, topk, dim=-1)[1]
 

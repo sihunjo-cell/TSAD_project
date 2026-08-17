@@ -16,8 +16,8 @@ epsilon·smoothing 창은 configs/scoring_pipeline.yaml 소유(D-07). topk 는 �
 """
 
 import json
-import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +29,12 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.common.normalization import apply_median_iqr, estimate_median_iqr
 from src.common.save_scores import save_score_arrays, save_score_metadata, snapshot_config
+from src.common.experiment_config import validate_fork_contract, validate_pipeline_contract
+from src.common.verify_run_context import (
+    verify_git_hashes_unchanged,
+    verify_run_context,
+    verify_runtime_versions,
+)
 from src.data_split.validation_split import validation_split
 
 
@@ -73,39 +79,33 @@ def load_gdn_dependencies(fork_path: str) -> SimpleNamespace:
     )
 
 
-def read_git_hash(repository_dir) -> str:
-    repository_dir = Path(repository_dir).resolve()
-    try:
-        return subprocess.run(
-            ["git", "-c", f"safe.directory={repository_dir}", "rev-parse", "HEAD"],
-            capture_output=True, text=True,
-            cwd=repository_dir, check=True,
-        ).stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return "unknown(커밋 없음)"
-
-
 def compute_absolute_errors(
     lightning_module, series_tensor, edge_index, window_size, batch_size, device, dependencies,
 ):
-    """한 구간의 채널별 절대 오차 (n, n_features) — models/predict.py:55-68·121-139 절차.
+    """한 구간의 1-step forecast 절대 오차 `(L-W, n_features)`를 계산한다.
 
-    post_process_scores 는 호출하지 않는다(D-05·D-06) — |오차|(model.py:313-316)까지만.
+    GraGOD datasets/dataset.py:47-50,71-77은 `L-W`개 예측을 만든다.
+    model.py:307-316은 reconstruction 설명을 따라 마지막 forecast까지 버리므로 쓰지 않는다.
     """
-    X_true = series_tensor  # start_index = window_size(최솟값) → 그대로 (predict.py:121-124)
-    loader = dependencies.get_data_loader(  # 포크 predict.py:127-136과 동일 인자 구성
-        X=X_true, edge_index=edge_index, y=dependencies.torch.zeros(X_true.shape[0]),
+    loader = dependencies.get_data_loader(
+        X=series_tensor, edge_index=edge_index,
+        y=dependencies.torch.zeros(series_tensor.shape[0]),
         window_size=window_size, clean=dependencies.CleanMethods.NONE,
         batch_size=batch_size, n_workers=0, shuffle=False,
     )
-    X_true = X_true[window_size:-1, :]  # predict.py:139
 
-    predict_trainer = dependencies.PredictionTrainer(  # predict.py:55 상당
+    predict_trainer = dependencies.PredictionTrainer(
         accelerator=device, logger=False, enable_checkpointing=False, enable_progress_bar=False,
     )
     output = predict_trainer.predict(lightning_module, loader)
-    errors = lightning_module.calculate_anomaly_score(predict_output=output, X_true=X_true)
-    return errors.detach().cpu().numpy()
+    predictions = dependencies.torch.cat(output)
+    truth = series_tensor[window_size:]
+    if predictions.shape != truth.shape:
+        raise ValueError(f"GDN forecast와 정답 shape가 다르다: {predictions.shape} != {truth.shape}")
+    errors = dependencies.torch.abs(predictions - truth).detach().cpu().numpy()
+    if not numpy.isfinite(errors).all():
+        raise ValueError("GDN forecast 절대 오차는 모두 유한해야 한다")
+    return errors
 
 
 def build_session_loader(
@@ -179,18 +179,68 @@ def run_gdn_sessions(
     all_sessions = train_sessions + validation_sessions + test_sessions
     if any(session.ndim != 2 or session.shape[1] != feature_count for session in all_sessions):
         raise ValueError("모든 세션은 같은 feature 수를 가진 2차원 배열이어야 한다")
+    if any(not numpy.isfinite(session).all() for session in all_sessions):
+        raise ValueError("모든 세션 값은 유한해야 한다")
+    window_size = config["model_params"]["window_size"]
+    if any(len(session) < window_size + 1 for session in all_sessions):
+        raise ValueError(f"모든 세션 길이는 window_size+1={window_size + 1} 이상이어야 한다")
 
     naming = config["naming"]
     series_value = naming["series"]
     test_series = (series_value,) if isinstance(series_value, int) else tuple(series_value)
     if len(test_series) != len(test_sessions):
         raise ValueError("naming.series 수와 test 세션 수가 다르다")
+    if naming["dataset"] in {"GHL", "HAI"}:
+        files = input_metadata.get("files") if isinstance(input_metadata, dict) else None
+        if not isinstance(files, (list, tuple)) or not files:
+            raise ValueError("GHL·HAI 실행의 input_metadata.files가 비었거나 없다")
+        for file in files:
+            if (
+                not isinstance(file, dict)
+                or not isinstance(file.get("name"), str)
+                or not file["name"]
+                or not isinstance(file.get("size_bytes"), int)
+                or file["size_bytes"] < 0
+            ):
+                raise ValueError("input_metadata.files의 name·size_bytes 형식이 잘못됐다")
+            sha256 = file.get("sha256")
+            if (
+                not isinstance(sha256, str)
+                or len(sha256) != 64
+                or any(character not in "0123456789abcdef" for character in sha256)
+            ):
+                raise ValueError("input_metadata.files의 SHA-256 형식이 잘못됐다")
 
     fork_path = str(config["fork_path"])
+    git_hashes = verify_run_context(REPOSITORY_ROOT, fork_path)
+    with open(REPOSITORY_ROOT / "configs" / "scoring_pipeline.yaml", encoding="utf-8") as scoring_file:
+        scoring_config = yaml.safe_load(scoring_file)
+    with open(REPOSITORY_ROOT / "configs" / "data_preprocessing.yaml", encoding="utf-8") as preprocessing_file:
+        preprocessing_config = yaml.safe_load(preprocessing_file)
+    with open(REPOSITORY_ROOT / "configs" / "environment.yaml", encoding="utf-8") as environment_file:
+        environment_config = yaml.safe_load(environment_file)
+    validate_pipeline_contract(
+        scoring_config, preprocessing_config, naming["dataset"], feature_count,
+    )
+    validate_fork_contract(config["fork_contract"])
+    runtime_versions = verify_runtime_versions(environment_config)
+    output_dir = Path(output_dir)
+    snapshot_path = snapshot_config(
+        {"run_config": config,
+         "data_preprocessing": preprocessing_config,
+         "scoring_pipeline": scoring_config,
+         "environment": environment_config,
+         "runtime_versions": runtime_versions,
+         "input": input_metadata,
+         "seed": seed,
+         "git_hashes": git_hashes},
+        git_hash=git_hashes["tsad_project"],
+        output_dir=str(output_dir / "snapshots"),
+    )
+
     dependencies = load_gdn_dependencies(fork_path)
     dependencies.set_seeds(seed)  # D-11: train.py:223의 42 하드코딩은 실행되지 않는다
     device = dependencies.set_device()
-    output_dir = Path(output_dir)
     train_params = config["train_params"]
     train_tensors = tuple(
         dependencies.torch.tensor(session, dtype=dependencies.torch.float32)
@@ -209,7 +259,6 @@ def run_gdn_sessions(
     edge_index = dependencies.build_fully_connected_edge_index(train_tensors[0], device)
 
     model_params = dict(config["model_params"])
-    window_size = model_params["window_size"]
     model_params["edge_index"] = [edge_index]  # train.py:143-145
     model_params["n_features"] = feature_count
     model_params["out_dim"] = feature_count
@@ -222,7 +271,9 @@ def run_gdn_sessions(
         dependencies=dependencies,
     )
     train_loader = build_session_loader(train_tensors, **loader_arguments)
-    val_loader = build_session_loader(validation_tensors, **loader_arguments)
+    val_loader = build_session_loader(
+        validation_tensors, **{**loader_arguments, "shuffle": False},
+    )
 
     model_class, module_class = dependencies.get_model_and_module(dependencies.Models.GDN)  # train.py:141
     logger = dependencies.TensorBoardLogger(  # train.py:147-149
@@ -248,7 +299,9 @@ def run_gdn_sessions(
         weight_decay=train_params["weight_decay"], eps=train_params["eps"],
         betas=tuple(train_params["betas"]),
     )
+    training_started = time.perf_counter()
     trainer.fit(train_loader, val_loader, args_summary={"seed": seed})  # train.py:204
+    training_seconds = time.perf_counter() - training_started
 
     # best.ckpt — 경로 규칙 대신 콜백 속성으로 취득 (ORCHESTRATION.md)
     best_checkpoint_path = callback_dict["checkpoint"].best_model_path
@@ -259,6 +312,7 @@ def run_gdn_sessions(
     error_arguments = dict(edge_index=edge_index, window_size=window_size,
                            batch_size=train_params["batch_size"], device=device,
                            dependencies=dependencies)
+    train_reference_started = time.perf_counter()
     train_val_errors = numpy.concatenate([
         compute_absolute_errors(
             best_module,
@@ -267,15 +321,22 @@ def run_gdn_sessions(
         )
         for train_tensor, validation_tensor in zip(train_tensors, validation_tensors)
     ])
+    train_reference_inference_seconds = time.perf_counter() - train_reference_started
+    test_inference_started = time.perf_counter()
     test_errors_by_session = [
         compute_absolute_errors(best_module, test_tensor, **error_arguments)
         for test_tensor in test_tensors
     ]
+    test_inference_seconds = time.perf_counter() - test_inference_started
+    timing_path = output_dir / "timing.json"
+    with timing_path.open("w", encoding="utf-8") as timing_file:
+        json.dump({
+            "accelerator": device,
+            "training_seconds": training_seconds,
+            "train_reference_inference_seconds": train_reference_inference_seconds,
+            "test_inference_seconds": test_inference_seconds,
+        }, timing_file, ensure_ascii=False, indent=2)
 
-    with open(REPOSITORY_ROOT / "configs" / "scoring_pipeline.yaml", encoding="utf-8") as scoring_file:
-        scoring_config = yaml.safe_load(scoring_file)
-    with open(REPOSITORY_ROOT / "configs" / "data_preprocessing.yaml", encoding="utf-8") as preprocessing_file:
-        preprocessing_config = yaml.safe_load(preprocessing_file)
     epsilon = scoring_config["normalization"]["epsilon"]  # D-07
     smoothing_window = scoring_config["smoothing"]["window"]  # D-04
 
@@ -287,7 +348,7 @@ def run_gdn_sessions(
     metadata_paths = []
     for series, test_tensor, test_errors in zip(test_series, test_tensors, test_errors_by_session):
         naming_arguments = dict(
-            dataset=naming["dataset"], series=series, model="GDN",
+            dataset=naming["dataset"], series=series, model=naming.get("model", "GDN"),
             tier=naming["tier"], ratio=naming["ratio"], seed=seed,
         )
         score_paths.extend(save_score_arrays(
@@ -308,7 +369,7 @@ def run_gdn_sessions(
             window_size=window_size,
             test_length=int(test_tensor.shape[0]),
             score_length=int(test_errors.shape[0]),
-            label_slice=(window_size, -1),
+            label_slice=(window_size, None),
             **naming_arguments,
         ))  # docs/score_interface.md (i)
 
@@ -325,24 +386,14 @@ def run_gdn_sessions(
             "max_epochs": train_params["n_epochs"],
         }, log_file, ensure_ascii=False, indent=2)
 
-    # 스냅숏: 실행에 쓰인 config 전체 + 입력 출처 + 두 저장소 git hash (AGENTS.md 재현성)
-    snapshot_path = snapshot_config(
-        {"run_config": config,
-         "data_preprocessing": preprocessing_config,
-         "scoring_pipeline": scoring_config,
-         "input": input_metadata,
-         "seed": seed,
-         "git_hashes": {"tsad_project": read_git_hash(REPOSITORY_ROOT),
-                        "gragod_fork": read_git_hash(fork_path)}},
-        git_hash=read_git_hash(REPOSITORY_ROOT),
-        output_dir=str(output_dir / "snapshots"),
-    )
+    verify_git_hashes_unchanged(git_hashes, REPOSITORY_ROOT, fork_path)
 
     result = {
         "score_paths": score_paths,
         "metadata_paths": tuple(metadata_paths),
         "best_checkpoint_path": best_checkpoint_path,
         "early_stopping_log_path": str(early_stopping_log_path),
+        "timing_path": str(timing_path),
         "snapshot_path": snapshot_path,
     }
     if len(metadata_paths) == 1:

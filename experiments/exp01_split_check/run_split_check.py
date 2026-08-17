@@ -1,6 +1,6 @@
 """exp01 — 분할 모듈 검증표 생성 (장난감 배열 전용, 실제 데이터셋 로드 없음).
 
-근거: docs/plan_v4.md 7-1(216행)·7-2(218행), DECISIONS D-11(스냅숏은 CLAUDE.md 재현성).
+근거: docs/plan_v4.md 7-1(216행)·7-2(218행), DECISIONS D-11(스냅숏은 AGENTS.md 재현성).
 front/back × 5비율 전부와 validation_split 결과를 표로 만들어
 logs/split_check_table.txt 에 저장하고 화면에도 출력한다.
 """
@@ -91,7 +91,7 @@ def run_split_check() -> None:
     logs_dir.mkdir(exist_ok=True)
     (logs_dir / "split_check_table.txt").write_text(table_text + "\n", encoding="utf-8")
 
-    snapshot_config(  # CLAUDE.md 재현성: 실행 config + git hash 를 snapshots/ 에 저장
+    snapshot_config(  # AGENTS.md 재현성: 실행 config + git hash 를 snapshots/ 에 저장
         {"ratios": RATIOS, "toy_lengths": [20, 19, 100], "min_train_length_example": 10},
         read_git_hash(),
         str(EXPERIMENT_DIR / "snapshots"),

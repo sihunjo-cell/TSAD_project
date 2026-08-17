@@ -223,7 +223,8 @@ def build_ratio_feasibility_rows(
             # GraGOD, datasets/dataset.py:71-77 — window 수 = 구간 길이 - W.
             train_window_count = model_train_length - window_size
             validation_window_count = validation_length - window_size
-            normalization_sample_count = kept_length - window_size - 1
+            # D-34: 1-step forecast 전체를 써서 정규화 표본은 L-W개다.
+            normalization_sample_count = kept_length - window_size
             rows.append({
                 "series": series,
                 "ratio": ratio,
@@ -368,9 +369,9 @@ def run_ghl_preflight() -> None:
 
 ## 착수 판단
 
-GHL 파일 로더와 배치 러너는 지금 작성해도 된다. 실제 입력 계약은 25개, 19채널, 마지막 열 `Label`, 파일명의 `tr_` 값을 경계로 쓰는 형태로 고정됐다. 가장 짧은 series 12도 5% 조건에서 W=155일 때 train 윈도 {int(ratio_frame.query("series == 12 and ratio == 0.05 and window_size == 155")['train_window_count'].iloc[0]):,}개, validation 윈도 {int(ratio_frame.query("series == 12 and ratio == 0.05 and window_size == 155")['validation_window_count'].iloc[0]):,}개가 남는다. 비율별 정규화 통계는 해당 비율의 학습 구간에서 다시 추정하고, 5%·10%에서 멈춘 채널을 임의로 삭제하지 않는다.
+GHL 파일 로더와 배치 러너는 지금 작성해도 된다. 실제 입력 계약은 25개, 19채널, 마지막 열 `Label`, 파일명의 `tr_` 값을 경계로 쓰는 형태로 고정됐다. 가장 짧은 series 12도 5% 조건에서 W=155일 때 train 윈도 {int(ratio_frame.query("series == 12 and ratio == 0.05 and window_size == 155")['train_window_count'].iloc[0]):,}개, validation 윈도 {int(ratio_frame.query("series == 12 and ratio == 0.05 and window_size == 155")['validation_window_count'].iloc[0]):,}개, 정규화 표본 {int(ratio_frame.query("series == 12 and ratio == 0.05 and window_size == 155")['normalization_sample_count'].iloc[0]):,}개가 남는다. 비율별 정규화 통계는 해당 비율의 학습 구간에서 다시 추정하고, 5%·10%에서 멈춘 채널을 임의로 삭제하지 않는다.
 
-강혁님의 산출물에서 데이터 버전·파일 경계·채널 구성이 다르거나, 가동 초기 안정화 구간 제거와 다운샘플링에 훈련 데이터 직접 근거가 있으면 치명적 변경으로 본다. 이때는 같은 스크립트를 다시 돌려 비율 역할까지 고친다. 현재는 D-20에 따라 다운샘플 배율 1과 초기 절단 0포인트로 고정했다. 아직 확정하지 않은 값은 최종 W와 나머지 GDN 하이퍼파라미터다.
+강혁님의 산출물에서 데이터 버전·파일 경계·채널 구성이 다르거나, 가동 초기 안정화 구간 제거와 다운샘플링에 훈련 데이터 직접 근거가 있으면 치명적 변경으로 본다. 이때는 같은 스크립트를 다시 돌려 비율 역할까지 고친다. 현재는 D-20에 따라 다운샘플 배율 1과 초기 절단 0포인트로 고정했다. 이 분석 당시 미확정이던 W와 GDN 실행값은 이후 D-22에서 W=5와 공통 하이퍼파라미터로 확정했다.
 """
     (EXPERIMENT_DIR / "ANALYSIS.md").write_text(report, encoding="utf-8")
 
