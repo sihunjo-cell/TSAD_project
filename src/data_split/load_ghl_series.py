@@ -1,8 +1,6 @@
 """GHL CSV 한 파일을 GDN용 train·validation·test 세션으로 읽는다.
 
-근거: TheDatumOrg/TSB-AD `Datasets/File_List/TSB-AD-M.csv:33-57`,
-`docs/manifest_draft.md` GHL 절, D-20. 파일명의 `tr_` 값이 원 학습 경계이며
-센서 19열만 모델 입력으로 쓴다.
+파일명의 `tr_` 값이 원 학습 경계이며 센서 19열만 모델 입력으로 쓴다.
 """
 
 import re
@@ -13,15 +11,13 @@ import pandas
 from sklearn.preprocessing import MinMaxScaler
 
 from src.common.experiment_config import load_dataset_ratios
-from src.data_split.back_trim_split import back_trim_split
-from src.data_split.front_trim_split import front_trim_split
+from src.data_split.take_training_prefix import take_training_prefix
 from src.data_split.validate_labels import validate_binary_labels
 from src.data_split.validation_split import validation_split
 
 
 TRAIN_BOUNDARY_PATTERN = re.compile(r"_tr_(\d+)_")
 ALLOWED_RATIO_PERCENTS = load_dataset_ratios("GHL")
-BACK_TRIM_RATIO_PERCENTS = load_dataset_ratios("GHL", ratio_key="back_trim_ratios")
 
 
 def load_ghl_series(
@@ -29,15 +25,10 @@ def load_ghl_series(
     ratio_percent: int,
     val_fraction: float,
     min_train_length: int,
-    trim_direction: str = "front",
 ) -> dict:
-    """GHL 한 시계열을 지정한 방향으로 자르고 train 부분에만 scaler를 fit한다."""
+    """GHL 학습 구간의 앞쪽 누적분을 남기고 train 부분에만 scaler를 fit한다."""
     if ratio_percent not in ALLOWED_RATIO_PERCENTS:
         raise ValueError(f"GHL ratio는 {ALLOWED_RATIO_PERCENTS}만 허용한다: {ratio_percent}")
-    if trim_direction == "back" and ratio_percent not in BACK_TRIM_RATIO_PERCENTS:
-        raise ValueError(
-            f"GHL back trim ratio는 {BACK_TRIM_RATIO_PERCENTS}만 허용한다: {ratio_percent}"
-        )
     csv_path = Path(csv_path)
     boundary_match = TRAIN_BOUNDARY_PATTERN.search(csv_path.name)
     if boundary_match is None:
@@ -59,21 +50,18 @@ def load_ghl_series(
     if not 0 < train_boundary < len(frame):
         raise ValueError(f"tr_ 경계가 행 범위를 벗어났다: {train_boundary}/{len(frame)}")
 
-    splitters = {"front": front_trim_split, "back": back_trim_split}
-    if trim_direction not in splitters:
-        raise ValueError(f"trim_direction은 front 또는 back이어야 한다: {trim_direction}")
-    reduced_train, split_info = splitters[trim_direction](
+    training_prefix, split_info = take_training_prefix(
         features[:train_boundary], ratio_percent / 100,
     )
     train_part, validation_part = validation_split(
-        reduced_train,
+        training_prefix,
         val_fraction=val_fraction,
         min_train_length=min_train_length,
         split_info=split_info,
     )
     test_part = features[train_boundary:]
 
-    scaler = MinMaxScaler(copy=False).fit(train_part)  # D-20; GraGOD data_processing.py:54-70
+    scaler = MinMaxScaler(copy=False).fit(train_part)
     train_part = scaler.transform(train_part)
     validation_part = scaler.transform(validation_part)
     test_part = scaler.transform(test_part)

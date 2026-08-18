@@ -90,7 +90,6 @@ def validate_pipeline_contract(
     })
     require_values(preprocessing, {
         "common.downsample_factor": 1,
-        "common.initial_trim_points": 0,
         "common.timestamp_as_feature": False,
         "common.label_as_feature": False,
         "common.label_aggregation": None,

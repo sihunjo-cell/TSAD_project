@@ -1,5 +1,5 @@
-# 고정 실행 환경. 근거: RECON [H], DECISIONS.md D-10·D-13,
-# experiments/exp00_gragod_recon/PATCH_REVERIFY.md [1].
+# 고정 실행 환경. 근거는 docs/lead/decisions.md와
+# docs/lead/process_0_preverify.md에 정리했다.
 # conda env 이름: tsad_fixed. torch build suffix는 장치에 맞추되 공개 버전은 같다.
 
 python: "3.10.20"
@@ -23,5 +23,5 @@ accelerator:
   experiment: cpu_or_cuda
 
 # torch-geometric 선정과 pytorch-lightning 설치 근거는
-# experiments/exp00_gragod_recon/PATCH_REVERIFY.md [1]에 있다.
-# D-13의 torch 2.10 스크래치 판정은 이 환경 계약에 포함하지 않는다.
+# docs/lead/process_0_preverify.md에 요약했다.
+# 별도 scratch 환경에서 확인한 torch 2.10은 이 환경 계약에 포함하지 않는다.

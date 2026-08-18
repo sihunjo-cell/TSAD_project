@@ -1,8 +1,7 @@
 """HAI 23.05의 train 4세션과 test 2세션을 GDN 입력으로 읽는다.
 
-근거: icsdataset/hai `README.md:229-264,284-294`, `docs/manifest_draft.md`
-HAI 절, D-17·D-20·D-21. CSV 한 파일이 연속 세션 하나이며 파일 사이에는
-window를 만들지 않는다. timestamp를 빼면 센서 86열이다.
+CSV 한 파일을 연속 세션 하나로 보며 파일 사이에는 window를 만들지 않는다.
+timestamp를 빼면 센서 86열이다.
 """
 
 from pathlib import Path
@@ -12,7 +11,7 @@ import pandas
 from sklearn.preprocessing import MinMaxScaler
 
 from src.common.experiment_config import load_dataset_ratios
-from src.data_split.front_trim_split import front_trim_split
+from src.data_split.take_training_prefix import take_training_prefix
 from src.data_split.validate_labels import validate_binary_labels
 from src.data_split.validation_split import validation_split
 
@@ -88,9 +87,9 @@ def load_hai_sessions(
 
     for filename in TRAIN_FILENAMES:
         features = read_feature_array(dataset_dir / filename, feature_names)
-        reduced_train, split_info = front_trim_split(features, ratio_percent / 100)
+        training_prefix, split_info = take_training_prefix(features, ratio_percent / 100)
         train_part, validation_part = validation_split(
-            reduced_train,
+            training_prefix,
             val_fraction=val_fraction,
             min_train_length=min_train_length,
             split_info=split_info,
@@ -105,8 +104,7 @@ def load_hai_sessions(
             "validation_range": (len(train_part), split_info["kept_length"]),
         })
 
-    # partial_fit은 네 train 부분을 연결해 fit한 MinMaxScaler와 같은 min·max를 얻고
-    # 큰 HAI 배열의 임시 연결 복사본을 만들지 않는다(D-20).
+    # partial_fit으로 네 세션을 복사 없이 같은 범위에 맞춘다.
     scaler = MinMaxScaler(copy=False)
     for train_part in train_sessions:
         scaler.partial_fit(train_part)
