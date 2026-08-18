@@ -1,0 +1,39 @@
+{
+  "saved_at": "2026-08-19T01:47:02",
+  "git_commit_hash": "b2c92210e6bd8de0879744973c2f08086af88a5f",
+  "config": {
+    "data_dir": "C:\\Users\\simon\\time_series\\shared_data\\TSAD_project\\HAI-23.05",
+    "files": [
+      {
+        "file_name": "hai-train1.csv",
+        "sha256": "53007b0ba604fbf338e7ac2e08cd81d874b5d1388f3aecb213ddcba5bf2bec4a"
+      },
+      {
+        "file_name": "hai-train2.csv",
+        "sha256": "0e520e82bf78a661ab19ce4967f3c766bd809820f457a9c90c365102d4534c56"
+      },
+      {
+        "file_name": "hai-train3.csv",
+        "sha256": "bfcec2dc05adea103e7491546b0e28268faaa26d3cc717d10f4595c94b81e85d"
+      },
+      {
+        "file_name": "hai-train4.csv",
+        "sha256": "56658c83657d42a65db982b864362e0d0ffeb96d1f7b357d5e76e3a5c522d940"
+      }
+    ],
+    "ratios": [
+      0.1,
+      1.0
+    ],
+    "validation_fraction": 0.1,
+    "current_window_sizes": [
+      5
+    ],
+    "expected_feature_count": 86,
+    "test_files_read": false,
+    "metrics": [
+      "channel_activity",
+      "corpus_channel_activity"
+    ]
+  }
+}

@@ -1,11 +1,11 @@
-"""점수 배열 파일명 생성·역파싱.
+"""점수 배열 파일명을 생성하고 역파싱한다.
 
-근거: CLAUDE.md 파일명 규약 — D-15 확장형 + D-16 __channels 보조 산출물.
-{dataset}__{series}__{model}__{tier}__r{ratio}__s{seed}__{raw|smoothed}__{trainnorm|testnorm}(__channels).npy
-series 두 자리, ratio 세 자리(005/010/020/050/100) 제로 패딩.
+series는 두 자리, ratio는 세 자리로 채우며 채널별 보조 배열은 `__channels`를 붙인다.
 """
 
-ALLOWED_RATIO_PERCENTS = (5, 10, 20, 50, 100)
+from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS as ALLOWED_RATIO_PERCENTS
+
+
 ALLOWED_SMOOTHING_KINDS = ("raw", "smoothed")
 ALLOWED_NORM_KINDS = ("trainnorm", "testnorm")
 

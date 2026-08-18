@@ -1,10 +1,7 @@
-"""채널별 median·IQR 정규화.
+"""채널별 점수를 `(score - median) / (|IQR| + epsilon)`으로 정규화한다.
 
-근거: DECISIONS D-06 — 통계는 학습/검증 구간에서만 추정해 테스트 점수에
-적용한다(추정과 적용을 함수로 분리한 이유). D-07 — epsilon 값(1e-2)은
-configs/scoring_pipeline.yaml 소유이므로 이 모듈에 기본값을 두지 않는다.
-수식은 RECON [D]의 d-ailin/GDN(main, 9853899d) evaluate.py:58-60 방식:
-(delta - median) / (|iqr| + epsilon).
+통계 추정과 적용을 분리해 학습·validation 통계만 테스트 점수에 쓰도록 한다. epsilon은
+설정에서 받아 기본값을 두지 않는다.
 """
 
 import numpy
@@ -24,6 +21,6 @@ def apply_median_iqr(
     iqr: numpy.ndarray,
     epsilon: float,
 ) -> numpy.ndarray:
-    """추정해 둔 (median, iqr)로 점수를 정규화한다. epsilon 기본값 없음(D-07)."""
+    """추정해 둔 `(median, iqr)`로 점수를 정규화한다."""
     scores = numpy.asarray(scores, dtype=float)
     return (scores - median) / (numpy.abs(iqr) + epsilon)

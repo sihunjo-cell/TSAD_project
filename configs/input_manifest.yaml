@@ -1,0 +1,107 @@
+# 실행 입력의 정확한 파일 지문. GHL·HAI train은 exp01 preflight snapshot,
+# HAI test·label은 2026-08-17 실물 SHA-256 대조값이다.
+
+datasets:
+  GHL:
+    files:
+      - name: 032_GHL_id_1_Sensor_tr_50000_1st_65001.csv
+        size_bytes: 39755238
+        sha256: f3a3af72938582484b057c9a4a63fa2a5d87c4ef4f6756a6eaece4b9058fb4d7
+      - name: 033_GHL_id_2_Sensor_tr_50000_1st_51001.csv
+        size_bytes: 39838911
+        sha256: 59f4f9c80dc9323a66a461e4fc18425d3a852170886487b13831586ae2f1f37d
+      - name: 034_GHL_id_3_Sensor_tr_50000_1st_122001.csv
+        size_bytes: 39760414
+        sha256: 03359ca9d437a9d2acad8e7f6dfff9977956b03349ea9c8899560a3d5a5f2f17
+      - name: 035_GHL_id_4_Sensor_tr_50000_1st_90001.csv
+        size_bytes: 39589453
+        sha256: bb825dbab0294ce98e5cc1feefa8a6fbe9a6c69efa57c1966a8f6df060e60b7f
+      - name: 036_GHL_id_5_Sensor_tr_50000_1st_67147.csv
+        size_bytes: 39463191
+        sha256: e15180386a710d99dffe83cf90b30b3beaaba3e118d15555708306d48c2b5e2c
+      - name: 037_GHL_id_6_Sensor_tr_50000_1st_80001.csv
+        size_bytes: 39769534
+        sha256: b4e530649f990307d159e0573606046cea0c3c3c2b164ae3c390909789efa7ba
+      - name: 038_GHL_id_7_Sensor_tr_50000_1st_100001.csv
+        size_bytes: 39753134
+        sha256: 7f6e7f4ef3c8f0993117c5c8bcf7cf15aeec300d90cd4064d520e655e2cb7799
+      - name: 039_GHL_id_8_Sensor_tr_50000_1st_63030.csv
+        size_bytes: 39873768
+        sha256: e739e87f538a40e92a43b75db381e83625c9b9c55049271651d2893d148a51e2
+      - name: 040_GHL_id_9_Sensor_tr_50000_1st_92001.csv
+        size_bytes: 39691143
+        sha256: c2a0f29c6af262fb16251d4663d5e56ef3dc8085f8a278ca2965e37901230699
+      - name: 041_GHL_id_10_Sensor_tr_50000_1st_57001.csv
+        size_bytes: 39537670
+        sha256: 7564c2f313e952f61358640145b72670e3f401f3333f40b1e7cce4a0d0f65b6c
+      - name: 042_GHL_id_11_Sensor_tr_50000_1st_150001.csv
+        size_bytes: 39802065
+        sha256: 8c307d1e40d454dfef438794ce4c7532c21edd536fb924f23d8868666fc487a0
+      - name: 043_GHL_id_12_Sensor_tr_39938_1st_40038.csv
+        size_bytes: 39370743
+        sha256: 8c04980a4fd7fc14db8cfe4b520b83a4604c4a783345f69aa2a5c86b4d98dc8b
+      - name: 044_GHL_id_13_Sensor_tr_50000_1st_145001.csv
+        size_bytes: 39657556
+        sha256: 9b2d360bc5164ebbfd640068bb09a50ee1fe91d6713b74b642d77eb633875121
+      - name: 045_GHL_id_14_Sensor_tr_50000_1st_85076.csv
+        size_bytes: 39647618
+        sha256: 25e4714e17820bf1053010640001254b67d3bf0fbcd2e4315001d2ce5e770512
+      - name: 046_GHL_id_15_Sensor_tr_50000_1st_156462.csv
+        size_bytes: 39741008
+        sha256: 5ad0d9f15be78c934ddda385c8ebfcdfd2b4746c413012982dd26127be0ad58d
+      - name: 047_GHL_id_16_Sensor_tr_50000_1st_77001.csv
+        size_bytes: 39600308
+        sha256: ee818c8635ec2b3b5e1c105563a1355f03029b075c0a87be6d200a9e3e6958ad
+      - name: 048_GHL_id_17_Sensor_tr_50000_1st_154001.csv
+        size_bytes: 39691740
+        sha256: 775f99987e7da41448b54f4712c6a3496295b5179f5e73113682e39adea79bcb
+      - name: 049_GHL_id_18_Sensor_tr_50000_1st_109001.csv
+        size_bytes: 39709764
+        sha256: 3097f30211eef2c905ca8b74066c56b0b365a32c5897fe4096b828e1bdf87f7e
+      - name: 050_GHL_id_19_Sensor_tr_43750_1st_55001.csv
+        size_bytes: 35051769
+        sha256: de6e2cc8d8f0677368d7832d0d5f1c9ebcef00bf126d43af1488e9f4ae07c175
+      - name: 051_GHL_id_20_Sensor_tr_50000_1st_75110.csv
+        size_bytes: 39663579
+        sha256: a8e7777f1b7ab1a71d3de28ce18be41df694ed0c0e0d2b629afdfbd166ea1936
+      - name: 052_GHL_id_21_Sensor_tr_50000_1st_98001.csv
+        size_bytes: 39834900
+        sha256: ea2f12fb0de6b5f1c2e30e167e54ad6d67fc06704acc7d005efd616f076d1f82
+      - name: 053_GHL_id_22_Sensor_tr_50000_1st_126448.csv
+        size_bytes: 39686090
+        sha256: 1fbc987d64f34ed6e262c4ad58262d2ff414ef88cb3ed6e48854f94231b69247
+      - name: 054_GHL_id_23_Sensor_tr_50000_1st_135001.csv
+        size_bytes: 39489437
+        sha256: 5c2d5f58899de9f5fa6c4af7156741ab08ea27957e02c0b5b1b2ddc38ec68a9e
+      - name: 055_GHL_id_24_Sensor_tr_50000_1st_118124.csv
+        size_bytes: 39505229
+        sha256: 4e0e95b9906262f70e8db57c8d2068514b2252264e500459523ae70b17ed523e
+      - name: 056_GHL_id_25_Sensor_tr_50000_1st_105568.csv
+        size_bytes: 39796059
+        sha256: a8e2c8a5408625df1a37e8c161fd99be58388ede3ced237355c4313366b49104
+  HAI:
+    files:
+      - name: hai-train1.csv
+        size_bytes: 162418984
+        sha256: 53007b0ba604fbf338e7ac2e08cd81d874b5d1388f3aecb213ddcba5bf2bec4a
+      - name: hai-train2.csv
+        size_bytes: 169121615
+        sha256: 0e520e82bf78a661ab19ce4967f3c766bd809820f457a9c90c365102d4534c56
+      - name: hai-train3.csv
+        size_bytes: 72774793
+        sha256: bfcec2dc05adea103e7491546b0e28268faaa26d3cc717d10f4595c94b81e85d
+      - name: hai-train4.csv
+        size_bytes: 114494940
+        sha256: 56658c83657d42a65db982b864362e0d0ffeb96d1f7b357d5e76e3a5c522d940
+      - name: hai-test1.csv
+        size_bytes: 31255559
+        sha256: 78c7f1d4de1f2ab9ccc2f8c719f80f831033543adb0c81d0d78f84f40838d4be
+      - name: hai-test2.csv
+        size_bytes: 132946575
+        sha256: b2b8dd295aefd87e39260fe43cb4c73ee86d6264b0ac4b0761e7efb0c2b545c3
+      - name: label-test1.csv
+        size_bytes: 1242017
+        sha256: eaf69edb9c5834bc393afd7bf658b5e408d34fd7bfc3261f80516765fb818fbc
+      - name: label-test2.csv
+        size_bytes: 4500018
+        sha256: 8090c44981176e39b0f01a7126a80248ac0b93355c00f9db4d4e2f2106452b92

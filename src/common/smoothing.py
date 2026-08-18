@@ -1,15 +1,6 @@
-"""시간축 후행 이동평균 smoothing.
+"""채널별 점수에 시간축 후행 이동평균을 적용한다.
 
-근거: DECISIONS D-04·D-05 — d-ailin/GDN(main, 9853899d) evaluate.py:62-65 방식의
-자체 구현. GraGOD smooth_scores 는 feature 축에 작용하므로 사용 금지
-(VERIFICATION.md 의혹 2 = 참, d-ailin 대조 절 참조).
-
-원본(evaluate.py:62-65, 1채널 기준):
-    smoothed_err_scores = np.zeros(err_scores.shape)
-    before_num = 3
-    for i in range(before_num, len(err_scores)):
-        smoothed_err_scores[i] = np.mean(err_scores[i-before_num:i+1])
-즉 창 크기 4(현재 시점 포함 후행), 처음 window-1개 시점은 0.
+현재 시점을 포함한 창을 쓰고 처음 `window-1`개 시점은 0으로 둔다.
 """
 
 import numpy
