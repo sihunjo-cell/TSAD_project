@@ -2,6 +2,10 @@
 
 common:
   downsample_factor: 1
+  validation_fraction: 0.1
+  validation_position: tail
+  validation_split_order: before_ratio
+  ratio_base: fit_pool
   timestamp_as_feature: false
   label_as_feature: false
   label_aggregation: null  # downsample_factor=1이라 집계하지 않는다.
@@ -13,12 +17,12 @@ common:
 
 datasets:
   GHL:
-    ratios: [5, 10, 20, 50, 100]
+    ratios: [5, 10, 20, 40, 60, 80, 100]
     ratio_application: per_training_session
     feature_count: 19
     scaler_fit_scope: current_series_train
   HAI:
-    ratios: [10, 100]
+    ratios: [5, 10, 20, 40, 60, 80, 100]
     ratio_application: per_training_session
     training_sessions: 4
     test_sessions: 2

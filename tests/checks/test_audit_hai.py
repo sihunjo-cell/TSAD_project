@@ -54,12 +54,14 @@ class TestBuildRatioFeasibilityRows(unittest.TestCase):
 
         self.assertEqual([row["window_size"] for row in rows], [5])
         row = rows[0]
-        self.assertEqual(row["kept_length"], 12600)
-        self.assertEqual(row["validation_length"], 1260)
+        self.assertEqual(row["fit_pool_length"], 113400)
+        self.assertEqual(row["kept_length"], 11340)
+        self.assertEqual(row["validation_length"], 12600)
         self.assertEqual(row["model_train_length"], 11340)
         self.assertEqual(row["train_window_count"], 11335)
-        self.assertEqual(row["validation_window_count"], 1255)
-        self.assertEqual(row["normalization_sample_count"], 12595)
+        self.assertEqual(row["validation_window_count"], 12595)
+        self.assertEqual(row["scaler_fit_observation_count"], 11340)
+        self.assertEqual(row["validation_transform_observation_count"], 12600)
         self.assertTrue(row["feasible"])
 
 
@@ -71,22 +73,22 @@ class TestBuildRatioChannelActivityRows(unittest.TestCase):
         })
 
         rows = build_ratio_channel_activity_rows(
-            features, session=1, ratios=(0.5, 1.0)
+            features, session=1, ratios=(0.4, 1.0)
         )
 
         by_ratio_channel = {
             (row["ratio"], row["channel"]): row["active"] for row in rows
         }
-        self.assertTrue(by_ratio_channel[(0.5, "always_moving")])
-        self.assertFalse(by_ratio_channel[(0.5, "late_moving")])
+        self.assertTrue(by_ratio_channel[(0.4, "always_moving")])
+        self.assertFalse(by_ratio_channel[(0.4, "late_moving")])
         self.assertTrue(by_ratio_channel[(1.0, "late_moving")])
 
 
 class TestRunHaiPreflight(unittest.TestCase):
     def test_writes_only_prefix_local_audit_outputs(self):
         frame = pandas.DataFrame({
-            "timestamp": pandas.date_range("2023-01-01", periods=600, freq="s"),
-            **{f"sensor_{index}": range(600) for index in range(86)},
+            "timestamp": pandas.date_range("2023-01-01", periods=1200, freq="s"),
+            **{f"sensor_{index}": range(1200) for index in range(86)},
         })
 
         with TemporaryDirectory() as temporary_directory:

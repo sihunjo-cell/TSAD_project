@@ -13,7 +13,7 @@ from sklearn.preprocessing import MinMaxScaler
 from src.common.experiment_config import load_dataset_ratios
 from src.data_split.take_training_prefix import take_training_prefix
 from src.data_split.validate_labels import validate_binary_labels
-from src.data_split.validation_split import validation_split
+from src.data_split.validation_split import InsufficientTrainLengthError, validation_split
 
 
 TRAIN_FILENAMES = tuple(f"hai-train{session}.csv" for session in range(1, 5))
@@ -87,21 +87,27 @@ def load_hai_sessions(
 
     for filename in TRAIN_FILENAMES:
         features = read_feature_array(dataset_dir / filename, feature_names)
-        training_prefix, split_info = take_training_prefix(features, ratio_percent / 100)
-        train_part, validation_part = validation_split(
-            training_prefix,
+        fit_pool, validation_part = validation_split(
+            features,
             val_fraction=val_fraction,
             min_train_length=min_train_length,
-            split_info=split_info,
+            split_info={"T": len(features), "ratio": ratio_percent / 100},
         )
+        train_part, split_info = take_training_prefix(fit_pool, ratio_percent / 100)
+        if len(train_part) < min_train_length:
+            raise InsufficientTrainLengthError(
+                f"비율 적용 후 train 길이 하한 미달: {filename}, fit pool={len(fit_pool)}, "
+                f"ratio={ratio_percent}, train={len(train_part)}, 하한={min_train_length}"
+            )
         train_sessions.append(train_part)
         validation_sessions.append(validation_part)
         session_splits.append({
             "source": filename,
             "original_train_range": (0, len(features)),
+            "fit_pool_range": (0, len(fit_pool)),
             "kept_train_range": (0, split_info["kept_length"]),
             "train_range": (0, len(train_part)),
-            "validation_range": (len(train_part), split_info["kept_length"]),
+            "validation_range": (len(fit_pool), len(features)),
         })
 
     # partial_fit으로 네 세션을 복사 없이 같은 범위에 맞춘다.

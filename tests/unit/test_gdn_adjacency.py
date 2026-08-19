@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from src.models.tier2.gdn.extract_adjacency import extract_best_adjacency
+from src.models.tier2.GDN.extract_adjacency import extract_best_adjacency
 
 
 class TestExtractBestAdjacency(unittest.TestCase):

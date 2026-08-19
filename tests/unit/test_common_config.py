@@ -8,20 +8,21 @@ from pathlib import Path
 import yaml
 
 from src.common.experiment_config import (
+    load_dataset_ratios,
     load_planned_ratios_and_seeds,
-    validate_fork_contract,
+    validate_gdn_training_contract,
     validate_pipeline_contract,
 )
 
 
 class TestLoadPlannedRatiosAndSeeds(unittest.TestCase):
-    def test_reads_both_values_from_yaml(self):
+    def test_reads_the_shared_ratio_contract_and_seeds(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
             root = Path(temporary_dir)
             config_dir = root / "configs"
             config_dir.mkdir()
             (config_dir / "data_preprocessing.yaml").write_text(yaml.safe_dump({
-                "datasets": {"GHL": {"ratios": [20, 50]}},
+                "datasets": {"GHL": {"ratios": [5, 10, 20, 40, 60, 80, 100]}},
             }), encoding="utf-8")
             (config_dir / "gdn_hyperparams.yaml").write_text(yaml.safe_dump({
                 "train_params": {"seeds_by_dataset": {"GHL": [2, 4]}},
@@ -29,8 +30,13 @@ class TestLoadPlannedRatiosAndSeeds(unittest.TestCase):
 
             ratios, seeds = load_planned_ratios_and_seeds("GHL", root)
 
-        self.assertEqual(ratios, (20, 50))
+        self.assertEqual(ratios, (5, 10, 20, 40, 60, 80, 100))
         self.assertEqual(seeds, (2, 4))
+
+    def test_current_datasets_use_the_same_seven_ratios(self):
+        expected = (5, 10, 20, 40, 60, 80, 100)
+        self.assertEqual(load_dataset_ratios("GHL"), expected)
+        self.assertEqual(load_dataset_ratios("HAI"), expected)
 
     def test_rejects_ratio_outside_the_filename_and_split_contract(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -41,7 +47,7 @@ class TestLoadPlannedRatiosAndSeeds(unittest.TestCase):
                 "datasets": {"GHL": {"ratios": [7]}},
             }), encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "지원 비율"):
+            with self.assertRaisesRegex(ValueError, "비율 계약"):
                 load_planned_ratios_and_seeds("GHL", root)
 
 
@@ -86,12 +92,12 @@ class TestValidatePipelineContract(unittest.TestCase):
     def test_rejects_hidden_trainer_contract_drift(self):
         config_dir = Path(__file__).resolve().parents[2] / "configs"
         with (config_dir / "gdn_hyperparams.yaml").open(encoding="utf-8") as file:
-            contract = yaml.safe_load(file)["fork_contract"]
+            contract = yaml.safe_load(file)["local_training_contract"]
         changed = copy.deepcopy(contract)
-        changed["scheduler"]["patience"] = 7
+        changed["scheduler"] = "reduce_lr_on_plateau"
 
-        with self.assertRaisesRegex(ValueError, "scheduler.patience"):
-            validate_fork_contract(changed)
+        with self.assertRaisesRegex(ValueError, "scheduler"):
+            validate_gdn_training_contract(changed)
 
 
 if __name__ == "__main__":

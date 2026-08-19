@@ -25,7 +25,7 @@ class TestApplyMedianIqr(unittest.TestCase):
         numpy.testing.assert_allclose(normalized, [[(5 - 3) / 2.01, (10 - 30) / 20.01]])
 
     def test_zero_iqr_stays_finite_with_epsilon(self):
-        # 상수 채널에서도 epsilon이 0 나눗셈을 막는다.
+        # constant한 채널에서도 epsilon이 0 나눗셈을 막는다.
         constant_scores = numpy.full((5, 1), 7.0)
         median, iqr = estimate_median_iqr(constant_scores)
         self.assertEqual(iqr[0], 0.0)

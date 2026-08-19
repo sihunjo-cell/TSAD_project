@@ -1,6 +1,6 @@
 {
-  "saved_at": "2026-08-19T01:47:02",
-  "git_commit_hash": "b2c92210e6bd8de0879744973c2f08086af88a5f",
+  "saved_at": "2026-08-19T18:33:58",
+  "git_commit_hash": "d5787364696ddbb8777096dec28ead97a3076303",
   "config": {
     "data_dir": "C:\\Users\\simon\\time_series\\shared_data\\TSAD_project\\HAI-23.05",
     "files": [
@@ -22,9 +22,18 @@
       }
     ],
     "ratios": [
+      0.05,
       0.1,
+      0.2,
+      0.4,
+      0.6,
+      0.8,
       1.0
     ],
+    "ratio_unit": "fraction_of_fit_pool_after_fixed_validation",
+    "validation_split_order": "before_ratio",
+    "ratio_base": "fit_pool",
+    "scaler_fit_scope": "all_current_ratio_fit_subsets",
     "validation_fraction": 0.1,
     "current_window_sizes": [
       5

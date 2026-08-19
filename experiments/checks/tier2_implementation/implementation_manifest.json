@@ -1,0 +1,87 @@
+{
+  "generated_at": "2026-08-19T13:46:22.409396+00:00",
+  "command": "conda run -n tsad_fixed python -m tests.checks.run_tier2_dryrun",
+  "synthetic_only": true,
+  "real_training_executed": false,
+  "labels_read": false,
+  "source_identity": {
+    "project_commit": "d5787364696ddbb8777096dec28ead97a3076303",
+    "local_model_sha256": {
+      "src/models/tier2/AE/AE_raw(TSB).py": "20271a3908e9e1a1006a4e57679d3354e5ad731f37d427bfb86eb4e17b3b5d4d",
+      "src/models/tier2/AE/adapter.py": "7e95ffdd72c215f54aba37821c948327c13f20f534b252f717447fb671e5f105",
+      "src/models/tier2/LSTMAD/LSTMAD_raw.py": "dcbba2c949696079b3ab94ec4aee1ea2b8ef127975ea1b5ddb6a548e19e4e5b9",
+      "src/models/tier2/LSTMAD/adapter.py": "540047e105579abcd14a72ee7d116208b20af21d673f9095de55d2f2c70101ca",
+      "src/models/tier2/USAD/official.py": "14d033e89fa9ab3560c20e58992f1e67b7c8fc503b3b1b1082856fbb1a06d16d",
+      "src/models/tier2/USAD/adapter.py": "67a37dc42289b3e7f0c89555e04623050eb2ebc5afa9c056eb7f92962f2b1227",
+      "src/models/tier2/GDN/model.py": "4d0ba41c28a27c7165eb0c94f524288f477eeea62df58e0b75ed31653ff0fb4a",
+      "src/models/tier2/GDN/modules.py": "29b29821117fb4ffee8a52ccfc25876fadba52feac0196aa41c8d5bbbcef6e23",
+      "src/models/tier2/GDN/adapter.py": "e2fa770b22e63230524b988f0a5efdcfa5c4a8de1729c94ce1152cd05106afd6"
+    },
+    "upstream_source_commits": {
+      "d-ailin/GDN": "9853899da860682669a134e4af315d036aab4eca",
+      "GraGOD": "ec8cd452a410ba903a31beb097a010ba0448c095",
+      "manigalati/usad": "e25af45c8e1c32783aed94fc7e5ab85effef2b1a",
+      "TheDatumOrg/TSB-AD": "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48"
+    }
+  },
+  "environment": {
+    "python": "3.10.20",
+    "numpy": "1.26.4",
+    "torch": "2.2.2",
+    "torch-geometric": "2.5.3",
+    "pytorch-lightning": "2.6.2",
+    "tensorboardX": "2.6.2.2",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.7.2",
+    "PyYAML": "6.0.3",
+    "networkx": "3.4.2",
+    "colorama": "0.4.6",
+    "pytorch-lightning_source": "https://github.com/gonzachiar/pytorch-lightning.git@834dbf3039ee82a2ac5e65eed25f9989222283c6"
+  },
+  "models": {
+    "CI-AE": {
+      "passed": true,
+      "production_epochs": 50,
+      "dryrun_epochs": 1,
+      "optimizer_updates": 19,
+      "checkpoint_restored": true,
+      "labels_read": false
+    },
+    "LSTM-AD": {
+      "passed": true,
+      "production_epochs": 50,
+      "dryrun_epochs": 1,
+      "optimizer_updates": 2,
+      "checkpoint_restored": true,
+      "labels_read": false
+    },
+    "USAD": {
+      "passed": true,
+      "production_epochs": 70,
+      "dryrun_epochs": 1,
+      "optimizer_updates": 4,
+      "checkpoint_restored": true,
+      "labels_read": false
+    },
+    "GDN": {
+      "passed": true,
+      "production_epochs": 50,
+      "dryrun_epochs": 1,
+      "optimizer_updates": 8,
+      "checkpoint_restored": true,
+      "labels_read": false
+    },
+    "GDN-HAI-multisession": {
+      "passed": true,
+      "production_epochs": 50,
+      "dryrun_epochs": 1,
+      "train_session_count": 4,
+      "test_session_count": 2,
+      "score_files": 16,
+      "adjacency_files": 2,
+      "checkpoint_restored": true,
+      "labels_read": false
+    }
+  },
+  "success": true
+}

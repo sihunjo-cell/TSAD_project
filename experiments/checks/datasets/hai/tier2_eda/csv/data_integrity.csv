@@ -1,0 +1,7 @@
+﻿dataset,file_or_session,file_name,split,row_count,feature_count,channel_order_matches_reference,channel_set_matches_reference,model_input_order_canonicalized,input_reordered,timestamp_available,timestamp_start,timestamp_end,sampling_interval_seconds,irregular_gap_count,duplicate_timestamp_count,timestamp_reversal_count,missing_value_count,infinite_value_count,nonfinite_value_count,normal_train_end_exclusive,validation_rule,test_start,boundary_rule,integrity_passed,label_values_used
+HAI,train_1,hai-train1.csv,train,280800,86,True,True,True,False,True,2022-08-04T18:00:01,2022-08-08T00:00:00,1.0,0,0,0,0,0,0,280800,전체 정상 구간의 마지막 10%,,세션별 경계 유지,True,False
+HAI,train_2,hai-train2.csv,train,291600,86,True,True,True,False,True,2022-08-13T07:00:01,2022-08-16T16:00:00,1.0,0,0,0,0,0,0,291600,전체 정상 구간의 마지막 10%,,세션별 경계 유지,True,False
+HAI,train_3,hai-train3.csv,train,126000,86,True,True,True,False,True,2022-08-19T16:00:01,2022-08-21T03:00:00,1.0,0,0,0,0,0,0,126000,전체 정상 구간의 마지막 10%,,세션별 경계 유지,True,False
+HAI,train_4,hai-train4.csv,train,198000,86,True,True,True,False,True,2022-08-22T17:00:01,2022-08-25T00:00:00,1.0,0,0,0,0,0,0,198000,전체 정상 구간의 마지막 10%,,세션별 경계 유지,True,False
+HAI,test_1,hai-test1.csv,test,54000,86,True,True,True,False,True,2022-08-12T16:00:01,2022-08-13T07:00:00,1.0,0,0,0,0,0,0,,,0,세션별 경계 유지,True,False
+HAI,test_2,hai-test2.csv,test,230400,86,True,True,True,False,True,2022-08-17T00:00:01,2022-08-19T16:00:00,1.0,0,0,0,0,0,0,,,0,세션별 경계 유지,True,False

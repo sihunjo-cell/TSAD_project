@@ -67,17 +67,15 @@ HAI 23.05를 쓴다. HAIEnd 23.05는 같은 실험에서 수집한 225채널 DCS
 
 “시계열 하나”는 `hai-train*.csv` 또는 `hai-test*.csv` 한 파일이 나타내는 연속 세션 하나로 센다. 훈련 4개와 테스트 2개, 합계 6개 시계열이다. 네 훈련 세션은 한 모델의 훈련 corpus로 함께 쓰고 두 테스트 세션은 각 라벨 파일과 짝지어 따로 채점한다. 파일 사이의 시간 간격에는 윈도를 만들지 않는다. 공식 문서가 보장하는 연속성 단위가 각 CSV이기 때문이다.
 
-모델 입력에서 timestamp와 label을 빼면 `N=86`이다. 현재 YAML의 HAI GDN 이웃 수
-`k=max(5, ceil(0.25×86))=22`는 합성 검증용 잠정값이다. 본 실험의 규칙은 GDN 재현 기준
-회의에서 확정한다.
+모델 입력에서 timestamp와 label을 빼면 `N=86`이다. GDN topk는 본실험 전에 정한
+프로젝트 전이 규칙에 따라 GHL 5, HAI 22로 고정했다.
 
 ### 전처리 결정과 남은 확인
 
-GHL·HAI 모두 다운샘플 배율 1을 쓴다. 원 학습 구간 `[0,T)`에 GHL
-5·10·20·50·100% 또는 HAI 10·100%를 바로 적용한다. 선택한 비율 구간의 마지막 10%를
-validation으로 자른다. timestamp와 label은 입력에서 뺀다. 입력 센서는 validation 분할 뒤
-train 부분에만 `MinMaxScaler`를 fit하고 같은 scaler로 validation과 test를 변환한다. GHL은
-현재 시계열의 train 부분마다 scaler 하나를 fit한다. HAI는 훈련 4세션 각각에 비율과 validation
-분할을 적용한 뒤 네 train 부분으로 scaler 하나를 fit한다.
+GHL·HAI 모두 다운샘플 배율 1을 쓴다. 전체 정상 학습 구간의 마지막 10%를 고정
+validation으로 먼저 분리한다. 남은 fit pool의 앞쪽 5·10·20·40·60·80·100%를 시간순
+누적 subset으로 쓴다. timestamp와 label은 입력에서 뺀다. `MinMaxScaler`는 현재 비율의 fit
+subset에만 fit하고 고정 validation과 test에는 transform만 적용한다. GHL은 시계열마다 scaler
+하나를 맞춘다. HAI는 같은 비율의 훈련 4세션 fit subset으로 scaler 하나를 fit한다.
 세션 경계에는 윈도를 만들지 않는다. 상세 실행값은 `configs/data_preprocessing.yaml`, 현재
 결론은 `docs/lead/process_0_preverify.md`가 관리한다.

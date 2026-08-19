@@ -13,7 +13,7 @@ from sklearn.preprocessing import MinMaxScaler
 from src.common.experiment_config import load_dataset_ratios
 from src.data_split.take_training_prefix import take_training_prefix
 from src.data_split.validate_labels import validate_binary_labels
-from src.data_split.validation_split import validation_split
+from src.data_split.validation_split import InsufficientTrainLengthError, validation_split
 
 
 TRAIN_BOUNDARY_PATTERN = re.compile(r"_tr_(\d+)_")
@@ -50,15 +50,18 @@ def load_ghl_series(
     if not 0 < train_boundary < len(frame):
         raise ValueError(f"tr_ 경계가 행 범위를 벗어났다: {train_boundary}/{len(frame)}")
 
-    training_prefix, split_info = take_training_prefix(
-        features[:train_boundary], ratio_percent / 100,
-    )
-    train_part, validation_part = validation_split(
-        training_prefix,
+    fit_pool, validation_part = validation_split(
+        features[:train_boundary],
         val_fraction=val_fraction,
         min_train_length=min_train_length,
-        split_info=split_info,
+        split_info={"T": train_boundary, "ratio": ratio_percent / 100},
     )
+    train_part, split_info = take_training_prefix(fit_pool, ratio_percent / 100)
+    if len(train_part) < min_train_length:
+        raise InsufficientTrainLengthError(
+            f"비율 적용 후 train 길이 하한 미달: fit pool={len(fit_pool)}, "
+            f"ratio={ratio_percent}, train={len(train_part)}, 하한={min_train_length}"
+        )
     test_part = features[train_boundary:]
 
     scaler = MinMaxScaler(copy=False).fit(train_part)
@@ -66,7 +69,6 @@ def load_ghl_series(
     validation_part = scaler.transform(validation_part)
     test_part = scaler.transform(test_part)
 
-    train_length = len(train_part)
     kept_start, kept_end = split_info["kept_index_range"]
     return {
         "feature_names": feature_names,
@@ -77,9 +79,10 @@ def load_ghl_series(
         "session_splits": ({
             "source": csv_path.name,
             "original_train_range": (0, train_boundary),
+            "fit_pool_range": (0, len(fit_pool)),
             "kept_train_range": (kept_start, kept_end),
-            "train_range": (kept_start, kept_start + train_length),
-            "validation_range": (kept_start + train_length, kept_end),
+            "train_range": (kept_start, kept_end),
+            "validation_range": (len(fit_pool), train_boundary),
             "test_range": (train_boundary, len(frame)),
         },),
     }

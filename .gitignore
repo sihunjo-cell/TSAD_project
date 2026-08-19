@@ -9,7 +9,6 @@ TSB-AD-M-other-datasets/
 HAI-23.05/
 
 # 재생성 가능한 실행 산출물
-experiments/checks/reference_code/gdn/dryrun/
 experiments/01_ghl_main/scores/**/*.npy
 experiments/01_ghl_main/scores/**/*.json
 experiments/01_ghl_main/scores/**/*.ckpt

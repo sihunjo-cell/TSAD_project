@@ -1,0 +1,397 @@
+{
+  "run_id": "tier2-eda-20260819T114344Z-973ac494",
+  "started_at": "2026-08-19T11:43:44.222028+00:00",
+  "finished_at": "2026-08-19T11:44:39.229962+00:00",
+  "dataset": "GHL",
+  "ratios_percent": [
+    5,
+    10,
+    20,
+    40,
+    60,
+    80,
+    100
+  ],
+  "ratio_unit": "percent_of_fit_pool_after_fixed_validation",
+  "models": [
+    "CI-AE",
+    "LSTM-AD",
+    "USAD",
+    "GDN"
+  ],
+  "input_scope": "학습 통계는 정상 학습 구간만 사용하고 test feature는 무결성·정렬만 검사",
+  "inputs": [
+    {
+      "path": "TSB-AD-M/032_GHL_id_1_Sensor_tr_50000_1st_65001.csv",
+      "size_bytes": 39755238,
+      "modified_at": "2026-08-16T07:37:05.119894+00:00",
+      "sha256": "f3a3af72938582484b057c9a4a63fa2a5d87c4ef4f6756a6eaece4b9058fb4d7"
+    },
+    {
+      "path": "TSB-AD-M/033_GHL_id_2_Sensor_tr_50000_1st_51001.csv",
+      "size_bytes": 39838911,
+      "modified_at": "2026-08-16T07:37:11.218821+00:00",
+      "sha256": "59f4f9c80dc9323a66a461e4fc18425d3a852170886487b13831586ae2f1f37d"
+    },
+    {
+      "path": "TSB-AD-M/034_GHL_id_3_Sensor_tr_50000_1st_122001.csv",
+      "size_bytes": 39760414,
+      "modified_at": "2026-08-16T07:37:18.027633+00:00",
+      "sha256": "03359ca9d437a9d2acad8e7f6dfff9977956b03349ea9c8899560a3d5a5f2f17"
+    },
+    {
+      "path": "TSB-AD-M/035_GHL_id_4_Sensor_tr_50000_1st_90001.csv",
+      "size_bytes": 39589453,
+      "modified_at": "2026-08-16T07:37:01.516018+00:00",
+      "sha256": "bb825dbab0294ce98e5cc1feefa8a6fbe9a6c69efa57c1966a8f6df060e60b7f"
+    },
+    {
+      "path": "TSB-AD-M/036_GHL_id_5_Sensor_tr_50000_1st_67147.csv",
+      "size_bytes": 39463191,
+      "modified_at": "2026-08-16T07:37:17.030925+00:00",
+      "sha256": "e15180386a710d99dffe83cf90b30b3beaaba3e118d15555708306d48c2b5e2c"
+    },
+    {
+      "path": "TSB-AD-M/037_GHL_id_6_Sensor_tr_50000_1st_80001.csv",
+      "size_bytes": 39769534,
+      "modified_at": "2026-08-16T07:37:14.034713+00:00",
+      "sha256": "b4e530649f990307d159e0573606046cea0c3c3c2b164ae3c390909789efa7ba"
+    },
+    {
+      "path": "TSB-AD-M/038_GHL_id_7_Sensor_tr_50000_1st_100001.csv",
+      "size_bytes": 39753134,
+      "modified_at": "2026-08-16T07:37:16.031233+00:00",
+      "sha256": "7f6e7f4ef3c8f0993117c5c8bcf7cf15aeec300d90cd4064d520e655e2cb7799"
+    },
+    {
+      "path": "TSB-AD-M/039_GHL_id_8_Sensor_tr_50000_1st_63030.csv",
+      "size_bytes": 39873768,
+      "modified_at": "2026-08-16T07:37:21.967377+00:00",
+      "sha256": "e739e87f538a40e92a43b75db381e83625c9b9c55049271651d2893d148a51e2"
+    },
+    {
+      "path": "TSB-AD-M/040_GHL_id_9_Sensor_tr_50000_1st_92001.csv",
+      "size_bytes": 39691143,
+      "modified_at": "2026-08-16T07:37:14.477381+00:00",
+      "sha256": "c2a0f29c6af262fb16251d4663d5e56ef3dc8085f8a278ca2965e37901230699"
+    },
+    {
+      "path": "TSB-AD-M/041_GHL_id_10_Sensor_tr_50000_1st_57001.csv",
+      "size_bytes": 39537670,
+      "modified_at": "2026-08-16T07:37:19.034359+00:00",
+      "sha256": "7564c2f313e952f61358640145b72670e3f401f3333f40b1e7cce4a0d0f65b6c"
+    },
+    {
+      "path": "TSB-AD-M/042_GHL_id_11_Sensor_tr_50000_1st_150001.csv",
+      "size_bytes": 39802065,
+      "modified_at": "2026-08-16T07:37:18.359992+00:00",
+      "sha256": "8c307d1e40d454dfef438794ce4c7532c21edd536fb924f23d8868666fc487a0"
+    },
+    {
+      "path": "TSB-AD-M/043_GHL_id_12_Sensor_tr_39938_1st_40038.csv",
+      "size_bytes": 39370743,
+      "modified_at": "2026-08-16T07:37:19.291848+00:00",
+      "sha256": "8c04980a4fd7fc14db8cfe4b520b83a4604c4a783345f69aa2a5c86b4d98dc8b"
+    },
+    {
+      "path": "TSB-AD-M/044_GHL_id_13_Sensor_tr_50000_1st_145001.csv",
+      "size_bytes": 39657556,
+      "modified_at": "2026-08-16T07:37:06.980141+00:00",
+      "sha256": "9b2d360bc5164ebbfd640068bb09a50ee1fe91d6713b74b642d77eb633875121"
+    },
+    {
+      "path": "TSB-AD-M/045_GHL_id_14_Sensor_tr_50000_1st_85076.csv",
+      "size_bytes": 39647618,
+      "modified_at": "2026-08-16T07:37:08.153576+00:00",
+      "sha256": "25e4714e17820bf1053010640001254b67d3bf0fbcd2e4315001d2ce5e770512"
+    },
+    {
+      "path": "TSB-AD-M/046_GHL_id_15_Sensor_tr_50000_1st_156462.csv",
+      "size_bytes": 39741008,
+      "modified_at": "2026-08-16T07:37:00.003939+00:00",
+      "sha256": "5ad0d9f15be78c934ddda385c8ebfcdfd2b4746c413012982dd26127be0ad58d"
+    },
+    {
+      "path": "TSB-AD-M/047_GHL_id_16_Sensor_tr_50000_1st_77001.csv",
+      "size_bytes": 39600308,
+      "modified_at": "2026-08-16T07:37:23.648118+00:00",
+      "sha256": "ee818c8635ec2b3b5e1c105563a1355f03029b075c0a87be6d200a9e3e6958ad"
+    },
+    {
+      "path": "TSB-AD-M/048_GHL_id_17_Sensor_tr_50000_1st_154001.csv",
+      "size_bytes": 39691740,
+      "modified_at": "2026-08-16T07:37:15.473987+00:00",
+      "sha256": "775f99987e7da41448b54f4712c6a3496295b5179f5e73113682e39adea79bcb"
+    },
+    {
+      "path": "TSB-AD-M/049_GHL_id_18_Sensor_tr_50000_1st_109001.csv",
+      "size_bytes": 39709764,
+      "modified_at": "2026-08-16T07:37:11.443649+00:00",
+      "sha256": "3097f30211eef2c905ca8b74066c56b0b365a32c5897fe4096b828e1bdf87f7e"
+    },
+    {
+      "path": "TSB-AD-M/050_GHL_id_19_Sensor_tr_43750_1st_55001.csv",
+      "size_bytes": 35051769,
+      "modified_at": "2026-08-16T07:36:59.424345+00:00",
+      "sha256": "de6e2cc8d8f0677368d7832d0d5f1c9ebcef00bf126d43af1488e9f4ae07c175"
+    },
+    {
+      "path": "TSB-AD-M/051_GHL_id_20_Sensor_tr_50000_1st_75110.csv",
+      "size_bytes": 39663579,
+      "modified_at": "2026-08-16T07:37:17.663649+00:00",
+      "sha256": "a8e7777f1b7ab1a71d3de28ce18be41df694ed0c0e0d2b629afdfbd166ea1936"
+    },
+    {
+      "path": "TSB-AD-M/052_GHL_id_21_Sensor_tr_50000_1st_98001.csv",
+      "size_bytes": 39834900,
+      "modified_at": "2026-08-16T07:37:02.642284+00:00",
+      "sha256": "ea2f12fb0de6b5f1c2e30e167e54ad6d67fc06704acc7d005efd616f076d1f82"
+    },
+    {
+      "path": "TSB-AD-M/053_GHL_id_22_Sensor_tr_50000_1st_126448.csv",
+      "size_bytes": 39686090,
+      "modified_at": "2026-08-16T07:37:22.851126+00:00",
+      "sha256": "1fbc987d64f34ed6e262c4ad58262d2ff414ef88cb3ed6e48854f94231b69247"
+    },
+    {
+      "path": "TSB-AD-M/054_GHL_id_23_Sensor_tr_50000_1st_135001.csv",
+      "size_bytes": 39489437,
+      "modified_at": "2026-08-16T07:37:17.374896+00:00",
+      "sha256": "5c2d5f58899de9f5fa6c4af7156741ab08ea27957e02c0b5b1b2ddc38ec68a9e"
+    },
+    {
+      "path": "TSB-AD-M/055_GHL_id_24_Sensor_tr_50000_1st_118124.csv",
+      "size_bytes": 39505229,
+      "modified_at": "2026-08-16T07:37:15.168205+00:00",
+      "sha256": "4e0e95b9906262f70e8db57c8d2068514b2252264e500459523ae70b17ed523e"
+    },
+    {
+      "path": "TSB-AD-M/056_GHL_id_25_Sensor_tr_50000_1st_105568.csv",
+      "size_bytes": 39796059,
+      "modified_at": "2026-08-16T07:37:03.665356+00:00",
+      "sha256": "a8e2c8a5408625df1a37e8c161fd99be58388ede3ced237355c4313366b49104"
+    }
+  ],
+  "features": {
+    "count": 19,
+    "names": [
+      "RT_level_ini",
+      "RT_temperature.T",
+      "C_temperature.T",
+      "RT_level",
+      "out_valve_act",
+      "dT_rand",
+      "inv_valve_act",
+      "limiter.y",
+      "inj_valve_act",
+      "Relaxing.active",
+      "boundary.m_flow_in",
+      "dir_valve_act",
+      "dt_rand",
+      "C_level",
+      "HT_temperature.T",
+      "heater_act",
+      "HT_level",
+      "limiter1.y",
+      "dL_rand"
+    ],
+    "excluded_metadata": [
+      "timestamp",
+      "Label",
+      "label"
+    ]
+  },
+  "scope_definitions": {
+    "fit_pool": "전체 정상 학습 구간에서 고정 validation을 제외한 앞 구간",
+    "fit_subset": "fit pool에서 ceil(ratio*pool_length)로 남긴 시간순 누적 구간",
+    "fixed_validation": "전체 정상 학습 구간의 마지막 ceil(10%) 구간"
+  },
+  "model_input_windows": {
+    "CI-AE": 100,
+    "GDN": 5,
+    "LSTM-AD": 100,
+    "USAD": 10
+  },
+  "fixed_across_ratios": [
+    "model_structure",
+    "input_window",
+    "hidden_or_latent_dimension",
+    "learning_rate",
+    "batch_size",
+    "max_epochs_and_early_stopping",
+    "optimizer",
+    "anomaly_score",
+    "preprocessing_and_normalization",
+    "fixed_validation_rows"
+  ],
+  "split_rule": "전체 정상 구간의 마지막 10%를 고정 validation으로 먼저 분리하고 나머지 fit pool에 비율 적용",
+  "scaler_rule": "현재 비율의 fit subset에만 fit하고 고정 validation과 test에는 transform만 적용",
+  "window_rule": "모델별 값을 모든 비율에 고정하고 파일·세션·fit/validation 경계를 넘지 않음",
+  "vus_l_max_status": "계산하지 않음; 지우 담당",
+  "source_commits": {
+    "d-ailin/GDN": "9853899da860682669a134e4af315d036aab4eca",
+    "GraGOD": "ec8cd452a410ba903a31beb097a010ba0448c095",
+    "manigalati/usad": "e25af45c8e1c32783aed94fc7e5ab85effef2b1a",
+    "TheDatumOrg/TSB-AD": "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48"
+  },
+  "project_commit": "d5787364696ddbb8777096dec28ead97a3076303",
+  "worktree_dirty": true,
+  "dependencies": {
+    "python": "3.10.20",
+    "numpy": "1.26.4",
+    "torch": "2.2.2",
+    "torch-geometric": "2.5.3",
+    "pytorch-lightning": "2.6.2",
+    "tensorboardX": "2.6.2.2",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.7.2",
+    "PyYAML": "6.0.3",
+    "networkx": "3.4.2",
+    "colorama": "0.4.6",
+    "pytorch-lightning_source": "https://github.com/gonzachiar/pytorch-lightning.git@834dbf3039ee82a2ac5e65eed25f9989222283c6"
+  },
+  "runtime_contract_status": "verified",
+  "runtime_contract_error": "",
+  "selected_model_imports_passed": false,
+  "config_sha256": {
+    "configs/data_preprocessing.yaml": "db9b0ee8cab1a0b936be39d81495bb977d5d4a349085547a892ec2f3423c886c",
+    "configs/environment.yaml": "2ac17fdb843c7fe23cd33e53c7cafb0bdf3c229ce1712d3f4f70be02895ad61f",
+    "configs/gdn_hyperparams.yaml": "0ad0fca26fff68c63dc1a5609bd10b0d64806c6228f2b2fb5e3645de65740262"
+  },
+  "generation_code_sha256": {
+    "tests/checks/tier2_eda/audit_channel_activity.py": "ff850906c9f806b39c1203e6a6fc7058d70038231e223a2273014c9179263e69",
+    "tests/checks/tier2_eda/audit_dataset_structure.py": "172020d8e65f0be9722babc620ef6b38ecd1c24ed6ac8ed6ee8f45631ed1c58f",
+    "tests/checks/tier2_eda/audit_label_alignment.py": "7432c9a4b8373f8471cbec8fabbc3e44b68f7530dca973c9f8ffd38385b87ed2",
+    "tests/checks/tier2_eda/audit_model_feasibility.py": "fc67fb2c6b0a791a5984420a489954294ee78398e15372d2ea085e103026d9a7",
+    "tests/checks/tier2_eda/audit_model_forward.py": "ffb6fc593e13cc45a6c16a1883a2f3c783b06d2a26deaf9e07671974bcfca6ef",
+    "tests/checks/tier2_eda/audit_model_parameters.py": "7c6ab542624a87e3a61efd0f338fec813e7803b6ccfe61f7cbc6d0134beb36af",
+    "tests/checks/tier2_eda/audit_training_ratios.py": "ad964989d1ce82884f63ff081f51c4644eac808f4910dd342a2a564765124b7a",
+    "tests/checks/tier2_eda/build_tier2_eda_report.py": "31934f37df74a2fc87fa13ffa92a9ce76fae32bc250d36808e687954112a708f",
+    "tests/checks/tier2_eda/run_tier2_eda.py": "9e9a74b5075e93cf9df9f4bda95c79e57155229d50a50e8f899f650b2e0d3a97",
+    "tests/ghl_main/run_gdn.py": "1f41d12a15add3b08acc280d4a72691ff1d669a056eae27d39fba129ae87c32c",
+    "tests/hai_extension/run_gdn.py": "90380bd8c39826ca1709147daf1df658b6bfe0c3048fbed2b40f9e0573f17d0b",
+    "src/common/experiment_config.py": "53bb6520809c0b1d0bf7bf71acfaef49a6f374b46d9f30ff258a7bbb55c3fc9d",
+    "src/common/verify_run_context.py": "d5fe3adf84c85e5b2317785d09d7706e0cbf833365a90fd2246eea2e471db679",
+    "src/data_split/take_training_prefix.py": "4a7901db9c59e079c0192d17443f8ebc5796f192675ce51622e622c6714dad51",
+    "src/data_split/validation_split.py": "be13a373d50025b192eea2e0eba745305673f2eeab1998d669afa8c2906951bc",
+    "src/data_split/load_ghl_series.py": "07e8e103f33177002e62b23ad62060a4396bd4261b30ebe1bb3da687af06abe0",
+    "src/data_split/load_hai_sessions.py": "7d1c6fd91a9a2430bfcbd110e83515353e72cd28c584c815b21d4d02e337b862",
+    "src/models/tier2/AE/AE_raw(TSB).py": "6b395e8bc2edf9634c5db7368176f5f4281d8a3e58bff9fd3794e21471c7dae4",
+    "src/models/tier2/LSTMAD/LSTMAD_raw.py": "ffa9941c9b0d1e97b8a3d4546b2d0de430db7f71794ebef38b63fd266afb9b79",
+    "src/models/tier2/USAD/USAD_raw.py": "ade5d2239a9aca694dcdd7868c0dd9d84b0626ce9d602d240a34c91ad00f5a07",
+    "src/models/tier2/GDN/model.py": "4d0ba41c28a27c7165eb0c94f524288f477eeea62df58e0b75ed31653ff0fb4a",
+    "src/models/tier2/GDN/modules.py": "29b29821117fb4ffee8a52ccfc25876fadba52feac0196aa41c8d5bbbcef6e23",
+    "src/models/tier2/GDN/trainer.py": "2c08e51e18975a40ecc7de790297d50d28697cc6fc4934e74861a253b6cc8611",
+    "src/models/tier2/GDN/types.py": "aa7b92455927a72a08e55cd87c3aa573a0dfc798ccd1e506929384a1b3f6a3b5",
+    "src/models/tier2/utils/utility.py": "58d5906ce8b5f2ccd350d9a04eeb3c7b636c473e64967ca36945f76e70eb5f03"
+  },
+  "command": "tests/checks/tier2_eda/run_tier2_eda.py --dataset both",
+  "generated_files": [
+    {
+      "path": "csv/constant_scope_summary.csv",
+      "sha256": "1d037bf860c5356760b387671cea6dad97bcc2df0db785883a5a441e9bb139f6"
+    },
+    {
+      "path": "csv/channel_scaling_readiness.csv",
+      "sha256": "914651ace096b3034e7d3a4622def090ee4ed85173cb4d17739ab3288fa437bb"
+    },
+    {
+      "path": "csv/data_integrity.csv",
+      "sha256": "1ec3cba9e66970d300ee0a01f97c53de3d94e01b57729357ac1882360cdfffb6"
+    },
+    {
+      "path": "csv/training_ratio_feasibility.csv",
+      "sha256": "6369446807ec49fc1eb8b52d8d65538f1bb2602f9c330fb6a500a7c8ffd46b50"
+    },
+    {
+      "path": "csv/training_workload_summary.csv",
+      "sha256": "0863373cdf2106d940107294a2cfdc39ab6f613e347e1230a0cc29215cb9766f"
+    },
+    {
+      "path": "csv/model_feasibility.csv",
+      "sha256": "9603afab33bac09192309991f0ae177dc357e477faee9a73186c4ebfad937d37"
+    },
+    {
+      "path": "csv/score_alignment.csv",
+      "sha256": "3a343b0e40c873d42dfc9d2ec92e15898835be4adfb102d5133aecf7cb0c7e20"
+    },
+    {
+      "path": "csv/model_window_sources.csv",
+      "sha256": "7199d64d0741b74b0f321b686347ca77566cd68330128304adda99bb1fbcde57"
+    },
+    {
+      "path": "csv/model_parameter_sources.csv",
+      "sha256": "4c0df1ac9d1c420df726c0df0da6c5e4b3b92d96fad7c6a0418a9a28750ddcdb"
+    },
+    {
+      "path": "csv/input_forward_smoke.csv",
+      "sha256": "3748cf54d9f978e3d77f2293143d31fde684dfca6254b3a073275a00a61db219"
+    },
+    {
+      "path": "report/tier2_eda_report.md",
+      "sha256": "83f0935ddd53c340c8a96cd2baa780f8aea1892bc262fb8a970f0908c566dc04"
+    }
+  ],
+  "manifest_path": "json/eda_manifest.json",
+  "manifest_self_hash": "not_applicable",
+  "row_counts": {
+    "constant_scope_summary.csv": 21,
+    "channel_scaling_readiness.csv": 9975,
+    "data_integrity.csv": 25,
+    "training_ratio_feasibility.csv": 700,
+    "training_workload_summary.csv": 700,
+    "model_feasibility.csv": 700,
+    "score_alignment.csv": 100,
+    "model_window_sources.csv": 11,
+    "model_parameter_sources.csv": 60,
+    "input_forward_smoke.csv": 4
+  },
+  "expected_row_counts": {
+    "training_ratio_feasibility.csv": 700,
+    "model_feasibility.csv": 700,
+    "training_workload_summary.csv": 700,
+    "channel_scaling_readiness.csv": 9975,
+    "constant_scope_summary.csv": 21,
+    "score_alignment.csv": 100
+  },
+  "label_values_used": false,
+  "model_training_executed": false,
+  "data_integrity_passed": true,
+  "scaler_execution_ready": true,
+  "fixed_validation_invariant": true,
+  "fit_subsets_time_ordered_and_nested": true,
+  "boundary_crossing_window_count": 0,
+  "core_forward_passed": true,
+  "selected_reference_forward_passed": false,
+  "parameter_decisions_requiring_source_choice": 0,
+  "implementation_adapter_rows": 22,
+  "model_applicability": {
+    "CI-AE": "조건부 적용 가능",
+    "GDN": "조건부 적용 가능",
+    "LSTM-AD": "조건부 적용 가능",
+    "USAD": "조건부 적용 가능"
+  },
+  "tier2_execution_blockers": {
+    "full_module_import_pending": [
+      {
+        "model": "CI-AE",
+        "error": "ModuleNotFoundError: No module named 'statsmodels'"
+      },
+      {
+        "model": "LSTM-AD",
+        "error": "ModuleNotFoundError: No module named 'torchinfo'"
+      },
+      {
+        "model": "GDN",
+        "error": "ModuleNotFoundError: No module named 'src.models.tier2.gdn'"
+      }
+    ],
+    "implementation_adapter_rows": 22,
+    "selected_reference_forward_pending": [
+      "USAD"
+    ]
+  },
+  "eda_generation_success": true,
+  "parameter_eda_closed": true,
+  "tier2_execution_ready": false
+}

@@ -27,9 +27,9 @@ def has_completion_marker(run_dir) -> bool:
         return False
 
 
-def snapshot_matches_git_hashes(run_dir, expected_git_hashes) -> bool:
-    """완료 산출물이 현재 봉인한 두 저장소 commit에서 나온 것인지 확인한다."""
-    if expected_git_hashes is None:
+def snapshot_matches_source_identity(run_dir, expected_identity) -> bool:
+    """완료 산출물이 현재 프로젝트·로컬 모델 소스에서 나온 것인지 확인한다."""
+    if expected_identity is None:
         return True
     try:
         snapshot = json.loads(
@@ -37,16 +37,9 @@ def snapshot_matches_git_hashes(run_dir, expected_git_hashes) -> bool:
                 encoding="utf-8",
             )
         )
-        snapshot_hashes = snapshot["config"]["git_hashes"]
+        snapshot_identity = snapshot["config"]["source_identity"]
         snapshot_project = snapshot["git_commit_hash"]
-        expected_project = expected_git_hashes["tsad_project"]
-        expected_fork = expected_git_hashes["gragod_fork"]
+        expected_project = expected_identity["project_commit"]
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError):
         return False
-    if not isinstance(snapshot_hashes, dict):
-        return False
-    return (
-        snapshot_project == expected_project
-        and snapshot_hashes.get("tsad_project") == expected_project
-        and snapshot_hashes.get("gragod_fork") == expected_fork
-    )
+    return snapshot_project == expected_project and snapshot_identity == expected_identity

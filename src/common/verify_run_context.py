@@ -1,13 +1,31 @@
 """학습 전후 Git 상태를 검증한다."""
 
 import json
+import hashlib
 import platform
 import subprocess
 from importlib import metadata
 from pathlib import Path
 
 
-EXPECTED_GRAGOD_COMMIT = "485e26b0c6b1d63f4f3531c8d05597db82e9db29"
+UPSTREAM_SOURCE_COMMITS = {
+    "d-ailin/GDN": "9853899da860682669a134e4af315d036aab4eca",
+    "GraGOD": "ec8cd452a410ba903a31beb097a010ba0448c095",
+    "manigalati/usad": "e25af45c8e1c32783aed94fc7e5ab85effef2b1a",
+    "TheDatumOrg/TSB-AD": "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48",
+}
+
+LOCAL_MODEL_FILES = (
+    "src/models/tier2/AE/AE_raw(TSB).py",
+    "src/models/tier2/AE/adapter.py",
+    "src/models/tier2/LSTMAD/LSTMAD_raw.py",
+    "src/models/tier2/LSTMAD/adapter.py",
+    "src/models/tier2/USAD/official.py",
+    "src/models/tier2/USAD/adapter.py",
+    "src/models/tier2/GDN/model.py",
+    "src/models/tier2/GDN/modules.py",
+    "src/models/tier2/GDN/adapter.py",
+)
 
 
 def run_git(repository_dir, *arguments) -> str:
@@ -33,34 +51,44 @@ def read_git_hash(repository_dir) -> str:
         raise RuntimeError(f"Git commit을 읽지 못했다: {Path(repository_dir).resolve()}") from error
 
 
-def verify_run_context(project_path, fork_path) -> dict[str, str]:
-    repositories = (("TSAD", project_path), ("GraGOD", fork_path))
-    hashes = {}
-    for name, path in repositories:
-        commit = read_git_hash(path)
-        if run_git(path, "status", "--porcelain"):
-            raise RuntimeError(f"{name} 작업 트리가 clean하지 않다: {Path(path).resolve()}")
-        hashes["tsad_project" if name == "TSAD" else "gragod_fork"] = commit
-    if hashes["gragod_fork"] != EXPECTED_GRAGOD_COMMIT:
-        raise RuntimeError(
-            "GraGOD commit이 고정값과 다르다: "
-            f"{hashes['gragod_fork']} != {EXPECTED_GRAGOD_COMMIT}"
-        )
-    return hashes
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def verify_git_hashes_unchanged(expected_hashes: dict[str, str], project_path, fork_path) -> None:
-    current_hashes = {
-        "tsad_project": read_git_hash(project_path),
-        "gragod_fork": read_git_hash(fork_path),
+def read_source_identity(project_path) -> dict:
+    project_path = Path(project_path).resolve()
+    local_hashes = {}
+    for relative_path in LOCAL_MODEL_FILES:
+        path = project_path / relative_path
+        if not path.is_file():
+            raise RuntimeError(f"로컬 모델 파일이 없다: {path}")
+        local_hashes[relative_path] = _sha256(path)
+    return {
+        "project_commit": read_git_hash(project_path),
+        "local_model_sha256": local_hashes,
+        "upstream_source_commits": dict(UPSTREAM_SOURCE_COMMITS),
     }
-    if current_hashes != expected_hashes:
+
+
+def verify_run_context(project_path) -> dict:
+    identity = read_source_identity(project_path)
+    if run_git(project_path, "status", "--porcelain"):
+        raise RuntimeError(f"TSAD 작업 트리가 clean하지 않다: {Path(project_path).resolve()}")
+    return identity
+
+
+def verify_source_identity_unchanged(expected_identity: dict, project_path) -> None:
+    current_identity = read_source_identity(project_path)
+    if current_identity != expected_identity:
         raise RuntimeError(
-            f"실행 중 Git commit이 바뀌었다: {expected_hashes} -> {current_hashes}"
+            f"실행 중 소스 신원이 바뀌었다: {expected_identity} -> {current_identity}"
         )
-    for name, path in (("TSAD", project_path), ("GraGOD", fork_path)):
-        if run_git(path, "status", "--porcelain"):
-            raise RuntimeError(f"실행 중 {name} 작업 트리가 바뀌었다: {Path(path).resolve()}")
+    if run_git(project_path, "status", "--porcelain"):
+        raise RuntimeError(f"실행 중 TSAD 작업 트리가 바뀌었다: {Path(project_path).resolve()}")
 
 
 def verify_runtime_versions(environment: dict) -> dict[str, str]:

@@ -69,11 +69,13 @@ class TestBuildRatioFeasibilityRows(unittest.TestCase):
         )
 
         self.assertEqual([row["window_size"] for row in rows], [5])
-        self.assertEqual(rows[0]["kept_length"], 1997)
-        self.assertEqual(rows[0]["validation_length"], 200)
-        self.assertEqual(rows[0]["model_train_length"], 1797)
-        self.assertEqual(rows[0]["train_window_count"], 1792)
-        self.assertEqual(rows[0]["normalization_sample_count"], 1992)
+        self.assertEqual(rows[0]["fit_pool_length"], 35944)
+        self.assertEqual(rows[0]["kept_length"], 1798)
+        self.assertEqual(rows[0]["validation_length"], 3994)
+        self.assertEqual(rows[0]["model_train_length"], 1798)
+        self.assertEqual(rows[0]["train_window_count"], 1793)
+        self.assertEqual(rows[0]["scaler_fit_observation_count"], 1798)
+        self.assertEqual(rows[0]["validation_transform_observation_count"], 3994)
         self.assertTrue(rows[0]["feasible"])
 
 
@@ -84,12 +86,12 @@ class TestBuildRatioChannelQualityRows(unittest.TestCase):
         })
 
         rows = build_ratio_channel_quality_rows(
-            train_features, series=1, ratios=(0.5, 1.0)
+            train_features, series=1, ratios=(0.4, 1.0)
         )
 
         by_ratio = {row["ratio"]: row for row in rows}
-        self.assertTrue(by_ratio[0.5]["iqr_zero"])
-        self.assertTrue(by_ratio[0.5]["standard_deviation_zero"])
+        self.assertTrue(by_ratio[0.4]["iqr_zero"])
+        self.assertTrue(by_ratio[0.4]["standard_deviation_zero"])
         self.assertFalse(by_ratio[1.0]["iqr_zero"])
         self.assertFalse(by_ratio[1.0]["standard_deviation_zero"])
 

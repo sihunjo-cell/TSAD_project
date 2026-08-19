@@ -1,0 +1,21 @@
+﻿dataset,model,parameter,reference_value,source_priority,source,selection_reason,fixed_across_ratios,status
+HAI,GDN,model_structure,learned sensor graph; one-step forecast,1,GDN paper,센서 관계를 학습하는 주 모델 정의다.,True,verified
+HAI,GDN,input_window,5,1,GDN paper SWaT/WADI experiments,논문 실험값을 CLI 기본 15보다 우선한다.,True,verified
+HAI,GDN,embedding_dimension,64,2,d-ailin/GDN run.sh,공식 실행 스크립트 값이다.,True,verified
+HAI,GDN,output_hidden_dimension,128,2,d-ailin/GDN run.sh,공식 실행 스크립트가 CLI 기본 256을 덮어쓴다.,True,verified
+HAI,GDN,output_layer_count,1,2,d-ailin/GDN run.sh,공식 실행 스크립트 값이다.,True,verified
+HAI,GDN,heads,1,4,pinned GraGOD implementation,현재 채택 구현의 단일 head 구조다.,True,verified
+HAI,GDN,dropout,0.2,2,d-ailin/GDN model.py,원 저자 모델의 출력 dropout 값이다. GraGOD는 같은 인자를 attention에도 적용한다.,True,local_source_mismatch
+HAI,GDN,topk,22,5,project fixed transfer rule,GHL·HAI 성능을 보기 전에 채널 수에 맞춰 고정한 프로젝트 값이다.,True,fixed
+HAI,GDN,batch_size,32,2,d-ailin/GDN run.sh,공식 실행 스크립트 값이다.,True,verified
+HAI,GDN,train_and_evaluation_stride,train=1; evaluation=1,2,d-ailin/GDN run.sh and TimeDataset.py,run.sh의 SLIDE_STRIDE=1과 평가 구간의 고정 stride 1을 따른다.,True,verified
+HAI,GDN,max_epochs,50,1,GDN paper SWaT/WADI experiments,논문에 적힌 최대 학습 횟수를 우선한다.,True,verified
+HAI,GDN,optimizer,"Adam(lr=0.001, weight_decay=0)",2,d-ailin/GDN train.py/run.sh,공식 학습 코드와 일치한다.,True,verified
+HAI,GDN,adam_betas,"(0.9,0.99)",1,GDN paper SWaT/WADI experiments,논문에 적힌 Adam 설정을 따른다.,True,verified
+HAI,GDN,scheduler_and_gradient_clip,none,2,d-ailin/GDN train.py,원 저자 학습 경로에는 scheduler와 gradient clipping이 없다.,True,adapter_required
+HAI,GDN,early_stopping,patience=10,1,GDN paper SWaT/WADI experiments,논문에 적힌 조기 종료 규칙을 따른다.,True,verified
+HAI,GDN,loss,MSE one-step forecast,2,d-ailin/GDN train.py,공식 학습 손실이다.,True,verified
+HAI,GDN,anomaly_score,per-channel absolute forecast error; channel max after normalization,5,project score contract,공통 점수 인터페이스와 현재 GDN 계산이 맞는다.,True,fixed
+HAI,GDN,input_normalization,fit-only MinMax; reuse on validation and test,5,project preprocessing contract,GDN 내부에는 별도 scaling이 없어 그대로 적용된다.,True,fixed
+HAI,GDN,validation_ratio,0.1,5,project preprocessing contract,전체 정상 구간에서 마지막 10%를 먼저 고정하고 남은 fit pool에 비율을 적용한다.,True,fixed
+HAI,GDN,drop_last,False,4,pinned GraGOD DataLoader,마지막 작은 batch도 사용한다.,True,verified

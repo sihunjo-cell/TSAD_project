@@ -11,12 +11,19 @@
 
 ## 현재 게이트
 
-실데이터 학습은 금지다. GDN 실행 흐름은 준비됐지만 재현 기준·train stride·topk는 아직
-잠정값이다. 나머지 계층 1·2·3 모델도 구현되지 않았고, 지우의 채점 규칙과 주혜의
-난이도·통계 규칙도 대기 중이다.
+계층 2의 파라미터 EDA와 CI-AE·LSTM-AD·USAD·GDN adapter, GHL·HAI runner를 완성했다.
+합성 데이터로 optimizer 갱신, checkpoint 복원, 점수 8벌, metadata와 완료 판정을 확인했다.
+HAI형 GDN도 train 4세션·test 2세션과 인접행렬 두 종류를 통과했다. 기존 EDA는 다시 만들지
+않았고 실데이터 학습도 실행하지 않았다.
+
+실데이터 runner는 현재 dirty 작업 트리에서 의도적으로 멈춘다. 외부 GraGOD fork와 삭제된
+소문자 GDN 경로는 더 이상 필요하지 않다.
 
 ## 다음 작업
 
-제가 담당하는 모델을 한 종류씩 준비한다. 원 논문, 공식 구현, TSB-AD wrapper를 실제로 대조해 입력·출력과 고정값을 기록한 뒤 최소 구현과 합성 단위 테스트까지만 만든다. 모든 모델은 `docs/role_B/score_interface.md`의 점수·metadata 형식을 따른다.
+이번 변경을 commit해 작업 트리를 clean 상태로 만든다. 연구실 서버에서 accelerator와
+`tsad_fixed` 환경을 확인하고 `python -m tests.checks.run_tier2_dryrun`을 다시 통과한 뒤에만
+GHL·HAI 본실험 runner를 시작한다.
 
-외부 산출물이 먼저 오면 `docs/lead/process_0_preverify.md`의 실행 전 조건에 적힌 파일만 갱신한다. 실제 GHL·HAI 배치, VUS-PR 계산, 난이도 분할, Jaccard와 통계 집계는 시작하지 않는다.
+지우의 채점기와 주혜의 난이도·통계 산출물은 모델 구현 종료 조건이 아니라 최종 통합 실험
+조건이다. 도착 전에는 VUS-PR 계산과 난이도·통계 집계만 시작하지 않는다.

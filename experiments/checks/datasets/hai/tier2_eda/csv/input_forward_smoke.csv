@@ -1,0 +1,2 @@
+﻿dataset,model,source_class,synthetic_batch_size,input_shape,expected_output_shapes,actual_output_shapes,forward_passed,reference_source_matches,reference_forward_passed,forward_error,full_module_import_ready,full_module_import_error,model_training_executed,scope
+HAI,GDN,src.models.tier2.GDN.model.GDN,2,"[2, 86, 5]","[[2, 86]]","[[2, 86]]",True,True,True,,False,ModuleNotFoundError: No module named 'src.models.tier2.gdn',False,model core forward only; wrapper fit and predict were not called

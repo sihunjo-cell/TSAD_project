@@ -6,7 +6,7 @@ import yaml
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SUPPORTED_RATIO_PERCENTS = (5, 10, 20, 50, 100)
+SUPPORTED_RATIO_PERCENTS = (5, 10, 20, 40, 60, 80, 100)
 
 
 def load_yaml(path: Path) -> dict:
@@ -27,11 +27,22 @@ def load_dataset_ratios(
         raise ValueError(f"ratio는 중복 없는 양의 정수여야 한다: {dataset}.{ratio_key}")
     if len(set(ratios)) != len(ratios):
         raise ValueError(f"ratio는 중복 없는 양의 정수여야 한다: {dataset}.{ratio_key}")
-    if any(value not in SUPPORTED_RATIO_PERCENTS for value in ratios):
+    if ratios != SUPPORTED_RATIO_PERCENTS:
         raise ValueError(
-            f"지원 비율은 {SUPPORTED_RATIO_PERCENTS}뿐이다: {dataset}.{ratio_key}={ratios}"
+            f"비율 계약은 {SUPPORTED_RATIO_PERCENTS}이다: {dataset}.{ratio_key}={ratios}"
         )
     return ratios
+
+
+def load_validation_fraction(repository_root=REPOSITORY_ROOT) -> float:
+    preprocessing = load_yaml(Path(repository_root) / "configs" / "data_preprocessing.yaml")
+    try:
+        fraction = preprocessing["common"]["validation_fraction"]
+    except (KeyError, TypeError) as error:
+        raise ValueError("고정 validation 비율 설정이 없다") from error
+    if not isinstance(fraction, (int, float)) or not 0 < fraction < 1:
+        raise ValueError(f"validation_fraction은 0과 1 사이여야 한다: {fraction!r}")
+    return float(fraction)
 
 
 def load_planned_ratios_and_seeds(dataset: str, repository_root=REPOSITORY_ROOT):
@@ -90,6 +101,10 @@ def validate_pipeline_contract(
     })
     require_values(preprocessing, {
         "common.downsample_factor": 1,
+        "common.validation_fraction": 0.1,
+        "common.validation_position": "tail",
+        "common.validation_split_order": "before_ratio",
+        "common.ratio_base": "fit_pool",
         "common.timestamp_as_feature": False,
         "common.label_as_feature": False,
         "common.label_aggregation": None,
@@ -119,16 +134,13 @@ def validate_pipeline_contract(
         raise ValueError(f"지원하지 않는 dataset이다: {dataset}")
 
 
-def validate_fork_contract(contract: dict) -> None:
+def validate_gdn_training_contract(contract: dict) -> None:
     require_values(contract, {
         "loss": "mse",
         "forecast_horizon": 1,
         "n_workers": 0,
         "validation_shuffle": False,
-        "optimizer": "adam",
-        "scheduler.name": "reduce_lr_on_plateau",
-        "scheduler.factor": 0.5,
-        "scheduler.patience": 8,
-        "scheduler.monitor": "Loss/val",
-        "gradient_clip_val": 1.0,
+        "optimizer": "Adam",
+        "scheduler": "none",
+        "gradient_clip": "none",
     })

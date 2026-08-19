@@ -9,9 +9,11 @@ from src.data_split.take_training_prefix import take_training_prefix
 
 class TestTakeTrainingPrefix(unittest.TestCase):
     def test_kept_lengths_for_T20_all_ratios(self):
-        # 손검산: p=0.05→ceil(1)=1, 0.10→2, 0.20→4, 0.50→10, 1.00→20.
+        # 손검산: p=0.05→1, 0.10→2, 0.20→4, 0.40→8, 0.60→12, 0.80→16, 1.00→20.
         train_array = numpy.zeros((20, 3))
-        expected_by_ratio = {0.05: 1, 0.10: 2, 0.20: 4, 0.50: 10, 1.00: 20}
+        expected_by_ratio = {
+            0.05: 1, 0.10: 2, 0.20: 4, 0.40: 8, 0.60: 12, 0.80: 16, 1.00: 20,
+        }
         for ratio, expected_length in expected_by_ratio.items():
             kept, split_info = take_training_prefix(train_array, ratio)
             self.assertEqual(kept.shape[0], expected_length)
@@ -34,7 +36,7 @@ class TestTakeTrainingPrefix(unittest.TestCase):
         numpy.testing.assert_array_equal(kept[-1], [30, 31, 32])
 
     def test_rejects_disallowed_ratios(self):
-        for bad_ratio in (0.3, 0.15, 0.0, 1.5):
+        for bad_ratio in (0.50, 0.30, 0.15, 0.0, 1.5):
             with self.assertRaises(ValueError):
                 take_training_prefix(numpy.zeros((20, 3)), bad_ratio)
 

@@ -1,5 +1,4 @@
-# GDN 합성 검증용 잠정 실행값이다. 실데이터 학습 전 재현 기준·stride·topk 회의에서
-# 확정하고 docs/lead/decisions.md와 함께 갱신한다.
+# GDN 적용성 계산과 로컬 adapter가 함께 쓰는 고정 preset이다.
 
 model_params:
   window_size: 5
@@ -7,7 +6,8 @@ model_params:
   out_layer_num: 1
   out_layer_inter_dim: 128
   heads: 1
-  dropout: 0.2
+  attention_dropout: 0.0
+  output_dropout: 0.2
   negative_slope: 0.2
   learn_graph: true
   topk_by_dataset:
@@ -31,17 +31,11 @@ train_params:
     GHL: [1, 2, 3]
     HAI: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-# 고정 GraGOD 포크의 내부값과 우리 러너의 validation 순서 계약이다.
-# 포크값은 hash로, validation_shuffle=false는 runner 테스트로 보증한다.
-fork_contract:
+local_training_contract:
   loss: mse
   forecast_horizon: 1
   n_workers: 0
   validation_shuffle: false
-  optimizer: adam
-  scheduler:
-    name: reduce_lr_on_plateau
-    factor: 0.5
-    patience: 8
-    monitor: Loss/val
-  gradient_clip_val: 1.0
+  optimizer: Adam
+  scheduler: none
+  gradient_clip: none

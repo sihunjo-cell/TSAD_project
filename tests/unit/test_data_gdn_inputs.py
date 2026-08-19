@@ -60,25 +60,26 @@ class TestLoadGhlSeries(unittest.TestCase):
             write_ghl_csv(csv_path)
 
             inputs = load_ghl_series(
-                csv_path, ratio_percent=50, val_fraction=1 / 3, min_train_length=4,
+                csv_path, ratio_percent=60, val_fraction=1 / 3, min_train_length=4,
             )
 
         self.assertEqual(inputs["feature_names"], tuple(feature_names(19)))
-        self.assertEqual([array.shape for array in inputs["train_sessions"]], [(4, 19)])
-        self.assertEqual([array.shape for array in inputs["validation_sessions"]], [(2, 19)])
+        self.assertEqual([array.shape for array in inputs["train_sessions"]], [(5, 19)])
+        self.assertEqual([array.shape for array in inputs["validation_sessions"]], [(4, 19)])
         self.assertEqual([array.shape for array in inputs["test_sessions"]], [(4, 19)])
         self.assertEqual(inputs["test_labels"][0].tolist(), [1, 0, 1, 0])
         self.assertEqual(inputs["session_splits"], ({
             "source": csv_path.name,
             "original_train_range": (0, 11),
-            "kept_train_range": (0, 6),
-            "train_range": (0, 4),
-            "validation_range": (4, 6),
+            "fit_pool_range": (0, 7),
+            "kept_train_range": (0, 5),
+            "train_range": (0, 5),
+            "validation_range": (7, 11),
             "test_range": (11, 15),
         },))
         self.assertAlmostEqual(inputs["train_sessions"][0][-1, 0], 1.0)
-        self.assertAlmostEqual(inputs["validation_sessions"][0][0, 0], 4 / 3)
-        self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 11 / 3, places=6)
+        self.assertAlmostEqual(inputs["validation_sessions"][0][0, 0], 7 / 4)
+        self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 11 / 4, places=6)
 
     def test_rejects_nonbinary_ghl_labels(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -90,7 +91,7 @@ class TestLoadGhlSeries(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "0 또는 1"):
                 load_ghl_series(
-                    csv_path, ratio_percent=50, val_fraction=1 / 3, min_train_length=4,
+                    csv_path, ratio_percent=60, val_fraction=1 / 3, min_train_length=4,
                 )
 
     def test_uses_scaler_return_value_when_transform_copies(self):
@@ -106,11 +107,11 @@ class TestLoadGhlSeries(unittest.TestCase):
             write_ghl_csv(csv_path)
             with patch("src.data_split.load_ghl_series.MinMaxScaler", return_value=CopyingScaler()):
                 inputs = load_ghl_series(
-                    csv_path, ratio_percent=50, val_fraction=1 / 3, min_train_length=4,
+                    csv_path, ratio_percent=60, val_fraction=1 / 3, min_train_length=4,
                 )
 
         self.assertEqual(inputs["train_sessions"][0][0, 0], 1000)
-        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1004)
+        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1007)
         self.assertEqual(inputs["test_sessions"][0][0, 0], 1011)
 
     def test_rejects_ratio_outside_ghl_plan(self):
@@ -132,21 +133,25 @@ class TestLoadHaiSessions(unittest.TestCase):
 
         self.assertEqual(inputs["feature_names"], tuple(feature_names(86)))
         self.assertEqual([array.shape for array in inputs["train_sessions"]], [(8, 86)] * 4)
-        self.assertEqual([array.shape for array in inputs["validation_sessions"]], [(2, 86)] * 4)
+        self.assertEqual([array.shape for array in inputs["validation_sessions"]], [(20, 86)] * 4)
         self.assertEqual([array.shape for array in inputs["test_sessions"]], [(3, 86), (4, 86)])
         self.assertEqual(inputs["test_labels"][0].tolist(), [0, 1, 0])
         self.assertEqual(inputs["test_labels"][1].tolist(), [0, 1, 0, 1])
         self.assertEqual(
+            [split["fit_pool_range"] for split in inputs["session_splits"]],
+            [(0, 80)] * 4,
+        )
+        self.assertEqual(
             [split["kept_train_range"] for split in inputs["session_splits"]],
-            [(0, 10)] * 4,
+            [(0, 8)] * 4,
         )
         self.assertEqual(
             [split["validation_range"] for split in inputs["session_splits"]],
-            [(8, 10)] * 4,
+            [(80, 100)] * 4,
         )
         self.assertAlmostEqual(inputs["train_sessions"][0][-1, 0], 7 / 67)
         self.assertAlmostEqual(inputs["train_sessions"][3][-1, 0], 1.0)
-        self.assertAlmostEqual(inputs["validation_sessions"][3][0, 0], 68 / 67)
+        self.assertAlmostEqual(inputs["validation_sessions"][3][0, 0], 140 / 67, places=6)
         self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 80 / 67)
 
     def test_rejects_ratio_outside_hai_plan(self):
@@ -187,7 +192,7 @@ class TestLoadHaiSessions(unittest.TestCase):
                 )
 
         self.assertEqual(inputs["train_sessions"][0][0, 0], 1000)
-        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1008)
+        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1080)
         self.assertEqual(inputs["test_sessions"][0][0, 0], 1080)
 
 
