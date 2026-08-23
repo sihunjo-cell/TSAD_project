@@ -1,0 +1,7 @@
+﻿source_file,split,file_size_bytes,n_rows,n_features,feature_missing_count,feature_infinite_count,duplicate_row_count,timestamp_missing_count,timestamp_duplicate_count,timestamp_monotonic_increasing,start_time,end_time,duration_seconds,expected_interval_seconds,irregular_interval_count,nonpositive_interval_count,estimated_missing_intervals,max_interval_seconds,seconds_from_previous_end,unobserved_seconds_since_previous_file,contiguous_with_previous_file
+hai-train1.csv,train_unlabeled,162418984,280800,86,0,0,0,0,0,True,2022-08-04 18:00:01,2022-08-08 00:00:00,280799.0,1.0,0,0,0,1.0,,,False
+hai-test1.csv,test,31255559,54000,86,0,0,0,0,0,True,2022-08-12 16:00:01,2022-08-13 07:00:00,53999.0,1.0,0,0,0,1.0,403201.0,403200.0,False
+hai-train2.csv,train_unlabeled,169121615,291600,86,0,0,0,0,0,True,2022-08-13 07:00:01,2022-08-16 16:00:00,291599.0,1.0,0,0,0,1.0,1.0,0.0,True
+hai-test2.csv,test,132946575,230400,86,0,0,0,0,0,True,2022-08-17 00:00:01,2022-08-19 16:00:00,230399.0,1.0,0,0,0,1.0,28801.0,28800.0,False
+hai-train3.csv,train_unlabeled,72774793,126000,86,0,0,0,0,0,True,2022-08-19 16:00:01,2022-08-21 03:00:00,125999.0,1.0,0,0,0,1.0,1.0,0.0,True
+hai-train4.csv,train_unlabeled,114494940,198000,86,0,0,0,0,0,True,2022-08-22 17:00:01,2022-08-25 00:00:00,197999.0,1.0,0,0,0,1.0,136801.0,136800.0,False

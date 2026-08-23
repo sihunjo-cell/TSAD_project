@@ -1,0 +1,17 @@
+﻿prefix,cardinality_category,feature_count
+P1,binary,1
+P1,constant,10
+P1,high_cardinality,25
+P1,medium_cardinality,1
+P2,binary,7
+P2,constant,6
+P2,high_cardinality,9
+P2,low_cardinality,1
+P2,medium_cardinality,1
+P3,constant,2
+P3,high_cardinality,5
+P4,high_cardinality,9
+P4,medium_cardinality,2
+x1001,high_cardinality,2
+x1002,high_cardinality,2
+x1003,high_cardinality,3

@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-08-23T23:40:00+09:00",
+  "data_directory": "C:\\Users\\hyuk1\\Desktop\\TSAD_dataset\\TSB-AD-M",
+  "output_directory": "C:\\Users\\hyuk1\\Desktop\\TSAD_dataset\\eda\\ghl\\outputs",
+  "seed": 42,
+  "sample_per_group_per_file": 3000,
+  "file_count": 25,
+  "feature_count": 19,
+  "input_files": [
+    "032_GHL_id_1_Sensor_tr_50000_1st_65001.csv",
+    "033_GHL_id_2_Sensor_tr_50000_1st_51001.csv",
+    "034_GHL_id_3_Sensor_tr_50000_1st_122001.csv",
+    "035_GHL_id_4_Sensor_tr_50000_1st_90001.csv",
+    "036_GHL_id_5_Sensor_tr_50000_1st_67147.csv",
+    "037_GHL_id_6_Sensor_tr_50000_1st_80001.csv",
+    "038_GHL_id_7_Sensor_tr_50000_1st_100001.csv",
+    "039_GHL_id_8_Sensor_tr_50000_1st_63030.csv",
+    "040_GHL_id_9_Sensor_tr_50000_1st_92001.csv",
+    "041_GHL_id_10_Sensor_tr_50000_1st_57001.csv",
+    "042_GHL_id_11_Sensor_tr_50000_1st_150001.csv",
+    "043_GHL_id_12_Sensor_tr_39938_1st_40038.csv",
+    "044_GHL_id_13_Sensor_tr_50000_1st_145001.csv",
+    "045_GHL_id_14_Sensor_tr_50000_1st_85076.csv",
+    "046_GHL_id_15_Sensor_tr_50000_1st_156462.csv",
+    "047_GHL_id_16_Sensor_tr_50000_1st_77001.csv",
+    "048_GHL_id_17_Sensor_tr_50000_1st_154001.csv",
+    "049_GHL_id_18_Sensor_tr_50000_1st_109001.csv",
+    "050_GHL_id_19_Sensor_tr_43750_1st_55001.csv",
+    "051_GHL_id_20_Sensor_tr_50000_1st_75110.csv",
+    "052_GHL_id_21_Sensor_tr_50000_1st_98001.csv",
+    "053_GHL_id_22_Sensor_tr_50000_1st_126448.csv",
+    "054_GHL_id_23_Sensor_tr_50000_1st_135001.csv",
+    "055_GHL_id_24_Sensor_tr_50000_1st_118124.csv",
+    "056_GHL_id_25_Sensor_tr_50000_1st_105568.csv"
+  ],
+  "analysis_groups": [
+    "all_data",
+    "train_prefix",
+    "post_train_all",
+    "post_train_normal",
+    "anomaly"
+  ],
+  "notes": [
+    "Files are separate time-series boundaries with no explicit timestamp; statistical independence is not assumed.",
+    "All files are reordered by column name before analysis.",
+    "Exact moments, quality counts, events, and within-file normal/anomaly KS use all rows.",
+    "PCA, correlation, and train/post-train drift use deterministic capped samples.",
+    "Filename first-anomaly metadata is interpreted and validated as a zero-based index.",
+    "No model training or reduced training subsets were created."
+  ]
+}

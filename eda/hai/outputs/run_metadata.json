@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-08-21T00:28:42+09:00",
+  "data_directory": "C:\\Users\\hyuk1\\Desktop\\TSAD_dataset\\HAI-23.05",
+  "output_directory": "C:\\Users\\hyuk1\\Desktop\\TSAD_dataset\\eda\\hai\\outputs",
+  "seed": 42,
+  "sample_per_file": 5000,
+  "sample_fraction_before_cap": 0.02,
+  "minimum_sample_rows_per_file": 1000,
+  "train_files": [
+    "hai-train1.csv",
+    "hai-train2.csv",
+    "hai-train3.csv",
+    "hai-train4.csv"
+  ],
+  "test_files": [
+    "hai-test1.csv",
+    "hai-test2.csv"
+  ],
+  "label_files": [
+    "label-test1.csv",
+    "label-test2.csv"
+  ],
+  "summary_files": [
+    "summary_label1.txt",
+    "summary_label2.txt"
+  ],
+  "feature_count": 86,
+  "notes": [
+    "All exact moments and data-quality counters use every row.",
+    "Within-test normal/anomaly KS statistics use every row in each test file.",
+    "Quantiles, train/test drift, correlation, and PCA use deterministic proportional samples.",
+    "Event response/recovery metrics use the explicit operational thresholds documented in the report.",
+    "No paper-derived domain semantics were used.",
+    "No 5-100% training subsets were created during EDA."
+  ]
+}
