@@ -68,6 +68,11 @@ def load_score_file(score_path: str | Path) -> tuple[np.ndarray, dict]:
             f"shape={scores.shape}, file={score_path.name}"
         )
 
+    if not np.isfinite(scores).all():
+        raise ValueError(
+            f"점수 배열에는 NaN 또는 Inf가 있을 수 없다: {score_path.name}"
+        )
+
     return scores, file_info
 
 
@@ -116,7 +121,11 @@ def validate_score_metadata(
 
     문서와 실제 배열이 다르면 임의로 보정하지 않고 오류를 발생시킨다.
     """
-    score_length = int(metadata["score_length"])
+    for field in ("window_size", "test_length", "score_length"):
+        if type(metadata[field]) is not int:
+            raise ValueError(f"{field}는 JSON 정수여야 한다: {metadata[field]!r}")
+
+    score_length = metadata["score_length"]
 
     if len(scores) != score_length:
         raise ValueError(
@@ -124,8 +133,8 @@ def validate_score_metadata(
             f"metadata={score_length}, actual={len(scores)}"
         )
 
-    window_size = int(metadata["window_size"])
-    test_length = int(metadata["test_length"])
+    window_size = metadata["window_size"]
+    test_length = metadata["test_length"]
 
     if window_size < 0:
         raise ValueError(
@@ -169,6 +178,21 @@ def validate_score_metadata(
     if end is not None and end < start:
         raise ValueError(
             f"label_slice 범위가 잘못되었다: {label_slice!r}"
+        )
+
+    effective_end = test_length if end is None else end
+    if start > test_length or effective_end > test_length:
+        raise ValueError(
+            "label_slice가 test_length 범위를 벗어났다: "
+            f"slice={label_slice!r}, test_length={test_length}"
+        )
+
+    expected_score_length = effective_end - start
+    if score_length != expected_score_length:
+        raise ValueError(
+            "label_slice를 적용한 label 길이가 score_length와 다르다: "
+            f"slice={label_slice!r}, test_length={test_length}, "
+            f"score_length={score_length}"
         )
 
 
