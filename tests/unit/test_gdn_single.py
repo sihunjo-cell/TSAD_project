@@ -331,16 +331,24 @@ class TestRunGdnSingle(unittest.TestCase):
                 [14.0 / 6.01, 28.0 / 12.01],
             ])
             numpy.testing.assert_allclose(numpy.load(trainnorm_channels), expected, rtol=1e-6)
-            self.assertEqual(state["score_input_lengths"], [7, 5])
+            # train+validation reference, test, then normal validation q99 cutoff.
+            self.assertEqual(state["score_input_lengths"], [7, 5, 1])
 
             with open(result["metadata_path"], encoding="utf-8") as metadata_file:
                 metadata = json.load(metadata_file)
-            self.assertEqual(metadata, {
+            self.assertEqual({
+                key: value for key, value in metadata.items()
+                if key != "validation_threshold"
+            }, {
                 "window_size": 5,
                 "test_length": 10,
                 "score_length": 5,
                 "label_slice": [5, None],
+                "validation_threshold_quantile": 0.99,
+                "validation_score_count": 1,
+                "validation_score_source": "raw_trainnorm_aggregated_validation",
             })
+            self.assertTrue(numpy.isfinite(metadata["validation_threshold"]))
 
             with open(result["snapshot_path"], encoding="utf-8") as snapshot_file:
                 snapshot = json.load(snapshot_file)
@@ -349,7 +357,7 @@ class TestRunGdnSingle(unittest.TestCase):
                 data_preprocessing = yaml.safe_load(config_file)
             with open("configs/scoring_pipeline.yaml", encoding="utf-8") as config_file:
                 scoring_pipeline = yaml.safe_load(config_file)
-            self.assertEqual(snapshot["config"], {
+            expected_snapshot_config = {
                 "run_config": config,
                 "data_preprocessing": data_preprocessing,
                 "scoring_pipeline": scoring_pipeline,
@@ -375,7 +383,12 @@ class TestRunGdnSingle(unittest.TestCase):
                     "tsad_project": "project-hash",
                     "gragod_fork": "fork-hash",
                 },
-            })
+            }
+            # Snapshot은 JSON이므로 YAML의 정수 mapping key도 문자열 key로 직렬화된다.
+            self.assertEqual(
+                snapshot["config"],
+                json.loads(json.dumps(expected_snapshot_config)),
+            )
 
 
 class TestRunGdnSessions(unittest.TestCase):
@@ -511,7 +524,8 @@ class TestRunGdnSessions(unittest.TestCase):
             self.assertEqual(state["trainer_initialization_count"], 1)
             self.assertEqual(state["fit_count"], 1)
             self.assertEqual(state["checkpoint_load_count"], 1)
-            self.assertEqual(state["score_input_lengths"], [10, 12, 7, 8])
+            # 두 train+validation reference와 두 test 뒤에 validation 세션별 q99 점수가 계산된다.
+            self.assertEqual(state["score_input_lengths"], [10, 12, 7, 8, 2, 3])
             self.assertEqual(len(result["score_paths"]), 16)
             self.assertEqual(
                 sum("__01__" in Path(path).name for path in result["score_paths"]), 8,
