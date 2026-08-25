@@ -333,6 +333,15 @@ def run_gdn_sessions(
 
     # 기본 점수는 학습·validation 오차 통계로 정규화한다.
     median, iqr = estimate_median_iqr(train_val_errors)
+    validation_scores = numpy.concatenate([
+        apply_median_iqr(
+            compute_absolute_errors(best_module, validation_tensor, **error_arguments),
+            median,
+            iqr,
+            epsilon,
+        ).max(axis=1)
+        for validation_tensor in validation_tensors
+    ])
     score_paths = []
     metadata_paths = []
     for series, test_tensor, test_errors in zip(test_series, test_tensors, test_errors_by_session):
@@ -359,6 +368,7 @@ def run_gdn_sessions(
             test_length=int(test_tensor.shape[0]),
             score_length=int(test_errors.shape[0]),
             label_slice=(window_size, None),
+            validation_scores=validation_scores,
             **naming_arguments,
         ))
 

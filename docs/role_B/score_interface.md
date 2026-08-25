@@ -50,8 +50,15 @@ smoothed는 정규화한 채널별 점수에 시간축 후행 4칸 평균을 적
 - `test_length`
 - `score_length`
 - `label_slice`
+- `validation_threshold` (point-adjust 없는 보조 F1용)
+- `validation_threshold_quantile` (`0.99`으로 고정)
+- `validation_score_count`
+- `validation_score_source` (`raw_trainnorm_aggregated_validation`으로 고정)
 
 GDN의 `label_slice`는 `[W,null]`이다. metadata는 raw·trainnorm 집계본을 기준으로 저장한다.
+`validation_threshold`는 모델별 정상 validation의 **raw·trainnorm 집계 점수**에서 계산한 99% 분위수다.
+테스트 점수·라벨로 최적화하지 않으며 point-adjust도 적용하지 않는다. 채점기는 위 네 필드가 없거나
+분위수·점수 출처가 이 계약과 다르면 본 결과 원표 생성을 중단한다.
 
 무작위 대조군은 `model=RANDOM`, 합성 검증은 `tier=t0`을 쓴다. zero-shot 모델은 학습 비율과
 무관하므로 `r100` 한 벌만 저장하고 결과표에서 필요한 비율 위치에 표시한다.

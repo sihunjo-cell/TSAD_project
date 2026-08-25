@@ -25,3 +25,29 @@ aggregation:
 pipeline_order:
   raw: [normalize, aggregate_max]
   smoothed: [normalize, smooth_per_channel, aggregate_max]
+
+evaluation:
+  main_metric: vus_pr
+  n_thresholds: 250
+  main_result:
+    smoothing_kind: raw
+    norm_kind: trainnorm
+  l_max_samples:
+    GHL: 332
+    HAI: 185
+  sensitivity:
+    l_max_multipliers: [0.5, 1.0, 2.0]
+    half_rounding: floor
+    smoothing_kind: smoothed
+    result_role: appendix_only
+  f1:
+    threshold_source: metadata.validation_threshold
+    quantile: 0.99
+    score_source: raw_trainnorm_aggregated_validation
+    test_optimized_main_result: false
+  acf_selection:
+    input: train_only
+    max_lag: 500
+    first_peak: strict_local_peak
+    ghl_aggregation: median_across_detected_channels
+    hai_aggregation: median_across_sessions_per_channel_then_channels

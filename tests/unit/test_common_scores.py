@@ -7,7 +7,12 @@ import unittest
 
 import numpy
 
-from src.common.save_scores import save_score_arrays, save_score_metadata, snapshot_config
+from src.common.save_scores import (
+    save_score_arrays,
+    save_score_metadata,
+    snapshot_config,
+    validation_threshold_from_scores,
+)
 
 
 class TestSaveScoreMetadata(unittest.TestCase):
@@ -18,6 +23,7 @@ class TestSaveScoreMetadata(unittest.TestCase):
                 output_dir, dataset="SYNTH", series=0, model="GDN", tier="t0",
                 ratio=100, seed=1, window_size=8, test_length=200,
                 score_length=192, label_slice=(8, None),
+                validation_scores=numpy.arange(100, dtype=float),
             )
             self.assertEqual(os.path.basename(path),
                              "SYNTH__00__GDN__t0__r100__s1__raw__trainnorm.meta.json")
@@ -25,6 +31,22 @@ class TestSaveScoreMetadata(unittest.TestCase):
                 metadata = json.load(metadata_file)
             self.assertEqual(metadata["label_slice"], [8, None])
             self.assertEqual(metadata["score_length"], 192)
+            self.assertEqual(metadata["validation_threshold_quantile"], 0.99)
+            self.assertEqual(metadata["validation_score_count"], 100)
+            self.assertEqual(metadata["validation_score_source"], "raw_trainnorm_aggregated_validation")
+            smoothed_path = os.path.join(
+                output_dir,
+                "SYNTH__00__GDN__t0__r100__s1__smoothed__trainnorm.meta.json",
+            )
+            self.assertTrue(os.path.isfile(smoothed_path))
+
+    def test_validation_threshold_is_conservative_q99(self):
+        scores = numpy.arange(100, dtype=float)
+        self.assertEqual(validation_threshold_from_scores(scores), 99.0)
+
+    def test_validation_threshold_rejects_invalid_scores(self):
+        with self.assertRaises(ValueError):
+            validation_threshold_from_scores(numpy.array([[0.1, 0.2]]))
 
 
 class TestSaveScoreArrays(unittest.TestCase):
