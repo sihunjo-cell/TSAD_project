@@ -13,6 +13,31 @@
 외부 담당자의 결과가 오기 전에는 그 역할을 대신 구현하지 않는다. 실데이터 학습도 실행 전
 조건이 모두 정리될 때까지 시작하지 않는다.
 
+## 독립 채점
+
+주지표는 TSB-AD 호환 VUS-PR이며, score 순위 위치에서 250개 threshold를 사용한다.
+VUS의 buffer는 양쪽에 `floor(window / 2)`칸씩 적용하는 연속 sqrt 감쇠 buffer이고,
+원 이상 구간의 existence reward를 recall에 반영한다.
+
+GHL의 최대 buffer window `l_max`는 332 samples로 고정한다. 전체 학습 prefix에서 timestamp와
+label을 제외한 각 비상수 채널의 정규화 ACF를 구하고, lag 1--500에서 첫 strict local peak를
+찾아 검출 채널 125개의 lag 중앙값을 취했다. ACF에는 파일명의 `tr_` 경계 이전 행만 쓴다. 이
+규칙은 GHL의 모든 모델·비율·seed에 동일하게 적용한다. 이전 345와 test 구간을 섞어 계산한 336은
+폐기한다. 테스트 라벨의 이상 구간 길이는 선택에 쓰지 않는다.
+
+HAI의 `l_max`는 165 samples로 고정한다. 첫 시간 조건에서 사용 가능한 train1만 사용하여
+timestamp를 제외한 채널별 ACF를 계산하고, lag 1--500의 첫 strict local peak가 검출된 42개
+채널 lag의 중앙값을 취한다. 이 값은 train1→test1 및 train1+train2→test2 모두에 동일하게
+적용한다. 따라서 test1 평가에 미래 train2~4의 정보를 쓰지 않으며 평가 자도 조건별로 바뀌지
+않는다.
+
+본 결과는 raw/trainnorm만 쓰고 smoothed/trainnorm은 부록 민감도로 분리한다. 보조 F1은
+metadata의 `validation_threshold`에서 계산한 point-wise F1이며, 테스트 label로 최적화하지
+않는다. VUS-PR 민감도는 동일한 250개 threshold로 `floor(ℓ/2)`, `ℓ`, `2ℓ`을 함께 기록한다.
+합성 안전성 점검에서는 point-adjust가 F1을 0.095에서 1.000으로 부풀리고, 20회 무작위 score의
+평균 VUS-PR(0.323)이 perfect score(1.000)보다 낮음을 확인했다. 결과는
+`experiments/checks/scoring/safeguard_summary.json`에 저장한다.
+
 ## 데이터와 전처리
 
 GHL은 25개 시계열과 5·10·20·50·100% 조건을 쓴다. 5%는 최저 데이터 조건, 10%는 저데이터
@@ -25,15 +50,16 @@ GHL은 25개 시계열과 5·10·20·50·100% 조건을 쓴다. 5%는 최저 데
 관측한 데이터만으로 표본 수·채널 변화·분산을 검사한다.
 
 HAI는 23.05의 센서 86개를 사용한다. CSV 한 파일을 연속 세션 하나로 보고 파일 사이에는
-윈도를 만들지 않는다. 훈련 4세션은 한 모델을 학습하는 데 함께 쓰고 테스트 2세션은 따로
-채점한다. 비율은 10%와 100%다. GDN 이웃 수 22는 재현 기준 회의 전 잠정값이다.
+윈도를 만들지 않는다. 시간 조건 1은 train1으로 학습해 test1을, 조건 2는 train1+train2로
+학습해 test2를 평가한다. 각 조건에서 사용 가능한 train 전체를 쓰므로 파일명 ratio는 r100으로
+기록하고 condition은 series(01·02)로 구분한다. GDN 이웃 수 22는 재현 기준 회의 전 잠정값이다.
 
 다운샘플 배율은 1이다. timestamp와 label은 모델 입력에서 뺀다. GHL과 HAI가 제공하는 원래
 학습 구간에 학습 비율을 바로 적용한다.
 
-선택한 학습 구간의 마지막 10%를 validation으로 쓴다. scaler는 train 부분에만 fit하고 같은
-scaler를 validation과 test에 적용한다. GHL은 시계열마다 scaler 하나, HAI는 훈련 4세션을
-합쳐 scaler 하나를 쓴다.
+선택한 학습 구간의 마지막 20%를 validation으로 쓴다. scaler는 train 부분에만 fit하고 같은
+scaler를 validation과 test에 적용한다. GHL은 시계열마다 scaler 하나, HAI는 각 시간 조건에서
+사용 가능한 train 세션의 train 부분을 합쳐 scaler 하나를 쓴다.
 
 ## GDN 실행 규칙
 
@@ -48,13 +74,13 @@ IQR을 테스트에 적용한 `trainnorm`이 기본 결과다. 테스트 자체 
 
 현재 config의 window 5, embedding 64, hidden 128, output layer 1개, heads 1, dropout 0.2,
 negative slope 0.2, batch 32, 최대 50 epoch, Adam `lr=0.001`, `weight_decay=0`, `eps=1e-8`,
-`betas=(0.9,0.99)`, early stopping patience 10, validation 0.1은 합성 검증용 잠정값이다.
+`betas=(0.9,0.99)`, early stopping patience 10, validation 0.2는 현재 확정값이다.
 재현 기준·train stride·topk를 본 실험 전에 확정하고 config를 함께 고친다. GHL seed는 1~3,
 HAI seed는 1~10이다.
 
 1-step forecast 점수 길이는 `L-W`, 대응 라벨은 `labels[W:]`다. 여러 세션은 세션별 window
-dataset만 합치며 원시 배열을 이어 붙이지 않는다. HAI 테스트 세션은 같은 학습 모델로 각각
-점수를 만든다.
+dataset만 합치며 원시 배열을 이어 붙이지 않는다. HAI는 시간 조건마다 별도 학습 모델로
+해당 test 세션 하나의 점수를 만든다.
 
 HAI 그래프는 best checkpoint의 embedding으로 다시 계산한다. self-edge 포함본과 제거본을
 모두 저장하고 Jaccard에는 제거본을 쓴다. 이웃 비율 0.25는 데이터에서 최적화한 값이 아니라
@@ -62,7 +88,7 @@ HAI 그래프는 best checkpoint의 embedding으로 다시 계산한다. self-ed
 
 ## 실행과 재현성
 
-GHL GDN 본 실험은 `25×5×3=375`, HAI GDN 확장은 `2×10=20`개 학습 조합이다. GHL
+GHL GDN 본 실험은 `25×5×3=375`, HAI GDN 확장은 시간 조건 `2×10=20`개 학습 조합이다. GHL
 실행에는 앞쪽 누적분만 쓴다.
 
 실행 전에는 입력 크기와 SHA-256, 설정, package와 소스 버전, clean 상태를 확인한다.

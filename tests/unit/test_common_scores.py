@@ -9,6 +9,7 @@ import numpy
 
 from src.common.save_scores import (
     save_score_arrays,
+    save_aggregated_score_arrays,
     save_score_metadata,
     snapshot_config,
     validation_threshold_from_scores,
@@ -39,6 +40,11 @@ class TestSaveScoreMetadata(unittest.TestCase):
                 "SYNTH__00__GDN__t0__r100__s1__smoothed__trainnorm.meta.json",
             )
             self.assertTrue(os.path.isfile(smoothed_path))
+            testnorm_path = os.path.join(
+                output_dir,
+                "SYNTH__00__GDN__t0__r100__s1__raw__testnorm.meta.json",
+            )
+            self.assertTrue(os.path.isfile(testnorm_path))
 
     def test_validation_threshold_is_conservative_q99(self):
         scores = numpy.arange(100, dtype=float)
@@ -79,6 +85,18 @@ class TestSaveScoreArrays(unittest.TestCase):
                 [[0.0, 0.0], [1.5, 3.0], [2.5, 1.5]])
             numpy.testing.assert_array_equal(
                 arrays["GHL__03__GDN__t2__r010__s1__smoothed__trainnorm.npy"], [0.0, 3.0, 2.5])
+
+    def test_aggregated_scores_do_not_create_fake_channel_arrays(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            paths = save_aggregated_score_arrays(
+                numpy.array([1.0, 2.0, 3.0, 4.0]), output_dir,
+                dataset="GHL", series=3, model="PCA", tier="t1", ratio=10,
+                seed=1, norm_kind="trainnorm", smoothing_window=2,
+            )
+            self.assertEqual(sorted(os.path.basename(path) for path in paths), [
+                "GHL__03__PCA__t1__r010__s1__raw__trainnorm.npy",
+                "GHL__03__PCA__t1__r010__s1__smoothed__trainnorm.npy",
+            ])
 
 
 class TestSnapshotConfig(unittest.TestCase):

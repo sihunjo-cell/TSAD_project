@@ -16,7 +16,9 @@ REQUIRED_METADATA_FIELDS = (
 )
 
 
-def load_score_file(score_path: str | Path) -> tuple[np.ndarray, dict]:
+def load_score_file(
+    score_path: str | Path, *, allow_testnorm: bool = False,
+) -> tuple[np.ndarray, dict]:
     """점수 배열과 파일명 정보를 읽고 기본 입력 계약을 검증한다.
 
     Parameters
@@ -53,7 +55,7 @@ def load_score_file(score_path: str | Path) -> tuple[np.ndarray, dict]:
             f"{score_path.name}"
         )
 
-    if file_info["norm_kind"] != "trainnorm":
+    if file_info["norm_kind"] != "trainnorm" and not allow_testnorm:
         raise ValueError(
             f"본 채점은 trainnorm만 사용한다: {score_path.name}"
         )
@@ -197,10 +199,10 @@ def validate_score_metadata(
 
 
 def load_and_validate_score(
-    score_path: str | Path,
+    score_path: str | Path, *, allow_testnorm: bool = False,
 ) -> tuple[np.ndarray, dict, dict]:
     """점수 배열, filename 정보, metadata를 모두 읽고 검증한다."""
-    scores, file_info = load_score_file(score_path)
+    scores, file_info = load_score_file(score_path, allow_testnorm=allow_testnorm)
     metadata = load_score_metadata(score_path)
 
     validate_score_metadata(scores, metadata)

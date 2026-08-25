@@ -101,18 +101,18 @@ def validate_pipeline_contract(
     if dataset == "SYNTH":
         return
     require_values(preprocessing, {
-        f"datasets.{dataset}.ratio_application": "per_training_session",
         f"datasets.{dataset}.feature_count": feature_count,
     })
     if dataset == "HAI":
         require_values(preprocessing, {
-            "datasets.HAI.training_sessions": 4,
+            "datasets.HAI.ratio_application": "all_available_sessions_per_temporal_condition",
             "datasets.HAI.test_sessions": 2,
-            "datasets.HAI.scaler_fit_scope": "all_training_sessions_train",
+            "datasets.HAI.scaler_fit_scope": "current_temporal_condition_train",
             "datasets.HAI.cross_session_windows": False,
         })
     elif dataset == "GHL":
         require_values(preprocessing, {
+            "datasets.GHL.ratio_application": "per_training_session",
             "datasets.GHL.scaler_fit_scope": "current_series_train",
         })
     else:

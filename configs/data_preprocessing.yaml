@@ -18,10 +18,12 @@ datasets:
     feature_count: 19
     scaler_fit_scope: current_series_train
   HAI:
-    ratios: [10, 100]
-    ratio_application: per_training_session
-    training_sessions: 4
+    ratios: [100]
+    ratio_application: all_available_sessions_per_temporal_condition
+    temporal_conditions:
+      1: {train_sessions: [1], test_session: 1}
+      2: {train_sessions: [1, 2], test_session: 2}
     test_sessions: 2
     feature_count: 86
-    scaler_fit_scope: all_training_sessions_train
+    scaler_fit_scope: current_temporal_condition_train
     cross_session_windows: false

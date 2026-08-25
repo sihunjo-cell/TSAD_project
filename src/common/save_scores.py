@@ -75,6 +75,44 @@ def save_score_arrays(
     return saved_paths
 
 
+def save_aggregated_score_arrays(
+    scores: numpy.ndarray,
+    output_dir: str,
+    dataset: str,
+    series: int,
+    model: str,
+    tier: str,
+    ratio: int,
+    seed: int,
+    norm_kind: str,
+    smoothing_window: int = 4,
+) -> list[str]:
+    """처음부터 1차원인 모델 점수의 raw·smoothed 집계본을 저장한다.
+
+    채널별 근거를 만들 수 없는 PCA/KNN/IForest/MatrixProfile에는 ``__channels``
+    파일을 억지로 만들지 않는다.
+    """
+    scores = numpy.asarray(scores, dtype=float)
+    if scores.ndim != 1 or scores.size == 0 or not numpy.all(numpy.isfinite(scores)):
+        raise ValueError("집계 점수는 비어 있지 않은 유한 1차원 배열이어야 한다.")
+    smoothed = trailing_average_smoothing(scores[:, None], window=smoothing_window)[:, 0]
+    arguments = dict(
+        dataset=dataset, series=series, model=model, tier=tier,
+        ratio=ratio, seed=seed, norm_kind=norm_kind, channels=False,
+    )
+    arrays = {
+        build_score_filename(smoothing_kind="raw", **arguments): scores,
+        build_score_filename(smoothing_kind="smoothed", **arguments): smoothed,
+    }
+    os.makedirs(output_dir, exist_ok=True)
+    paths = []
+    for filename, array in arrays.items():
+        path = os.path.join(output_dir, filename)
+        numpy.save(path, array)
+        paths.append(path)
+    return paths
+
+
 def save_score_metadata(
     output_dir: str,
     dataset: str, series: int, model: str, tier: str, ratio: int, seed: int,
@@ -96,14 +134,15 @@ def save_score_metadata(
     }
     paths = []
     for smoothing_kind in ("raw", "smoothed"):
-        filename = build_score_filename(
-            dataset, series, model, tier, ratio, seed, smoothing_kind,
-            "trainnorm", channels=False,
-        )
-        path = os.path.join(output_dir, filename[: -len(".npy")] + ".meta.json")
-        with open(path, "w", encoding="utf-8") as metadata_file:
-            json.dump(metadata, metadata_file, ensure_ascii=False, indent=2)
-        paths.append(path)
+        for norm_kind in ("trainnorm", "testnorm"):
+            filename = build_score_filename(
+                dataset, series, model, tier, ratio, seed, smoothing_kind,
+                norm_kind, channels=False,
+            )
+            path = os.path.join(output_dir, filename[: -len(".npy")] + ".meta.json")
+            with open(path, "w", encoding="utf-8") as metadata_file:
+                json.dump(metadata, metadata_file, ensure_ascii=False, indent=2)
+            paths.append(path)
     return paths[0]
 
 

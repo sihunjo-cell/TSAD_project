@@ -21,6 +21,8 @@ offset을 추측하지 않는다.
 
 series는 두 자리, ratio는 `005`, `010`, `020`, `050`, `100`처럼 세 자리로 쓴다. seed는
 패딩하지 않는다. 예시는 `GHL__03__GDN__t2__r010__s1__raw__trainnorm.npy`다.
+HAI 시간 조건은 series `01`=train1→test1, `02`=train1+train2→test2로 기록한다. 두 조건은
+각각 사용 가능한 train 전체를 쓰므로 ratio는 `100`이다.
 
 | 구분 | 형태 | 용도 |
 | --- | --- | --- |
@@ -44,7 +46,7 @@ smoothed는 정규화한 채널별 점수에 시간축 후행 4칸 평균을 적
 
 ## metadata
 
-집계본과 같은 이름의 `.meta.json`에는 아래 네 필드를 둔다.
+집계본과 같은 이름의 `.meta.json`에는 기본 필수 4개와, 본 채점 F1용 추가 4개를 둔다.
 
 - `window_size`
 - `test_length`
@@ -57,8 +59,12 @@ smoothed는 정규화한 채널별 점수에 시간축 후행 4칸 평균을 적
 
 GDN의 `label_slice`는 `[W,null]`이다. metadata는 raw·trainnorm 집계본을 기준으로 저장한다.
 `validation_threshold`는 모델별 정상 validation의 **raw·trainnorm 집계 점수**에서 계산한 99% 분위수다.
-테스트 점수·라벨로 최적화하지 않으며 point-adjust도 적용하지 않는다. 채점기는 위 네 필드가 없거나
+테스트 점수·라벨로 최적화하지 않으며 point-adjust도 적용하지 않는다. 채점기는 F1용 추가 4개 필드가 없거나
 분위수·점수 출처가 이 계약과 다르면 본 결과 원표 생성을 중단한다.
+validation score가 1,000개 미만인 조건의 F1은 `auxiliary_low_validation_sample`로 표시하며,
+VUS-PR·AUPRC 해석에는 영향을 주지 않는다.
+F1은 raw/trainnorm 본 결과에서만 계산한다. smoothed 또는 testnorm 부록 원표에는 VUS-PR와
+AUPRC만 기록하며 F1은 `not_applicable_appendix_score`로 표시한다.
 
 무작위 대조군은 `model=RANDOM`, 합성 검증은 `tier=t0`을 쓴다. zero-shot 모델은 학습 비율과
 무관하므로 `r100` 한 벌만 저장하고 결과표에서 필요한 비율 위치에 표시한다.

@@ -11,6 +11,7 @@ from src.채점기.score_runner import (
     evaluate_score_file,
     f1_at_threshold,
     load_test_labels,
+    summarize_hai_temporal_rows,
 )
 
 
@@ -61,6 +62,22 @@ class TestScoreRunner(unittest.TestCase):
             self.assertEqual(row["n_thresholds"], 250)
             self.assertGreaterEqual(row["vus_pr"], 0.0)
             self.assertLessEqual(row["vus_pr"], 1.0)
+            self.assertEqual(row["f1_interpretation"], "auxiliary_low_validation_sample")
+
+    def test_hai_summary_is_unweighted_mean_of_two_temporal_conditions(self):
+        rows = [
+            {"dataset": "HAI", "series": 1, "model": "GDN", "tier": "t2", "ratio": 100, "seed": 1,
+             "smoothing_kind": "raw", "norm_kind": "trainnorm", "vus_pr": 0.2, "auprc": 0.3,
+             "f1": 0.4, "vus_pr_lmax_half": 0.1, "vus_pr_lmax_double": 0.25},
+            {"dataset": "HAI", "series": 2, "model": "GDN", "tier": "t2", "ratio": 100, "seed": 1,
+             "smoothing_kind": "raw", "norm_kind": "trainnorm", "vus_pr": 0.6, "auprc": 0.7,
+             "f1": 0.8, "vus_pr_lmax_half": 0.5, "vus_pr_lmax_double": 0.65},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            result = summarize_hai_temporal_rows(rows, Path(tmp, "hai_summary.csv"))
+        self.assertEqual(result[0]["summary_kind"], "hai_temporal_unweighted_mean")
+        self.assertAlmostEqual(result[0]["vus_pr"], 0.4)
+        self.assertAlmostEqual(result[0]["f1"], 0.6)
 
 
 if __name__ == "__main__":

@@ -290,15 +290,15 @@ class TestGhlBatch(unittest.TestCase):
 
 
 class TestHaiBatch(unittest.TestCase):
-    def test_specs_cover_2_ratios_10_seeds(self):
+    def test_specs_cover_2_temporal_conditions_10_seeds(self):
         specs = build_hai_specs()
         self.assertEqual(len(specs), 2 * 10)
         self.assertEqual(len(set(specs)), len(specs))
-        self.assertEqual(specs[0], (10, 1))
-        self.assertEqual(specs[-1], (100, 10))
+        self.assertEqual(specs[0], (1, 1))
+        self.assertEqual(specs[-1], (2, 10))
 
     def test_batch_saves_both_edge_sets_and_becomes_complete(self):
-        spec = (10, 1)
+        spec = (1, 1)
         with tempfile.TemporaryDirectory() as temporary_dir:
             experiment_dir = Path(temporary_dir)
             input_metadata_seen = []
@@ -331,13 +331,13 @@ class TestHaiBatch(unittest.TestCase):
             self.assertEqual(find_missing_hai_runs(experiment_dir, (spec,)), [])
             self.assertEqual(
                 (experiment_dir / "scores" / "tier2" / "gdn"
-                 / "r010" / "s1" / "COMPLETE").read_text(
+                 / "condition1" / "s1" / "COMPLETE").read_text(
                     encoding="ascii",
                 ),
                 "complete\n",
             )
             without_self = numpy.load(adjacency_path(
-                experiment_dir, ratio=10, seed=1, self_edges=False,
+                experiment_dir, condition=1, seed=1, self_edges=False,
             ))
             self.assertEqual({tuple(edge) for edge in without_self.T}, {(1, 0)})
 
@@ -357,17 +357,17 @@ class TestHaiBatch(unittest.TestCase):
             self.assertEqual(resumed, {"completed": 0, "skipped": 1, "failed": 0})
 
     def test_zero_byte_checkpoint_is_incomplete(self):
-        spec = (10, 1)
+        spec = (1, 1)
         with tempfile.TemporaryDirectory() as temporary_dir:
             experiment_dir = Path(temporary_dir)
-            run_dir = Path(temporary_dir) / "runs" / "r010" / "s1"
+            run_dir = Path(temporary_dir) / "runs" / "condition1" / "s1"
             config = {
-                "naming": {"dataset": "HAI", "series": (1, 2), "tier": "t2", "ratio": 10},
+                "naming": {"dataset": "HAI", "series": 1, "tier": "t2", "ratio": 100},
             }
             result = write_fake_run(str(run_dir), config, seed=1)
             Path(result["best_checkpoint_path"]).write_bytes(b"")
             for self_edges in (True, False):
-                path = adjacency_path(experiment_dir, ratio=10, seed=1, self_edges=self_edges)
+                path = adjacency_path(experiment_dir, condition=1, seed=1, self_edges=self_edges)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 numpy.save(path, numpy.empty((2, 0), dtype=int))
             write_fake_completion_marker(run_dir)

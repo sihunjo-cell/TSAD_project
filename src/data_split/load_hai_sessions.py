@@ -21,6 +21,13 @@ TEST_FILENAMES = tuple(f"hai-test{session}.csv" for session in range(1, 3))
 LABEL_FILENAMES = tuple(f"label-test{session}.csv" for session in range(1, 3))
 ALLOWED_RATIO_PERCENTS = load_dataset_ratios("HAI")
 
+# 본 HAI 설계의 두 시간 조건. condition 1에는 train1, condition 2에는
+# train1·train2만 사용할 수 있으며, 뒤 세션은 어떤 변환 통계에도 쓰지 않는다.
+TEMPORAL_CONDITIONS = {
+    1: {"train_filenames": ("hai-train1.csv",), "test_filename": "hai-test1.csv", "label_filename": "label-test1.csv"},
+    2: {"train_filenames": ("hai-train1.csv", "hai-train2.csv"), "test_filename": "hai-test2.csv", "label_filename": "label-test2.csv"},
+}
+
 
 def read_feature_names(csv_path: Path) -> tuple[str, ...]:
     columns = tuple(pandas.read_csv(csv_path, nrows=0).columns)
@@ -129,5 +136,62 @@ def load_hai_sessions(
         "validation_sessions": tuple(validation_sessions),
         "test_sessions": tuple(test_sessions),
         "test_labels": tuple(test_labels),
+        "session_splits": tuple(session_splits),
+    }
+
+
+def load_hai_temporal_condition(
+    dataset_dir: str | Path,
+    condition: int,
+    val_fraction: float,
+    min_train_length: int,
+) -> dict:
+    """HAI의 사전 고정 시간 조건 하나를 읽는다.
+
+    condition 1은 train1→test1, condition 2는 train1+train2→test2다.
+    각 사용 가능 train 세션의 마지막 20%만 정상 validation으로 분리하며,
+    scaler는 해당 조건의 train 부분에만 fit한다.
+    """
+    if condition not in TEMPORAL_CONDITIONS:
+        raise ValueError(f"HAI temporal condition은 {tuple(TEMPORAL_CONDITIONS)} 중 하나여야 한다.")
+    dataset_dir = Path(dataset_dir)
+    specification = TEMPORAL_CONDITIONS[condition]
+    feature_names = read_feature_names(dataset_dir / TRAIN_FILENAMES[0])
+    train_sessions, validation_sessions, session_splits = [], [], []
+    for filename in specification["train_filenames"]:
+        features = read_feature_array(dataset_dir / filename, feature_names)
+        split_info = {"T": len(features), "condition": condition, "source": filename}
+        train_part, validation_part = validation_split(
+            features,
+            val_fraction=val_fraction,
+            min_train_length=min_train_length,
+            split_info=split_info,
+        )
+        train_sessions.append(train_part)
+        validation_sessions.append(validation_part)
+        session_splits.append({
+            "source": filename,
+            "original_train_range": (0, len(features)),
+            "train_range": (0, len(train_part)),
+            "validation_range": (len(train_part), len(features)),
+        })
+
+    scaler = MinMaxScaler(copy=False)
+    for train_part in train_sessions:
+        scaler.partial_fit(train_part)
+    train_sessions = [scaler.transform(part) for part in train_sessions]
+    validation_sessions = [scaler.transform(part) for part in validation_sessions]
+    test_part, test_label = read_test_session(
+        dataset_dir / specification["test_filename"],
+        dataset_dir / specification["label_filename"],
+        feature_names,
+    )
+    return {
+        "condition": condition,
+        "feature_names": feature_names,
+        "train_sessions": tuple(train_sessions),
+        "validation_sessions": tuple(validation_sessions),
+        "test_sessions": (scaler.transform(test_part),),
+        "test_labels": (test_label,),
         "session_splits": tuple(session_splits),
     }

@@ -9,7 +9,7 @@ import pandas
 from unittest.mock import patch
 
 from src.data_split.load_ghl_series import load_ghl_series
-from src.data_split.load_hai_sessions import load_hai_sessions
+from src.data_split.load_hai_sessions import load_hai_sessions, load_hai_temporal_condition
 
 
 def feature_names(count: int) -> list[str]:
@@ -121,40 +121,58 @@ class TestLoadGhlSeries(unittest.TestCase):
                 load_ghl_series(csv_path, ratio_percent=7, val_fraction=0.1, min_train_length=6)
 
 class TestLoadHaiSessions(unittest.TestCase):
+    def test_temporal_conditions_use_only_available_train_sessions(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            dataset_dir = Path(temporary_dir)
+            write_hai_data(dataset_dir)
+            first = load_hai_temporal_condition(
+                dataset_dir, condition=1, val_fraction=0.2, min_train_length=4,
+            )
+            second = load_hai_temporal_condition(
+                dataset_dir, condition=2, val_fraction=0.2, min_train_length=4,
+            )
+
+        self.assertEqual([array.shape for array in first["train_sessions"]], [(80, 86)])
+        self.assertEqual([array.shape for array in second["train_sessions"]], [(80, 86), (80, 86)])
+        self.assertEqual([array.shape for array in first["test_sessions"]], [(3, 86)])
+        self.assertEqual([array.shape for array in second["test_sessions"]], [(4, 86)])
+        self.assertAlmostEqual(first["test_sessions"][0][0, 0], 80 / 79)
+        self.assertAlmostEqual(second["test_sessions"][0][0, 0], 100 / 99)
+
     def test_preserves_sessions_and_fits_one_scaler_on_four_train_parts(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
             dataset_dir = Path(temporary_dir)
             write_hai_data(dataset_dir)
 
             inputs = load_hai_sessions(
-                dataset_dir, ratio_percent=10, val_fraction=0.2, min_train_length=4,
+                dataset_dir, ratio_percent=100, val_fraction=0.2, min_train_length=4,
             )
 
         self.assertEqual(inputs["feature_names"], tuple(feature_names(86)))
-        self.assertEqual([array.shape for array in inputs["train_sessions"]], [(8, 86)] * 4)
-        self.assertEqual([array.shape for array in inputs["validation_sessions"]], [(2, 86)] * 4)
+        self.assertEqual([array.shape for array in inputs["train_sessions"]], [(80, 86)] * 4)
+        self.assertEqual([array.shape for array in inputs["validation_sessions"]], [(20, 86)] * 4)
         self.assertEqual([array.shape for array in inputs["test_sessions"]], [(3, 86), (4, 86)])
         self.assertEqual(inputs["test_labels"][0].tolist(), [0, 1, 0])
         self.assertEqual(inputs["test_labels"][1].tolist(), [0, 1, 0, 1])
         self.assertEqual(
             [split["kept_train_range"] for split in inputs["session_splits"]],
-            [(0, 10)] * 4,
+            [(0, 100)] * 4,
         )
         self.assertEqual(
             [split["validation_range"] for split in inputs["session_splits"]],
-            [(8, 10)] * 4,
+            [(80, 100)] * 4,
         )
-        self.assertAlmostEqual(inputs["train_sessions"][0][-1, 0], 7 / 67)
+        self.assertAlmostEqual(inputs["train_sessions"][0][-1, 0], 79 / 139)
         self.assertAlmostEqual(inputs["train_sessions"][3][-1, 0], 1.0)
-        self.assertAlmostEqual(inputs["validation_sessions"][3][0, 0], 68 / 67)
-        self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 80 / 67)
+        self.assertAlmostEqual(inputs["validation_sessions"][3][0, 0], 140 / 139)
+        self.assertAlmostEqual(inputs["test_sessions"][0][0, 0], 80 / 139)
 
     def test_rejects_ratio_outside_hai_plan(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
             dataset_dir = Path(temporary_dir)
             write_hai_data(dataset_dir)
             with self.assertRaisesRegex(ValueError, "HAI ratio"):
-                load_hai_sessions(dataset_dir, ratio_percent=50, val_fraction=0.1, min_train_length=6)
+                load_hai_sessions(dataset_dir, ratio_percent=10, val_fraction=0.1, min_train_length=6)
 
     def test_rejects_nonbinary_hai_labels(self):
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -167,7 +185,7 @@ class TestLoadHaiSessions(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "0 또는 1"):
                 load_hai_sessions(
-                    dataset_dir, ratio_percent=10, val_fraction=0.2, min_train_length=4,
+                    dataset_dir, ratio_percent=100, val_fraction=0.2, min_train_length=4,
                 )
 
     def test_hai_uses_scaler_return_values_when_transform_copies(self):
@@ -183,11 +201,11 @@ class TestLoadHaiSessions(unittest.TestCase):
             write_hai_data(dataset_dir)
             with patch("src.data_split.load_hai_sessions.MinMaxScaler", return_value=CopyingScaler()):
                 inputs = load_hai_sessions(
-                    dataset_dir, ratio_percent=10, val_fraction=0.2, min_train_length=4,
+                    dataset_dir, ratio_percent=100, val_fraction=0.2, min_train_length=4,
                 )
 
         self.assertEqual(inputs["train_sessions"][0][0, 0], 1000)
-        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1008)
+        self.assertEqual(inputs["validation_sessions"][0][0, 0], 1080)
         self.assertEqual(inputs["test_sessions"][0][0, 0], 1080)
 
 

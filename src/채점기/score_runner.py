@@ -39,6 +39,8 @@ def load_evaluation_settings() -> dict:
             raise ValueError("F1 validation quantile은 사전 고정값 0.99여야 한다.")
         if settings["f1"]["score_source"] != "raw_trainnorm_aggregated_validation":
             raise ValueError("F1 threshold는 raw/trainnorm validation 집계 점수에서 산출해야 한다.")
+        if settings["f1"]["minimum_validation_score_count"] != 1000:
+            raise ValueError("F1 해석의 최소 validation 표본 수는 사전 고정값 1000이어야 한다.")
         if settings["f1"]["test_optimized_main_result"] is not False:
             raise ValueError("본 결과에서 test 최적 F1은 금지한다.")
     except (KeyError, TypeError) as error:
@@ -129,9 +131,10 @@ def load_test_labels(dataset: str, series: int, dataset_dir: str | Path) -> np.n
 
 def evaluate_score_file(
     score_path: str | Path, labels: np.ndarray, settings: dict | None = None,
+    *, allow_testnorm: bool = False,
 ) -> dict:
     """점수 하나를 평가해 원표의 한 행을 반환한다."""
-    scores, info, metadata = load_and_validate_score(score_path)
+    scores, info, metadata = load_and_validate_score(score_path, allow_testnorm=allow_testnorm)
     settings = load_evaluation_settings() if settings is None else settings
     l_max_by_dataset = settings["l_max_samples"]
     if info["dataset"] not in l_max_by_dataset:
@@ -156,6 +159,10 @@ def evaluate_score_file(
         raise ValueError("metadata의 validation score source가 사전 고정값과 다르다.")
     l_max = l_max_by_dataset[info["dataset"]]
     sensitivity_l_max = (math.floor(l_max / 2), l_max, 2 * l_max)
+    is_f1_main_score = (
+        info["norm_kind"] == settings["main_result"]["norm_kind"]
+        and info["smoothing_kind"] == settings["main_result"]["smoothing_kind"]
+    )
     return {
         **info,
         "score_file": Path(score_path).name,
@@ -166,28 +173,41 @@ def evaluate_score_file(
         "validation_threshold": validation_threshold,
         "validation_threshold_quantile": validation_quantile,
         "validation_score_count": validation_score_count,
+        "f1_interpretation": (
+            "not_applicable_appendix_score" if not is_f1_main_score
+            else "auxiliary" if validation_score_count >= settings["f1"]["minimum_validation_score_count"]
+            else "auxiliary_low_validation_sample"
+        ),
         "vus_pr": vus_pr(scores, aligned_label, l_max, settings["n_thresholds"]),
         "auprc": average_precision(scores, aligned_label),
-        "f1": f1_at_threshold(scores, aligned_label, validation_threshold),
+        "f1": (
+            f1_at_threshold(scores, aligned_label, validation_threshold)
+            if is_f1_main_score else None
+        ),
         "vus_pr_lmax_half": vus_pr(scores, aligned_label, sensitivity_l_max[0], settings["n_thresholds"]),
         "vus_pr_lmax_double": vus_pr(scores, aligned_label, sensitivity_l_max[2], settings["n_thresholds"]),
     }
 
 
-def evaluate_directory(scores_dir: str | Path, dataset_dir: str | Path, output_csv: str | Path) -> list[dict]:
-    """본 채점 대상 trainnorm 집계본을 모두 읽어 결정적 순서의 CSV 원표를 쓴다."""
+def evaluate_directory(
+    scores_dir: str | Path, dataset_dir: str | Path, output_csv: str | Path,
+    *, smoothing_kind: str = "raw", norm_kind: str = "trainnorm",
+) -> list[dict]:
+    """요청한 raw/smoothed·trainnorm/testnorm 집계본을 원표로 만든다."""
     rows = []
     settings = load_evaluation_settings()
     for score_path in sorted(Path(scores_dir).glob("*.npy")):
         info = parse_score_filename(score_path.name)
         if (
             info["channels"]
-            or info["norm_kind"] != settings["main_result"]["norm_kind"]
-            or info["smoothing_kind"] != settings["main_result"]["smoothing_kind"]
+            or info["norm_kind"] != norm_kind
+            or info["smoothing_kind"] != smoothing_kind
         ):
             continue
         labels = load_test_labels(info["dataset"], info["series"], dataset_dir)
-        rows.append(evaluate_score_file(score_path, labels, settings))
+        rows.append(evaluate_score_file(
+            score_path, labels, settings, allow_testnorm=(norm_kind == "testnorm"),
+        ))
     if not rows:
         raise ValueError("본 채점 대상 trainnorm 집계 점수 파일이 없다.")
 
@@ -200,13 +220,54 @@ def evaluate_directory(scores_dir: str | Path, dataset_dir: str | Path, output_c
     return rows
 
 
+def summarize_hai_temporal_rows(rows: list[dict], output_csv: str | Path) -> list[dict]:
+    """동일 모델·seed의 HAI condition 1·2를 행 수 가중 없이 산술평균한다.
+
+    두 원표 행은 서로 다른 학습 데이터 조건이므로 이 파일은 대체 결과가 아니라
+    ``hai_temporal_unweighted_mean``이라는 별도 요약이다.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    key_fields = ("model", "tier", "ratio", "seed", "smoothing_kind", "norm_kind")
+    for row in rows:
+        if row["dataset"] != "HAI":
+            continue
+        groups.setdefault(tuple(row[field] for field in key_fields), []).append(row)
+    summaries = []
+    metric_fields = ("vus_pr", "auprc", "f1", "vus_pr_lmax_half", "vus_pr_lmax_double")
+    for key, group in sorted(groups.items()):
+        if {row["series"] for row in group} != {1, 2}:
+            raise ValueError("HAI 시간 조건 요약에는 series 01·02가 모두 필요하다.")
+        summary = dict(zip(key_fields, key))
+        summary.update({"dataset": "HAI", "summary_kind": "hai_temporal_unweighted_mean"})
+        for field in metric_fields:
+            values = [row[field] for row in group]
+            summary[field] = None if any(value is None for value in values) else float(np.mean(values))
+        summaries.append(summary)
+    if not summaries:
+        raise ValueError("HAI 시간 조건 요약 대상 행이 없다.")
+    output_csv = Path(output_csv)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    with output_csv.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=tuple(summaries[0]))
+        writer.writeheader()
+        writer.writerows(summaries)
+    return summaries
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scores-dir", type=Path, required=True)
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--output-csv", type=Path, required=True)
+    parser.add_argument("--smoothing-kind", choices=("raw", "smoothed"), default="raw")
+    parser.add_argument("--norm-kind", choices=("trainnorm", "testnorm"), default="trainnorm")
+    parser.add_argument("--hai-summary-csv", type=Path)
     arguments = parser.parse_args()
-    rows = evaluate_directory(**vars(arguments))
+    argument_dict = vars(arguments)
+    summary_path = argument_dict.pop("hai_summary_csv")
+    rows = evaluate_directory(**argument_dict)
+    if summary_path is not None:
+        summarize_hai_temporal_rows(rows, summary_path)
     print(f"{len(rows)}개 점수 파일을 채점했습니다: {arguments.output_csv}")
 
 

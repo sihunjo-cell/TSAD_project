@@ -34,7 +34,7 @@ evaluation:
     norm_kind: trainnorm
   l_max_samples:
     GHL: 332
-    HAI: 185
+    HAI: 165
   sensitivity:
     l_max_multipliers: [0.5, 1.0, 2.0]
     half_rounding: floor
@@ -44,6 +44,7 @@ evaluation:
     threshold_source: metadata.validation_threshold
     quantile: 0.99
     score_source: raw_trainnorm_aggregated_validation
+    minimum_validation_score_count: 1000
     test_optimized_main_result: false
   acf_selection:
     input: train_only
