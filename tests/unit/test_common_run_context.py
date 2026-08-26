@@ -10,6 +10,49 @@ from src.common import verify_run_context as context
 
 
 class TestVerifyRunContext(unittest.TestCase):
+    def test_one_liners_identity_uses_the_official_gitlab_url(self):
+        self.assertEqual(
+            context.UPSTREAM_SOURCE_COMMITS[
+                "https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/"
+                "publications/iclr2026_timeseriesfoundationmodelsad"
+            ],
+            "dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9",
+        )
+        self.assertNotIn("KU-Leuven-DTAI/One-Liners", context.UPSTREAM_SOURCE_COMMITS)
+
+    def test_source_identity_covers_every_active_model_and_registry_contract(self):
+        repository_root = Path(__file__).resolve().parents[2]
+
+        identity = context.read_source_identity(repository_root)
+
+        for relative_path in (
+            "configs/model_registry.yaml",
+            "src/models/tier1/mwvar.py",
+            "src/models/tier1/sqdiff_last3.py",
+            "src/models/tier1/pca_legacy.py",
+            "src/models/tier2/paano/adapter.py",
+            "src/models/tier2/alora/adapter.py",
+            "src/models/tier2/gdn_official/adapter.py",
+            "src/models/tier3/time_rcd.py",
+            "src/models/tier3/tspulse.py",
+        ):
+            self.assertIn(relative_path, identity["local_model_sha256"])
+        self.assertEqual(
+            identity["upstream_source_commits"]["jinnnju/PaAno"],
+            "d4c67116190efa4592dc6a8a157ced0def68b6af",
+        )
+        self.assertEqual(
+            identity["upstream_source_commits"]["thu-sail-lab/Time-RCD"],
+            "372bb980426b2f67007311c6f3165ab789c79bef",
+        )
+        self.assertNotIn("manigalati/usad", identity["upstream_source_commits"])
+        for relative_path in (
+            "src/models/tier2/AE/adapter.py",
+            "src/models/tier2/LSTMAD/adapter.py",
+            "src/models/tier2/USAD/adapter.py",
+        ):
+            self.assertNotIn(relative_path, identity["local_model_sha256"])
+
     def test_git_failure_is_an_error_not_a_placeholder_hash(self):
         with patch.object(
             context.subprocess,

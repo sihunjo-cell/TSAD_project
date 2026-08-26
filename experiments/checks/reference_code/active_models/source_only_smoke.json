@@ -1,0 +1,75 @@
+{
+  "input_kind": "synthetic_only",
+  "uses_labels": false,
+  "downloads_checkpoints": false,
+  "models": {
+    "MWVAR": {
+      "status": "passed",
+      "score_shape": [
+        140,
+        4
+      ]
+    },
+    "SQDIFF_LAST3": {
+      "status": "passed",
+      "score_shape": [
+        140,
+        4
+      ]
+    },
+    "PCA_LEGACY": {
+      "status": "passed",
+      "score_shape": [
+        120
+      ]
+    },
+    "PaAno": {
+      "status": "passed",
+      "score_shape": [
+        10
+      ]
+    },
+    "ALoRa": {
+      "status": "passed",
+      "score_shape": [
+        5
+      ]
+    },
+    "GDN": {
+      "status": "passed",
+      "window_shape": [
+        4,
+        4,
+        5
+      ],
+      "score_shape": [
+        4,
+        4
+      ],
+      "topk": 1
+    },
+    "TimeRCD": {
+      "status": "passed",
+      "score_shape": [
+        9
+      ]
+    },
+    "TSPulse": {
+      "status": "passed",
+      "score_shapes": {
+        "time": [
+          12
+        ],
+        "fft": [
+          12
+        ],
+        "pred": [
+          12
+        ],
+        "raw_max": [
+          12
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "model": "TimeRCD",
+  "status": "passed",
+  "input": {
+    "kind": "dev18_normal_prefix",
+    "series": "03",
+    "source": "023_MITDB_id_5_Medical_tr_25000_1st_36913.csv",
+    "source_sha256": "130f7c4404f8bd5807cde20e69478dd176c8da976bccef82c2f02c5386a377b7",
+    "input_manifest_sha256": "f653c804c44ea0b147c5edff38ecd6c786bd7189d93ffc07a8068ee0dfa274d4",
+    "slice": [
+      0,
+      1536
+    ],
+    "shape": [
+      1536,
+      2
+    ],
+    "uses_labels": false,
+    "uses_test": false,
+    "uses_normal_training": true
+  },
+  "source": {
+    "commit": "372bb980426b2f67007311c6f3165ab789c79bef"
+  },
+  "checkpoint": {
+    "repository": "thu-sail-lab/Time-RCD",
+    "revision": "0880420070a524efe14d7e163b34dcca90d2be1b",
+    "file": "best_model/pretrain_checkpoint_best_multi.pth",
+    "expected_sha256": "a497ac910f24f8fb347d690a21b60d74bc04785ebc777880553c158dea4434d0",
+    "path": "C:\\Users\\simon\\.cache\\huggingface\\hub\\models--thu-sail-lab--Time-RCD\\snapshots\\0880420070a524efe14d7e163b34dcca90d2be1b\\best_model\\pretrain_checkpoint_best_multi.pth",
+    "sha256": "a497ac910f24f8fb347d690a21b60d74bc04785ebc777880553c158dea4434d0",
+    "bytes": 444841116
+  },
+  "config": {
+    "repository": "thu-sail-lab/Time-RCD",
+    "revision": "0880420070a524efe14d7e163b34dcca90d2be1b",
+    "file": "config.json",
+    "expected_sha256": "5d576f85660cc62268566f6281f5840e505672606b51bbb6c93e397a40ebc11f",
+    "path": "C:\\Users\\simon\\.cache\\huggingface\\hub\\models--thu-sail-lab--Time-RCD\\snapshots\\0880420070a524efe14d7e163b34dcca90d2be1b\\config.json",
+    "sha256": "5d576f85660cc62268566f6281f5840e505672606b51bbb6c93e397a40ebc11f",
+    "bytes": 514
+  },
+  "environment": {
+    "python": "3.11.14",
+    "implementation": "CPython",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "packages": {
+      "numpy": "2.3.2",
+      "pandas": "2.3.3",
+      "scipy": "1.16.1",
+      "scikit-learn": "1.7.1",
+      "torch": "2.10.0",
+      "torch-geometric": "2.7.0",
+      "einops": "0.8.1",
+      "transformers": "4.57.6",
+      "huggingface-hub": "0.36.0",
+      "accelerate": "1.14.0",
+      "datasets": "4.4.2",
+      "filelock": "3.20.3",
+      "jaxtyping": "0.3.2",
+      "matplotlib": "3.10.5",
+      "Deprecated": "1.2.18",
+      "urllib3": "2.6.3",
+      "safetensors": "0.7.0",
+      "tokenizers": "0.22.2",
+      "PyYAML": "6.0.3"
+    },
+    "sources": {
+      "Time-RCD": "https://github.com/thu-sail-lab/Time-RCD.git@372bb980426b2f67007311c6f3165ab789c79bef",
+      "granite-tsfm": "https://github.com/ibm-granite/granite-tsfm.git@9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d"
+    },
+    "torch": {
+      "version": "2.10.0+cpu",
+      "build_suffix": "cpu",
+      "cuda_available": false,
+      "cuda_version": null,
+      "cudnn_version": null,
+      "deterministic_algorithms": true,
+      "cudnn_deterministic": false,
+      "cudnn_benchmark": false
+    }
+  },
+  "seed_state": {
+    "seed": 20260825,
+    "cublas_workspace_config": ":4096:8",
+    "deterministic_algorithms": true,
+    "cuda_seeded": false,
+    "cudnn_deterministic": null,
+    "cudnn_benchmark": null
+  },
+  "channels": {
+    "2": {
+      "status": "passed",
+      "scores": {
+        "score": {
+          "shape": [
+            1536
+          ],
+          "finite": true,
+          "peak_to_peak": 0.5292528001591563,
+          "cpu_deterministic": true,
+          "maximum_absolute_repeat_difference": 0.0
+        }
+      },
+      "cpu_wall_time_seconds": 20.406621299996914
+    }
+  },
+  "config_id": "c1c5aeea6f7d3",
+  "hyperparameters": {
+    "context_length": 5000,
+    "checkpoint_variant": "multi",
+    "score_head": "probability"
+  },
+  "budget_id": "b5367ad431093",
+  "budget_sha256": "5367ad4310937021fe28a95a5446e27ad61fa63e51620dc81b29ee5a4f41417b",
+  "registry_space_sha256": "1453ed35f27e101d4d25f8f09401a74353a6b4568eb4550dad8cb0fc8c480e87",
+  "config_registry_sha256_at_probe": "ff6d5ef9e5f8a43c74b143e9750c8f2475597002ed140de6f2baf951eb42c53c",
+  "smoke_code_sha256": "70ca471da338bc5fa1bf073cdcc89652f2dc06388279f4cd63ec3033a0ebee08",
+  "adapter_sha256": "cc2340545765231a83ef4ae58a872f464fc2f6dc9018f8bf8e9cb041d37ea557",
+  "forbidden_calls": {
+    "standard_scaler_fit": false,
+    "minmax_scaler_fit": false,
+    "time_rcd_window_dataset": false
+  },
+  "cpu_wall_time_seconds": 20.40663889999996
+}

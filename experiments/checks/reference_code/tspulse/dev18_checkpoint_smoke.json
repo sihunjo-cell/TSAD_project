@@ -1,0 +1,162 @@
+{
+  "model": "TSPulse",
+  "status": "passed",
+  "input": {
+    "kind": "dev18_normal_prefix",
+    "series": "03",
+    "source": "023_MITDB_id_5_Medical_tr_25000_1st_36913.csv",
+    "source_sha256": "130f7c4404f8bd5807cde20e69478dd176c8da976bccef82c2f02c5386a377b7",
+    "input_manifest_sha256": "f653c804c44ea0b147c5edff38ecd6c786bd7189d93ffc07a8068ee0dfa274d4",
+    "slice": [
+      0,
+      1536
+    ],
+    "shape": [
+      1536,
+      2
+    ],
+    "uses_labels": false,
+    "uses_test": false,
+    "uses_normal_training": true
+  },
+  "source": {
+    "commit": "9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d"
+  },
+  "checkpoint": {
+    "repository": "ibm-granite/granite-timeseries-tspulse-r1",
+    "revision": "2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2",
+    "file": "model.safetensors",
+    "expected_sha256": "57fa03b67d1473a7253ac37801b24c391d1fa931395db986743e2f59e556b9ac",
+    "path": "C:\\Users\\simon\\.cache\\huggingface\\hub\\models--ibm-granite--granite-timeseries-tspulse-r1\\snapshots\\2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2\\model.safetensors",
+    "sha256": "57fa03b67d1473a7253ac37801b24c391d1fa931395db986743e2f59e556b9ac",
+    "bytes": 4374640
+  },
+  "config": {
+    "repository": "ibm-granite/granite-timeseries-tspulse-r1",
+    "revision": "2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2",
+    "file": "config.json",
+    "expected_sha256": "e33230f47c91dfe4e848ee743924a62a26f710fe7f194566d92835f27c1c6d8b",
+    "path": "C:\\Users\\simon\\.cache\\huggingface\\hub\\models--ibm-granite--granite-timeseries-tspulse-r1\\snapshots\\2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2\\config.json",
+    "sha256": "e33230f47c91dfe4e848ee743924a62a26f710fe7f194566d92835f27c1c6d8b",
+    "bytes": 3521
+  },
+  "environment": {
+    "python": "3.11.14",
+    "implementation": "CPython",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "packages": {
+      "numpy": "2.3.2",
+      "pandas": "2.3.3",
+      "scipy": "1.16.1",
+      "scikit-learn": "1.7.1",
+      "torch": "2.10.0",
+      "torch-geometric": "2.7.0",
+      "einops": "0.8.1",
+      "transformers": "4.57.6",
+      "huggingface-hub": "0.36.0",
+      "accelerate": "1.14.0",
+      "datasets": "4.4.2",
+      "filelock": "3.20.3",
+      "jaxtyping": "0.3.2",
+      "matplotlib": "3.10.5",
+      "Deprecated": "1.2.18",
+      "urllib3": "2.6.3",
+      "safetensors": "0.7.0",
+      "tokenizers": "0.22.2",
+      "PyYAML": "6.0.3"
+    },
+    "sources": {
+      "Time-RCD": "https://github.com/thu-sail-lab/Time-RCD.git@372bb980426b2f67007311c6f3165ab789c79bef",
+      "granite-tsfm": "https://github.com/ibm-granite/granite-tsfm.git@9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d"
+    },
+    "torch": {
+      "version": "2.10.0+cpu",
+      "build_suffix": "cpu",
+      "cuda_available": false,
+      "cuda_version": null,
+      "cudnn_version": null,
+      "deterministic_algorithms": true,
+      "cudnn_deterministic": false,
+      "cudnn_benchmark": false
+    }
+  },
+  "seed_state": {
+    "seed": 20260825,
+    "cublas_workspace_config": ":4096:8",
+    "deterministic_algorithms": true,
+    "cuda_seeded": false,
+    "cudnn_deterministic": null,
+    "cudnn_benchmark": null
+  },
+  "channels": {
+    "2": {
+      "status": "passed",
+      "scores": {
+        "time": {
+          "shape": [
+            1536
+          ],
+          "finite": true,
+          "peak_to_peak": 0.08940298057859764,
+          "cpu_deterministic": true,
+          "maximum_absolute_repeat_difference": 0.0
+        },
+        "fft": {
+          "shape": [
+            1536
+          ],
+          "finite": true,
+          "peak_to_peak": 0.09654886461794376,
+          "cpu_deterministic": true,
+          "maximum_absolute_repeat_difference": 0.0
+        },
+        "pred": {
+          "shape": [
+            1536
+          ],
+          "finite": true,
+          "peak_to_peak": 0.04034328573436596,
+          "cpu_deterministic": true,
+          "maximum_absolute_repeat_difference": 0.0
+        },
+        "raw_max": {
+          "shape": [
+            1536
+          ],
+          "finite": true,
+          "peak_to_peak": 0.09654886461794376,
+          "cpu_deterministic": true,
+          "maximum_absolute_repeat_difference": 0.0
+        }
+      },
+      "cpu_wall_time_seconds": 705.6606749000057
+    }
+  },
+  "config_id": "c12c5e6196ea5",
+  "hyperparameters": {
+    "context_length": 512,
+    "patch_size": 8,
+    "heads": [
+      "time",
+      "fft",
+      "pred",
+      "raw_max"
+    ],
+    "aggregation_window": 64
+  },
+  "budget_id": "b5367ad431093",
+  "budget_sha256": "5367ad4310937021fe28a95a5446e27ad61fa63e51620dc81b29ee5a4f41417b",
+  "registry_space_sha256": "1453ed35f27e101d4d25f8f09401a74353a6b4568eb4550dad8cb0fc8c480e87",
+  "config_registry_sha256_at_probe": "ff6d5ef9e5f8a43c74b143e9750c8f2475597002ed140de6f2baf951eb42c53c",
+  "smoke_code_sha256": "70ca471da338bc5fa1bf073cdcc89652f2dc06388279f4cd63ec3033a0ebee08",
+  "adapter_sha256": "23a159dd7bfd065ac3fd4a694ed4d70f35907faa8248d3e74c3f8a982eef6246",
+  "forbidden_calls": {
+    "standard_scaler_fit": false,
+    "minmax_scaler_fit": false
+  },
+  "loader": {
+    "from_pretrained_source": "verified_local_snapshot",
+    "snapshot_directory": "C:\\Users\\simon\\.cache\\huggingface\\hub\\models--ibm-granite--granite-timeseries-tspulse-r1\\snapshots\\2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2"
+  },
+  "cpu_wall_time_seconds": 705.6613012000016
+}

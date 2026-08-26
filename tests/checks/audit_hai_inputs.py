@@ -4,7 +4,6 @@
 """
 
 import hashlib
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -17,7 +16,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.common.save_scores import snapshot_config
 from src.common.experiment_config import load_dataset_ratios, load_validation_fraction
-from src.data_split.take_training_prefix import compute_kept_length
+from src.data_split.split_ratio_prefix import compute_prefix_counts
 
 
 EXPERIMENT_DIR = REPOSITORY_ROOT / "experiments" / "checks" / "datasets" / "hai"
@@ -69,13 +68,16 @@ def build_ratio_feasibility_rows(
     window_sizes=CURRENT_WINDOW_SIZES,
     validation_fraction: float = VALIDATION_FRACTION,
 ) -> list[dict]:
-    """세션별 앞쪽 누적분의 train·validation·정규화 표본 수를 센다."""
+    """세션별 현재 q-prefix 안의 fit·validation 표본 수를 센다."""
+    if validation_fraction != 0.2:
+        raise ValueError("HAI validation_fraction은 현재 prefix의 0.2로 고정한다")
     rows = []
     for ratio in ratios:
-        validation_length = math.ceil(validation_fraction * train_length)
-        fit_pool_length = train_length - validation_length
-        kept_length = compute_kept_length(fit_pool_length, ratio)
-        model_train_length = kept_length
+        ratio_percent = int(round(ratio * 100))
+        available_length, fit_length, validation_length = compute_prefix_counts(
+            train_length, ratio_percent,
+        )
+        model_train_length = fit_length
         for window_size in window_sizes:
             train_window_count = model_train_length - window_size
             validation_window_count = validation_length - window_size
@@ -84,13 +86,13 @@ def build_ratio_feasibility_rows(
                 "ratio": ratio,
                 "window_size": window_size,
                 "original_train_length": train_length,
-                "fit_pool_length": fit_pool_length,
-                "kept_length": kept_length,
+                "available_length": available_length,
+                "fit_length": fit_length,
                 "model_train_length": model_train_length,
                 "validation_length": validation_length,
                 "train_window_count": train_window_count,
                 "validation_window_count": validation_window_count,
-                "scaler_fit_observation_count": kept_length,
+                "scaler_fit_observation_count": fit_length,
                 "validation_transform_observation_count": validation_length,
                 "feasible": min(
                     train_window_count,
@@ -106,13 +108,16 @@ def build_ratio_channel_activity_rows(
     ratios=RATIOS,
     validation_fraction: float = VALIDATION_FRACTION,
 ) -> list[dict]:
-    """고정 validation 앞 fit pool의 비율별 누적 구간에서 채널 활동을 기록한다."""
+    """현재 q-prefix 안의 fit 구간에서 채널 활동을 기록한다."""
+    if validation_fraction != 0.2:
+        raise ValueError("HAI validation_fraction은 현재 prefix의 0.2로 고정한다")
     rows = []
-    validation_length = math.ceil(len(train_features) * validation_fraction)
-    fit_pool = train_features.iloc[: len(train_features) - validation_length]
     for ratio in ratios:
-        kept_length = compute_kept_length(len(fit_pool), ratio)
-        active_channels = fit_pool.iloc[:kept_length].nunique() > 1
+        ratio_percent = int(round(ratio * 100))
+        _, fit_length, _ = compute_prefix_counts(
+            len(train_features), ratio_percent,
+        )
+        active_channels = train_features.iloc[:fit_length].nunique() > 1
         rows.extend(
             {
                 "session": session,
@@ -201,10 +206,10 @@ def run_hai_preflight() -> None:
             "data_dir": str(DATA_DIR),
             "files": inventory_frame[["file_name", "sha256"]].to_dict("records"),
             "ratios": RATIOS,
-            "ratio_unit": "fraction_of_fit_pool_after_fixed_validation",
-            "validation_split_order": "before_ratio",
-            "ratio_base": "fit_pool",
-            "scaler_fit_scope": "all_current_ratio_fit_subsets",
+            "ratio_unit": "fraction_of_normal_training_current_prefix",
+            "validation_split_order": "after_ratio_per_session",
+            "ratio_base": "normal_training_per_session",
+            "scaler_fit_scope": "fit_subsets_of_execution_training_sessions",
             "validation_fraction": VALIDATION_FRACTION,
             "current_window_sizes": CURRENT_WINDOW_SIZES,
             "expected_feature_count": EXPECTED_FEATURE_COUNT,

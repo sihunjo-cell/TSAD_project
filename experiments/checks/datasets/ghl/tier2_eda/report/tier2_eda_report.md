@@ -1,18 +1,30 @@
 # GHL 계층 2 적용 가능성 점검
 
-이 EDA의 목적은 GHL·HAI에서 최적 파라미터를 찾는 일이 아니다. 논문과 공개 구현에서 먼저 정한 설정을 모든 학습 비율에 그대로 적용할 수 있는지 검사한다. 테스트 이상 성능은 읽지 않았고 모델도 학습하지 않았다.
+> 보관 표지: 이 보고서는 당시 입력과 구현을 점검한 감사 근거다. 현재 모델 선택이나 실행 계약이
+> 아니며, 현행 기준은 [연구 계획](../../../../../../docs/lead/plan_v5.md)과
+> [사전 점검](../../../../../../docs/lead/process_0_preverify.md)을 따른다.
 
-## 실험에서 고정하는 원칙
+이 EDA는 폐기된 고정 설정안의 입력·구현 적합성을 확인한 기록이다. 아래 수치와 표는 당시 계산을
+재현하는 감사 근거일 뿐, 현행 후보·recipe·분할·실행 규칙이 아니다. 테스트 이상 성능은 읽지
+않았고 모델도 학습하지 않았다.
 
-전체 정상 학습 구간의 마지막 10%를 고정 validation으로 한 번만 분리한다. 남은 fit pool의 시간순 앞부분을 5·10·20·40·60·80·100%로 중첩해 fit subset을 만들며 scaler는 각 subset에만 fit한다. 같은 고정 validation에는 transform만 적용한다.
+## 당시 감사 가정 — 현행 실험에 사용하지 않음
 
-학습 비율 외에는 바꾸지 않는다. 모델 구조, 입력 window, hidden·latent 차원, learning rate, batch size, epoch·early stopping, optimizer, 이상 점수와 정규화 규칙은 비율별로 다시 고르지 않는다. 유효 window 수와 batch·update 수만 학습량에 따라 달라진다. 성능이 낮다는 이유로 설정을 바꾸지 않는다.
+당시 계산은 전체 정상 학습 구간의 마지막 10%를 고정 validation으로 한 번만 떼었다. 이 분할은
+폐기했다. 현행 계약은 각 `q` prefix 안에서 `floor(qN) → 80:20`으로 fit과 validation을 나눈다.
 
-설정 충돌은 논문의 데이터셋별 실험값, 공식 config·notebook, 공식 CLI 기본값, TSB-AD 기본값, 프로젝트 임의값 순으로 판단했다.
+당시에는 학습 비율 외의 설정을 고정하고 유효 window 수와 batch·update 수만 계산했다. 이 가정은
+현행 Tier 대표나 recipe를 정하지 않는다. 현행 주분석은 TSB 비-GHL 튜닝 패널 18개에서
+모델·recipe·score variant를
+함께 고른 뒤 봉인하고, GHL25에서는 다시 선택하지 않는다.
 
-USAD batch=128과 GDN topk=5는 GHL 성능을 보기 전에 정한 프로젝트 고정 전이값이다. 공식 GHL 데이터셋별 설정값은 아니다.
+당시 설정 충돌은 논문의 데이터셋별 실험값, 공식 config·notebook, 공식 CLI 기본값, TSB-AD
+기본값, 프로젝트 임의값 순으로 판단했다.
 
-## 고정한 입력 window
+USAD batch=128과 GDN topk=5는 당시 GHL 성능을 보기 전에 둔 전이값이며 공식 GHL 설정값이
+아니다. 현행 선택값으로 사용하지 않는다.
+
+## 당시 입력 window 기록 — 현행 선택값 아님
 
 | 모델 | 입력 window |
 | --- | --- |
@@ -21,9 +33,12 @@ USAD batch=128과 GDN topk=5는 GHL 성능을 보기 전에 정한 프로젝트 
 | LSTM-AD | 100 |
 | USAD | 10 |
 
-이 값은 GHL test 결과로 고른 최적값이 아니다. CI-AE와 LSTM-AD는 채택한 TSB-AD 실행값 100, USAD는 논문 민감도와 WADI 항목에서 옮긴 10, GDN은 SWaT·WADI 논문 실험값 5다. USAD의 downsampling은 옮기지 않고 GHL 원 관측 간격을 유지한다. 출처별 차이는 `model_window_sources.csv`, 전체 파라미터·값·선정 이유는 `model_parameter_sources.csv`에 남겼다.
+이 값은 GHL test 결과로 고른 최적값이 아니다. 당시 CI-AE와 LSTM-AD는 채택한 TSB-AD 실행값
+100, USAD는 논문 민감도와 WADI 항목에서 옮긴 10, GDN은 SWaT·WADI 논문 실험값 5로
+검사했다. 출처별 차이는 `model_window_sources.csv`, 전체 파라미터·값·선정 이유는
+`model_parameter_sources.csv`에 남겼다.
 
-## 가져온 코드의 실행 의미
+## 당시 가져온 코드의 정적 의미
 
 | 모델 | forward 입력 | 학습 단위 | 전처리 상태 | core 점수 대응 | drop_last |
 | --- | --- | --- | --- | --- | --- |
@@ -32,7 +47,7 @@ USAD batch=128과 GDN topk=5는 GHL 성능을 보기 전에 정한 프로젝트 
 | LSTM-AD | [B,100,19] | 1-step forecast | 내부 20% 분할·split별 표준화 우회 필요 | labels[100:] | False |
 | USAD | [B,10,19] | window×channel flatten | 공식 구조 adapter 필요; batch=128 고정 | 재구성 core를 window 중앙에 배치 | False |
 
-입력 형상은 모두 적용 가능했다. 다만 원본 wrapper를 그대로 실행해도 된다는 뜻은 아니다. CI-AE 원본은 scaler 축이 학습 window 수에 묶여 train과 test 길이가 다르면 실패한다. LSTM-AD와 로컬 USAD는 validation과 test를 각 구간 통계로 다시 표준화해 공통 fit-only MinMax 규칙과 충돌한다. USAD는 공식 구현과 현재 TSB-AD 포팅의 구조·optimizer·점수식도 다르다. 이 항목은 모델을 고치는 대신 실행 전 adapter·구현 검증 게이트로 남겼다.
+입력 형상은 모두 적용 가능했다. 다만 원본 wrapper를 그대로 실행해도 된다는 뜻은 아니다. CI-AE 원본은 scaler 축이 학습 window 수에 묶여 train과 test 길이가 다르면 실패한다. LSTM-AD와 현재 저장소의 USAD는 validation과 test를 각 구간 통계로 다시 표준화해 공통 fit-only MinMax 규칙과 충돌한다. USAD는 공식 구현과 현재 TSB-AD 포팅의 구조·optimizer·점수식도 다르다. 이 항목은 모델을 고치는 대신 실행 전 adapter·구현 검증 게이트로 남겼다.
 
 학습 손실과 이상 점수는 구분한다. 각 모델의 학습 손실은 출처 구현을 따르되, 저장 점수는 프로젝트 공통 규칙인 채널별 절대오차를 쓴다. CI-AE와 USAD는 window 안의 절대오차를 채널별 평균하고 중앙 시점에 놓는다. LSTM-AD와 GDN은 1-step 대상의 채널별 절대오차를 쓴다. 그다음 학습·validation 오차로 robust normalization을 맞춘 뒤 채널 max를 취한다. 이 규칙은 모든 비율과 seed에서 같다.
 
@@ -128,27 +143,27 @@ constant는 한 파일·세션의 한 채널이 해당 범위에서 한 값으�
 
 본 실험 산출물은 원 wrapper의 복제 padding을 저장하지 않는다. CI-AE와 USAD의 window 재구성 core는 window 중앙 시점에, LSTM-AD와 GDN의 1-step 예측 core는 `labels[W:]`에 대응한다.
 
-## 학습 없는 forward smoke test
+## 과거 합성 형상 확인 기록
 
-| 모델 | 입력 | 실제 출력 | 로컬 core | 선정 출처 core | 전체 모듈 import |
-| --- | --- | --- | --- | --- | --- |
-| CI-AE | [2, 100] | [[2, 100]] | 통과 | 통과 | 의존성·adapter 필요 |
-| LSTM-AD | [2, 100, 19] | [[1, 2, 19]] | 통과 | 통과 | 의존성·adapter 필요 |
-| USAD | [2, 10, 19] | [[2, 190], [2, 190], [2, 190]] | 통과 | 미완료 | 가능 |
-| GDN | [2, 19, 5] | [[2, 19]] | 통과 | 통과 | 의존성·adapter 필요 |
+| 모델 | 입력 | 실제 출력 | 현재 저장소 core | 선정 출처 core |
+| --- | --- | --- | --- | --- |
+| CI-AE | [2, 100] | [[2, 100]] | 통과 | 통과 |
+| LSTM-AD | [2, 100, 19] | [[1, 2, 19]] | 통과 | 통과 |
+| USAD | [2, 10, 19] | [[2, 190], [2, 190], [2, 190]] | 통과 | 미완료 |
+| GDN | [2, 19, 5] | [[2, 19]] | 통과 | 통과 |
 
-합성 batch 2개로 모델 core의 forward만 호출했다. optimizer step, checkpoint, 실데이터 학습은 실행하지 않았다. USAD 행은 현재 로컬 TSB-AD 포팅의 인터페이스만 확인한 결과다. 선정한 공식 dual-decoder 구조가 아직 로컬 실행 코드에 없어 공식 출처 smoke test로 세지 않았다. 전체 모듈 import가 막힌 항목은 형상 실패가 아니라 누락 의존성이나 wrapper adapter 문제로 따로 기록했다.
-
-실행 환경 gate는 `verified`다. 이 값은 현재 인터프리터와 `configs/environment.yaml`의 버전을 대조한 결과이며 모델별 adapter 완료 여부와는 별개다.
+합성 batch 2개로 모델 core의 forward 형상만 확인한 과거 기록이다. optimizer step, checkpoint,
+실데이터 학습은 포함하지 않았다. USAD 행은 현재 TSB-AD 포팅의 인터페이스 결과이며, 선정한 공식
+dual-decoder 구조는 아직 현재 저장소에 없어 공식 출처 확인으로 세지 않았다.
 
 ## 모델별 적용 판정
 
 | 모델 | 판정 | 남은 조건 |
 | --- | --- | --- |
-| CI-AE | 조건부 적용 가능 | adapter_required, 전체 모듈 import 대기 |
-| GDN | 조건부 적용 가능 | adapter_required, local_source_mismatch, 전체 모듈 import 대기 |
-| LSTM-AD | 조건부 적용 가능 | adapter_required, 전체 모듈 import 대기 |
-| USAD | 조건부 적용 가능 | adapter_required, local_source_mismatch, 선정 출처 forward 대기 |
+| CI-AE | 조건부 적용 가능 | adapter_required |
+| GDN | 조건부 적용 가능 | adapter_required, source_implementation_mismatch |
+| LSTM-AD | 조건부 적용 가능 | adapter_required |
+| USAD | 조건부 적용 가능 | adapter_required, source_implementation_mismatch, 선정 출처 forward 대기 |
 
 ## 완료 기준 판정
 
@@ -160,9 +175,11 @@ constant는 한 파일·세션의 한 채널이 해당 범위에서 한 값으�
 | window·batch·update 수 | 작성 | USAD batch=128과 GDN topk=5를 포함한 고정 설정으로 계산; 실제 update는 실행 로그에서 확정 |
 | 경계 침범 | 통과 | 실제 침범 0개 |
 | 점수·timestamp 정렬 | 통과 | padding하지 않은 core 기준 |
-| 학습 없는 forward | 부분 | 공식 USAD 구조 smoke 대기 |
+| 합성 형상 확인 | 부분 | 공식 USAD 구조 확인 대기 |
 
-파라미터 선정과 데이터 적용 가능성 EDA는 여기서 닫는다. 출처 선택 대기는 0개다. 다만 adapter·구현 불일치 22개와 전체 모듈 import가 남아 있어 실제 학습을 시작하지 않는다. 남은 항목은 비율별 성능으로 고치지 않고 다음 계층 2 구현 gate에서 처리한다.
+파라미터 선정과 데이터 적용 가능성 EDA는 여기서 닫는다. 출처 선택 대기는 0개다. adapter·구현
+불일치 22개와 공식 USAD 구조 확인이 남았으므로 이 보고서만으로 실제 학습을 승인하지 않는다.
+남은 항목은 비율별 성능으로 고치지 않고 현행 사전 점검에서 판정한다.
 
 ## 이번 EDA에서 하지 않은 일
 

@@ -9,22 +9,34 @@ from pathlib import Path
 
 
 UPSTREAM_SOURCE_COMMITS = {
+    "https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/"
+    "iclr2026_timeseriesfoundationmodelsad": (
+        "dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9"
+    ),
+    "jinnnju/PaAno": "d4c67116190efa4592dc6a8a157ced0def68b6af",
+    "CharisShimillas/ALoRa": "97dcc4a337710e6dc72c1a67893717c9538bae1a",
     "d-ailin/GDN": "9853899da860682669a134e4af315d036aab4eca",
-    "GraGOD": "ec8cd452a410ba903a31beb097a010ba0448c095",
-    "manigalati/usad": "e25af45c8e1c32783aed94fc7e5ab85effef2b1a",
+    "thu-sail-lab/Time-RCD": "372bb980426b2f67007311c6f3165ab789c79bef",
+    "ibm-granite/granite-tsfm": "9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d",
     "TheDatumOrg/TSB-AD": "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48",
 }
 
 LOCAL_MODEL_FILES = (
-    "src/models/tier2/AE/AE_raw(TSB).py",
-    "src/models/tier2/AE/adapter.py",
-    "src/models/tier2/LSTMAD/LSTMAD_raw.py",
-    "src/models/tier2/LSTMAD/adapter.py",
-    "src/models/tier2/USAD/official.py",
-    "src/models/tier2/USAD/adapter.py",
-    "src/models/tier2/GDN/model.py",
-    "src/models/tier2/GDN/modules.py",
-    "src/models/tier2/GDN/adapter.py",
+    "configs/model_registry.yaml",
+    "src/common/model_registry.py",
+    "src/common/save_model_artifacts.py",
+    "src/data_split/split_ratio_prefix.py",
+    "src/models/tier1/mwvar.py",
+    "src/models/tier1/sqdiff_last3.py",
+    "src/models/tier1/pca_legacy.py",
+    "src/models/tier2/paano/official.py",
+    "src/models/tier2/paano/adapter.py",
+    "src/models/tier2/alora/official.py",
+    "src/models/tier2/alora/adapter.py",
+    "src/models/tier2/gdn_official/official.py",
+    "src/models/tier2/gdn_official/adapter.py",
+    "src/models/tier3/time_rcd.py",
+    "src/models/tier3/tspulse.py",
 )
 
 

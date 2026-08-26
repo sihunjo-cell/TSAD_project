@@ -33,15 +33,15 @@ class TestApplyMedianIqr(unittest.TestCase):
         self.assertTrue(numpy.isfinite(normalized).all())
         numpy.testing.assert_array_equal(normalized, numpy.zeros((5, 1)))
 
-    def test_train_statistics_applied_to_test_split(self):
-        # 학습·validation 통계를 테스트 구간에 적용한다.
+    def test_fixed_validation_statistics_applied_to_test_split(self):
+        # 고정 normal validation 통계를 테스트 구간에 적용한다.
         with open("configs/scoring_pipeline.yaml", encoding="utf-8") as config_file:
             epsilon = yaml.safe_load(config_file)["normalization"]["epsilon"]
         self.assertEqual(epsilon, 0.01)
 
-        train_scores = numpy.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
+        validation_scores = numpy.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
         test_scores = numpy.array([[3.0], [103.0]])
-        median, iqr = estimate_median_iqr(train_scores)
+        median, iqr = estimate_median_iqr(validation_scores)
         normalized_test = apply_median_iqr(test_scores, median, iqr, epsilon=epsilon)
         # (3-3)/2.01 = 0, (103-3)/2.01 ≈ 49.75 — 테스트 구간 통계는 어디에도 쓰이지 않는다.
         numpy.testing.assert_allclose(normalized_test, [[0.0], [100.0 / 2.01]])

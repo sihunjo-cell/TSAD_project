@@ -8,6 +8,11 @@ from src.common.smoothing import trailing_average_smoothing
 
 
 class TestTrailingAverageSmoothing(unittest.TestCase):
+    def test_scalar_series_keeps_scalar_shape(self):
+        scores = numpy.array([1.0, 3.0, 5.0, 7.0])
+        smoothed = trailing_average_smoothing(scores, window=2)
+        numpy.testing.assert_array_equal(smoothed, [0.0, 2.0, 4.0, 6.0])
+
     def setUp(self):
         # 한 채널의 단일 spike가 시간축으로만 퍼지는지 확인한다.
         self.spiked_scores = numpy.zeros((10, 3))
@@ -43,9 +48,9 @@ class TestTrailingAverageSmoothing(unittest.TestCase):
         # t=3: mean(0,1,2,3) = 1.5 — 후행 4-창의 정의 확인.
         self.assertEqual(smoothed[3, 0], 1.5)
 
-    def test_rejects_non_2d_input(self):
+    def test_rejects_input_above_two_dimensions(self):
         with self.assertRaises(ValueError):
-            trailing_average_smoothing(numpy.zeros(10))
+            trailing_average_smoothing(numpy.zeros((2, 2, 2)))
 
 
 if __name__ == "__main__":

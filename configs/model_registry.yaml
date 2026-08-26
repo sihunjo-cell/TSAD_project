@@ -1,0 +1,165 @@
+version: 1
+
+seeds:
+  development: [0, 1, 2]
+  final: [3, 4, 5, 6, 7]
+
+selection:
+  tier_q_floor: {t1: 5, t2: 10, t3: 5}
+  minimum_primary_ratio_count: 3
+  allowed_primary_hpo_regimes: [equal_trial, runtime_matched]
+  primary_hpo_regime: equal_trial
+  budget_id: b5367ad431093
+  selection_status: ready
+  selection_rule_id: tier_fixed_family_lofo_v2
+  primary_score_variants:
+    TSPulse: [raw_max]
+  diagnostic_score_variants:
+    TSPulse: [time, fft, pred]
+
+common_recipe:
+  input_dispatch: registered_executor_v1
+  input_scaling:
+    training_free: none
+    pca_legacy: model_internal_window_standardscaler_fit_only
+    tier2: external_minmax_fit_only
+    strict_zero_shot: none
+  score_calibration:
+    fit_validation: validation_median_iqr
+    target_free: none
+    epsilon: 0.01
+  smoothing:
+    kind: trailing_mean
+    window: 4
+    boundary: first_three_timesteps_zero
+  order:
+    raw: normalize_then_aggregate
+    smoothed: normalize_then_smooth_per_channel_then_aggregate
+  aggregation:
+    channel_scores: max
+    scalar_scores: model_native
+
+models:
+  MWVAR:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
+    source_checkpoint_sha256: none
+    source_url: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
+    source_license: MIT
+    local_relationship: behavioral_reimplementation
+    target_use: training_free
+    preprocess_recipe: {calibration: none, aggregation: max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, evaluation_mode: offline_noncausal, context_policy: centered_window_edge_repeat}
+    fixed: {window: 96, centered: true, ddof: 1}
+
+  SQDIFF_LAST3:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
+    source_checkpoint_sha256: none
+    source_url: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
+    source_license: MIT
+    local_relationship: behavioral_reimplementation
+    target_use: training_free
+    preprocess_recipe: {calibration: none, aggregation: max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, evaluation_mode: offline_noncausal, context_policy: trailing_mean_backfill}
+    fixed: {lag: 3, window: 4, correction: 1.3333333333333333}
+
+  PCA_LEGACY:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48
+    source_checkpoint_sha256: none
+    source_url: https://github.com/TheDatumOrg/TSB-AD
+    source_license: Apache-2.0
+    local_relationship: official_source_adaptation
+    target_use: fit_validation
+    preprocess_recipe: {window_normalization: window_row_zscore_ddof1, scaler: window_feature_standardscaler_fit_only, calibration: validation_median_iqr, zero_pruning: false, aggregation: weighted_component_distance_scalar, evaluation_mode: offline_noncausal, context_policy: centered_window_edge_repeat}
+    fixed: {window: 100, zero_pruning: false}
+    grid:
+      n_components: [0.25, 0.5, 0.75, null]
+
+  PaAno:
+    tier: t2
+    execution_status: ready
+    deterministic: false
+    source_commit: d4c67116190efa4592dc6a8a157ced0def68b6af
+    source_checkpoint_sha256: none
+    source_url: https://github.com/jinnnju/PaAno
+    source_license: MIT
+    local_relationship: official_source_adaptation
+    target_use: fit_validation
+    preprocess_recipe: {scaler: fit_minmax, calibration: validation_median_iqr, stitching: overlap_mean, aggregation: scalar_patch_top3_cosine, memory_count: floor_fit_patch_fraction, memory_cap: none, evaluation_mode: offline_noncausal, context_policy: stride_one_patch_overlap_mean}
+    fixed: {iterations: 100, batch_size: 512, weight_decay: 0.0001, memory_fraction: 0.1, memory_seed: 42, neighbors: 3, use_revin: true}
+    grid:
+      patch_size: [32, 64, 96]
+      learning_rate: [0.001, 0.0001, 0.00001]
+
+  ALoRa:
+    tier: t2
+    execution_status: ready
+    deterministic: false
+    source_commit: 97dcc4a337710e6dc72c1a67893717c9538bae1a
+    source_checkpoint_sha256: none
+    source_url: https://github.com/CharisShimillas/ALoRa
+    source_license: EUPL-1.2
+    local_relationship: official_source_adaptation
+    target_use: fit_validation
+    preprocess_recipe: {scaler: fit_minmax, calibration: validation_median_iqr, stitching: first_window_then_last, aggregation: official_channel_mean, pair_selection: fit_only_spearman, batch_order: fixed, scheduler: constant, evaluation_mode: offline_noncausal, context_policy: first_window_then_last_stitch}
+    fixed: {layers: 3, heads: 8, learning_rate: 0.0001, lambda_regularization: 10, rank_threshold: 0.01, max_pairs: 512, epochs: 5, batch_size: 256, patience: 3, dropout: 0.0, token_kernel_size: 3, optimizer: Adam, weight_decay: 0.0}
+    grid:
+      window: [20, 40, 60, 80, 100]
+
+  GDN:
+    tier: t2
+    execution_status: ready
+    deterministic: false
+    source_commit: 9853899da860682669a134e4af315d036aab4eca
+    source_checkpoint_sha256: none
+    source_url: https://github.com/d-ailin/GDN
+    source_license: MIT
+    local_relationship: official_source_adaptation
+    target_use: fit_validation
+    preprocess_recipe: {scaler: fit_minmax, calibration: validation_median_iqr, alignment: next_step, aggregation: channelwise_then_project_max, batch_policy: project_transfer_128, evaluation_mode: causal, context_policy: next_step_forecast_no_boundary_fill}
+    fixed: {window: 5, epochs: 30, patience: 15, stride: 1, batch_size: 128, learning_rate: 0.001, weight_decay: 0.0, out_layer_num: 1, graph_heads: 1, graph_dropout: 0.0, output_dropout: 0.2, optimizer: Adam}
+    candidates:
+      - {embedding: 64, hidden: 128, rho: 0.3}
+      - {embedding: 128, hidden: 128, rho: 0.25}
+
+  TimeRCD:
+    tier: t3
+    execution_status: ready
+    deterministic: true
+    source_commit: 372bb980426b2f67007311c6f3165ab789c79bef
+    source_checkpoint_sha256: a497ac910f24f8fb347d690a21b60d74bc04785ebc777880553c158dea4434d0
+    checkpoint_revision: 0880420070a524efe14d7e163b34dcca90d2be1b
+    checkpoint_file: best_model/pretrain_checkpoint_best_multi.pth
+    checkpoint_config_sha256: 5d576f85660cc62268566f6281f5840e505672606b51bbb6c93e397a40ebc11f
+    source_url: https://github.com/thu-sail-lab/Time-RCD
+    source_license: Apache-2.0
+    checkpoint_license: Apache-2.0
+    local_relationship: package_backed_adapter
+    target_use: strict_zero_shot
+    preprocess_recipe: {normalization: none, calibration: none, padding: short_none_long_tail_last_value, aggregation: model_native_scalar_channel_logit_mean, evaluation_mode: offline_noncausal, context_policy: nonoverlap_context_session_tail_padding}
+    fixed: {context_length: 5000, checkpoint_variant: multi, score_head: probability}
+
+  TSPulse:
+    tier: t3
+    execution_status: ready
+    deterministic: true
+    source_commit: 9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d
+    source_checkpoint_sha256: 57fa03b67d1473a7253ac37801b24c391d1fa931395db986743e2f59e556b9ac
+    checkpoint_revision: 2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2
+    checkpoint_file: model.safetensors
+    checkpoint_config_sha256: e33230f47c91dfe4e848ee743924a62a26f710fe7f194566d92835f27c1c6d8b
+    source_url: https://github.com/ibm-granite/granite-tsfm
+    source_license: Apache-2.0
+    checkpoint_license: Apache-2.0
+    local_relationship: package_backed_adapter
+    target_use: strict_zero_shot
+    preprocess_recipe: {normalization: model_revin_only, calibration: none, native_smoothing: false, aggregation: model_native_scalar_heads, evaluation_mode: offline_noncausal, context_policy: stride_one_context_raw_head_native_alignment, head_alignment: pred_left_context_time_fft_center_offset_edge_repeat, raw_max: common_native_intersection_max_then_edge_repeat}
+    fixed: {context_length: 512, patch_size: 8, heads: [time, fft, pred, raw_max]}
+    grid:
+      aggregation_window: [64, 96, 128]

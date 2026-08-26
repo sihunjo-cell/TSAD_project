@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "status": "approved_with_disclosed_source_training_contamination",
+  "dataset_role": "TSB_non_GHL_tuning_panel",
+  "series_count": 18,
+  "family_count": 10,
+  "uses_test_labels_only_for_integrity_summary": true,
+  "uses_test_labels_for_model_or_parameter_choice": false,
+  "training_prefix_label_filtering": false,
+  "training_contaminated_series": [
+    "11",
+    "12"
+  ],
+  "high_correlation_threshold": 0.995,
+  "acf_rule": {
+    "source": "designated_training_prefix_first_feature",
+    "maximum_observations": 20000,
+    "maximum_lag": 400,
+    "minimum_candidate_lag": 3,
+    "candidate": "highest_strict_local_maximum",
+    "fallback_or_above_300": 125
+  },
+  "role_sets": {
+    "official20_count": 20,
+    "dev18_count": 18,
+    "ghl25_count": 25,
+    "dev18_ghl25_intersection_count": 0,
+    "official20_ghl25_intersection": [
+      "040_GHL_id_9_Sensor_tr_50000_1st_92001.csv",
+      "049_GHL_id_18_Sensor_tr_50000_1st_109001.csv"
+    ]
+  },
+  "input_manifest_sha256": "f653c804c44ea0b147c5edff38ecd6c786bd7189d93ffc07a8068ee0dfa274d4",
+  "audit_script_sha256": "1ca4864cb131a5079dc26ef91562370b7e5ac4d9f3b280df83261ed49aff30c1",
+  "tables": {
+    "inventory.csv": "b26775c4b9159110880cc8df42ff36dd7b7eded4dc754c514d0fb371401fde7c",
+    "feature_schema_and_quality.csv": "c8c7c98a65dd3dc0699c01691526744b2f0fd53c5d8905d6563342b45b2f4955",
+    "high_correlation_pairs.csv": "3a42347d2930e071ba4292a77e810de612276ca5d5cb058b72eb51c362aec8a2"
+  }
+}
