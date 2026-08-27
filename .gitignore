@@ -1,7 +1,9 @@
-# 로컬 전용 문서 (클로드 지시문·개인 노트)
+# 로컬 전용 문서와 정리 보관함
+AGENTS.md
 CLAUDE.md
 *.local.md
-AGENTS.md
+docs/superpowers/
+dummy/
 
 # 로컬 원본 데이터: 저장소 밖에 두고 경로·SHA-256·분석 결과만 추적한다.
 TSB-AD-M/
@@ -9,9 +11,9 @@ TSB-AD-M-other-datasets/
 HAI-23.05/
 
 # 재생성 가능한 실행 산출물
-experiments/checks/reference_code/gdn/dryrun/
 experiments/01_ghl_main/scores/**/*.npy
 experiments/01_ghl_main/scores/**/*.json
+experiments/01_ghl_main/scores/**/*.npz
 experiments/01_ghl_main/scores/**/*.ckpt
 experiments/01_ghl_main/scores/**/COMPLETE
 experiments/02_hai_extension/scores/**/*.npy
@@ -24,10 +26,10 @@ experiments/02_hai_extension/logs/*
 !experiments/02_hai_extension/logs/.gitkeep
 experiments/01_ghl_main/snapshots/*
 !experiments/01_ghl_main/snapshots/.gitkeep
+!experiments/01_ghl_main/snapshots/dev18_selection/
+!experiments/01_ghl_main/snapshots/dev18_selection/**
 experiments/02_hai_extension/snapshots/*
 !experiments/02_hai_extension/snapshots/.gitkeep
-experiments/02_hai_extension/adjacency/*
-!experiments/02_hai_extension/adjacency/.gitkeep
 experiments/**/training/
 lightning_logs/
 *.ckpt

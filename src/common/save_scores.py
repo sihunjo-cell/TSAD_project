@@ -10,6 +10,17 @@ from src.common.naming import build_score_filename
 from src.common.smoothing import trailing_average_smoothing
 
 
+def validate_scores(values, name: str) -> numpy.ndarray:
+    scores = numpy.asarray(values, dtype=float)
+    if scores.ndim not in (1, 2) or not scores.shape[0]:
+        raise ValueError(f"{name}는 비어 있지 않은 1차원 또는 2차원 배열이어야 한다")
+    if scores.ndim == 2 and not scores.shape[1]:
+        raise ValueError(f"{name}의 채널 축이 비어 있다")
+    if not numpy.isfinite(scores).all():
+        raise ValueError(f"{name}는 모두 finite여야 한다")
+    return scores
+
+
 def save_score_arrays(
     channel_scores: numpy.ndarray,
     output_dir: str,
@@ -22,26 +33,30 @@ def save_score_arrays(
     norm_kind: str,
     smoothing_window: int = 4,
 ) -> list[str]:
-    """정규화된 채널별 점수 (n_samples, n_features) 하나에서 4개 파일을 저장한다.
+    """정규화된 scalar 또는 채널 점수의 raw·smoothed 배열을 저장한다.
 
-    (a) raw __channels: 채널별, smoothing 전
-    (b) raw: 채널 max 집계
-    (c) smoothed: 채널별 후행 smoothing 후 max 집계
-    (d) smoothed __channels: smoothing 후 채널별 (회수 분석용)
+    scalar는 2개 파일, 채널 점수는 max 집계와 `__channels`를 합쳐 4개 파일이다.
     """
-    channel_scores = numpy.asarray(channel_scores, dtype=float)
+    channel_scores = validate_scores(channel_scores, "scores")
     smoothed_channel_scores = trailing_average_smoothing(channel_scores, window=smoothing_window)
+    validate_scores(smoothed_channel_scores, "smoothed_scores")
 
     naming_arguments = {
         "dataset": dataset, "series": series, "model": model, "tier": tier,
         "ratio": ratio, "seed": seed, "norm_kind": norm_kind,
     }
-    arrays_by_name = {
-        build_score_filename(smoothing_kind="raw", channels=True, **naming_arguments): channel_scores,
-        build_score_filename(smoothing_kind="raw", channels=False, **naming_arguments): channel_scores.max(axis=1),
-        build_score_filename(smoothing_kind="smoothed", channels=False, **naming_arguments): smoothed_channel_scores.max(axis=1),
-        build_score_filename(smoothing_kind="smoothed", channels=True, **naming_arguments): smoothed_channel_scores,
-    }
+    if channel_scores.ndim == 1:
+        arrays_by_name = {
+            build_score_filename(smoothing_kind="raw", channels=False, **naming_arguments): channel_scores,
+            build_score_filename(smoothing_kind="smoothed", channels=False, **naming_arguments): smoothed_channel_scores,
+        }
+    else:
+        arrays_by_name = {
+            build_score_filename(smoothing_kind="raw", channels=True, **naming_arguments): channel_scores,
+            build_score_filename(smoothing_kind="raw", channels=False, **naming_arguments): channel_scores.max(axis=1),
+            build_score_filename(smoothing_kind="smoothed", channels=False, **naming_arguments): smoothed_channel_scores.max(axis=1),
+            build_score_filename(smoothing_kind="smoothed", channels=True, **naming_arguments): smoothed_channel_scores,
+        }
 
     os.makedirs(output_dir, exist_ok=True)
     saved_paths = []
@@ -50,25 +65,6 @@ def save_score_arrays(
         numpy.save(path, array)
         saved_paths.append(path)
     return saved_paths
-
-
-def save_score_metadata(
-    output_dir: str,
-    dataset: str, series: int, model: str, tier: str, ratio: int, seed: int,
-    window_size: int, test_length: int, score_length: int, label_slice: tuple,
-) -> str:
-    """점수 길이와 라벨 offset을 `.meta.json` 사이드카로 저장한다."""
-    anchor_filename = build_score_filename(
-        dataset, series, model, tier, ratio, seed, "raw", "trainnorm", channels=False)
-    path = os.path.join(output_dir, anchor_filename[: -len(".npy")] + ".meta.json")
-    with open(path, "w", encoding="utf-8") as metadata_file:
-        json.dump({
-            "window_size": window_size,
-            "test_length": test_length,
-            "score_length": score_length,
-            "label_slice": list(label_slice),  # labels[label_slice[0]:label_slice[1]]
-        }, metadata_file, ensure_ascii=False, indent=2)
-    return path
 
 
 def snapshot_config(config_dict: dict, git_hash: str, output_dir: str) -> str:

@@ -1,0 +1,31 @@
+# 활성 여덟 모델 공통 환경: CPython 3.11.14
+# 이 파일은 최상위 호환 버전 선언이다. 설치가 끝나면 pip freeze를 별도로 봉인한다.
+
+# 수치 계산·통계
+numpy==2.3.2
+pandas==2.3.3
+scipy==1.16.1
+scikit-learn==1.7.1
+
+# 모델 코어와 공식 강제 의존성
+torch==2.10.0
+torch-geometric==2.7.0
+einops==0.8.1
+transformers==4.57.6
+huggingface-hub==0.36.0
+accelerate==1.14.0
+datasets==4.4.2
+filelock==3.20.3
+jaxtyping==0.3.2
+Deprecated==1.2.18
+urllib3==2.6.3
+safetensors==0.7.0
+tokenizers==0.22.2
+PyYAML==6.0.3
+
+# 튜닝 표·그래프
+matplotlib==3.10.5
+
+# 봉인한 공식 source package
+git+https://github.com/thu-sail-lab/Time-RCD.git@372bb980426b2f67007311c6f3165ab789c79bef
+git+https://github.com/ibm-granite/granite-tsfm.git@9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d

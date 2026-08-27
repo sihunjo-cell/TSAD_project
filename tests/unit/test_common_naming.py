@@ -35,9 +35,17 @@ class TestBuildScoreFilename(unittest.TestCase):
 
 class TestParseScoreFilename(unittest.TestCase):
     def test_round_trip_identity(self):
-        for channels in (False, True):
-            original = build_score_filename("HAI", 12, "GDN", "t2", 50, 7, "smoothed", "testnorm", channels=channels)
-            self.assertEqual(build_score_filename(**parse_score_filename(original)), original)
+        for ratio in (5, 10, 20, 40, 60, 80, 100):
+            for channels in (False, True):
+                original = build_score_filename(
+                    "HAI", 12, "GDN", "t2", ratio, 7, "smoothed", "testnorm",
+                    channels=channels,
+                )
+                self.assertEqual(build_score_filename(**parse_score_filename(original)), original)
+
+    def test_rejects_removed_fifty_percent_ratio(self):
+        with self.assertRaises(ValueError):
+            build_score_filename("GHL", 1, "GDN", "t2", 50, 1, "raw", "trainnorm")
 
     def test_parsed_fields(self):
         parsed = parse_score_filename("GHL__03__GDN__t2__r010__s1__raw__trainnorm.npy")

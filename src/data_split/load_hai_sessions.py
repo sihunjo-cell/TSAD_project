@@ -1,25 +1,16 @@
-"""HAI 23.05의 train 4세션과 test 2세션을 GDN 입력으로 읽는다.
-
-CSV 한 파일을 연속 세션 하나로 보며 파일 사이에는 window를 만들지 않는다.
-timestamp를 빼면 센서 86열이다.
-"""
+"""HAI 23.05의 봉인된 두 실행에 필요한 원시 세션을 읽는다."""
 
 from pathlib import Path
 
 import numpy
 import pandas
-from sklearn.preprocessing import MinMaxScaler
-
-from src.common.experiment_config import load_dataset_ratios
-from src.data_split.take_training_prefix import take_training_prefix
-from src.data_split.validate_labels import validate_binary_labels
-from src.data_split.validation_split import validation_split
-
-
-TRAIN_FILENAMES = tuple(f"hai-train{session}.csv" for session in range(1, 5))
-TEST_FILENAMES = tuple(f"hai-test{session}.csv" for session in range(1, 3))
-LABEL_FILENAMES = tuple(f"label-test{session}.csv" for session in range(1, 3))
-ALLOWED_RATIO_PERCENTS = load_dataset_ratios("HAI")
+REGISTERED_SPLITS = {
+    "train1_to_test1": (("hai-train1.csv",), ("hai-test1.csv",)),
+    "train1_train2_to_test2": (
+        ("hai-train1.csv", "hai-train2.csv"),
+        ("hai-test2.csv",),
+    ),
+}
 
 
 def read_feature_names(csv_path: Path) -> tuple[str, ...]:
@@ -41,93 +32,44 @@ def read_feature_array(csv_path: Path, expected_names: tuple[str, ...]) -> numpy
         dtype={name: numpy.float32 for name in expected_names},
     )
     features = frame.loc[:, expected_names].to_numpy(copy=False)
+    if not len(features):
+        raise ValueError(f"센서 세션이 비어 있다: {csv_path.name}")
     if not numpy.isfinite(features).all():
         raise ValueError(f"센서 값에 결측 또는 비유한 값이 있다: {csv_path.name}")
     return features
 
 
-def read_test_session(
-    test_path: Path,
-    label_path: Path,
-    feature_names: tuple[str, ...],
-) -> tuple[numpy.ndarray, numpy.ndarray]:
-    if read_feature_names(test_path) != feature_names:
-        raise ValueError(f"센서 열 또는 순서가 train1과 다르다: {test_path.name}")
-    test_frame = pandas.read_csv(
-        test_path,
-        dtype={"timestamp": "string", **{name: numpy.float32 for name in feature_names}},
-    )
-    label_frame = pandas.read_csv(label_path, dtype={"timestamp": "string"})
-    if tuple(label_frame.columns) != ("timestamp", "label"):
-        raise ValueError(f"라벨 열은 timestamp·label이어야 한다: {label_path.name}")
-    if not test_frame["timestamp"].equals(label_frame["timestamp"]):
-        raise ValueError(f"test와 label timestamp가 다르다: {test_path.name}")
+def load_hai_registered_inputs(dataset_dir: str | Path, split_role: str) -> dict:
+    """봉인한 HAI 실행에 필요한 원시 feature 세션만 읽는다."""
+    try:
+        train_filenames, test_filenames = REGISTERED_SPLITS[split_role]
+    except KeyError as error:
+        raise ValueError(f"지원하지 않는 HAI split_role이다: {split_role!r}") from error
 
-    features = test_frame.loc[:, feature_names].to_numpy(copy=False)
-    if not numpy.isfinite(features).all():
-        raise ValueError(f"센서 값에 결측 또는 비유한 값이 있다: {test_path.name}")
-    labels = validate_binary_labels(label_frame["label"], len(features), label_path.name)
-    return features, labels
-
-
-def load_hai_sessions(
-    dataset_dir: str | Path,
-    ratio_percent: int,
-    val_fraction: float,
-    min_train_length: int,
-) -> dict:
-    """세션별로 자른 뒤 네 train 부분에 scaler 하나를 fit한다."""
-    if ratio_percent not in ALLOWED_RATIO_PERCENTS:
-        raise ValueError(f"HAI ratio는 {ALLOWED_RATIO_PERCENTS}만 허용한다: {ratio_percent}")
     dataset_dir = Path(dataset_dir)
-    feature_names = read_feature_names(dataset_dir / TRAIN_FILENAMES[0])
-    train_sessions = []
-    validation_sessions = []
-    session_splits = []
+    feature_names = read_feature_names(dataset_dir / train_filenames[0])
+    train_sessions = tuple(
+        read_feature_array(dataset_dir / filename, feature_names)
+        for filename in train_filenames
+    )
+    test_sessions = tuple(
+        read_feature_array(dataset_dir / filename, feature_names)
+        for filename in test_filenames
+    )
 
-    for filename in TRAIN_FILENAMES:
-        features = read_feature_array(dataset_dir / filename, feature_names)
-        training_prefix, split_info = take_training_prefix(features, ratio_percent / 100)
-        train_part, validation_part = validation_split(
-            training_prefix,
-            val_fraction=val_fraction,
-            min_train_length=min_train_length,
-            split_info=split_info,
+    def ranges(filenames, sessions):
+        return tuple(
+            {"source": filename, "range": (0, len(values))}
+            for filename, values in zip(filenames, sessions)
         )
-        train_sessions.append(train_part)
-        validation_sessions.append(validation_part)
-        session_splits.append({
-            "source": filename,
-            "original_train_range": (0, len(features)),
-            "kept_train_range": (0, split_info["kept_length"]),
-            "train_range": (0, len(train_part)),
-            "validation_range": (len(train_part), split_info["kept_length"]),
-        })
-
-    # partial_fit으로 네 세션을 복사 없이 같은 범위에 맞춘다.
-    scaler = MinMaxScaler(copy=False)
-    for train_part in train_sessions:
-        scaler.partial_fit(train_part)
-    for index, (train_part, validation_part) in enumerate(zip(train_sessions, validation_sessions)):
-        train_sessions[index] = scaler.transform(train_part)
-        validation_sessions[index] = scaler.transform(validation_part)
-
-    test_sessions = []
-    test_labels = []
-    for test_filename, label_filename in zip(TEST_FILENAMES, LABEL_FILENAMES):
-        test_part, labels = read_test_session(
-            dataset_dir / test_filename,
-            dataset_dir / label_filename,
-            feature_names,
-        )
-        test_sessions.append(scaler.transform(test_part))
-        test_labels.append(labels)
 
     return {
         "feature_names": feature_names,
-        "train_sessions": tuple(train_sessions),
-        "validation_sessions": tuple(validation_sessions),
-        "test_sessions": tuple(test_sessions),
-        "test_labels": tuple(test_labels),
-        "session_splits": tuple(session_splits),
+        "split_role": split_role,
+        "normal_training_sessions": train_sessions,
+        "test_sessions": test_sessions,
+        "source_ranges": {
+            "normal_training_sessions": ranges(train_filenames, train_sessions),
+            "test_sessions": ranges(test_filenames, test_sessions),
+        },
     }

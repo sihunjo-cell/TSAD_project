@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-08-26",
+  "environment": "tsad_models_311",
+  "python_executable": "C:\\Users\\simon\\anaconda3\\envs\\tsad_models_311\\python.exe",
+  "requirements": {
+    "file": "src/models/requirements.txt",
+    "sha256": "4d01e06ecdaa2756a872f1c2cc0b61d11d976165e14b0bc07626493f01b3115d"
+  },
+  "environment_config": {
+    "file": "configs/environment.yaml",
+    "sha256": "12712c511c1dfedc9a5655a05daecfa73912df4e950d41873a18213d9d6294ec"
+  },
+  "identity": {
+    "python": "3.11.14",
+    "implementation": "CPython",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "packages": {
+      "numpy": "2.3.2",
+      "pandas": "2.3.3",
+      "scipy": "1.16.1",
+      "scikit-learn": "1.7.1",
+      "torch": "2.10.0",
+      "torch-geometric": "2.7.0",
+      "einops": "0.8.1",
+      "transformers": "4.57.6",
+      "huggingface-hub": "0.36.0",
+      "accelerate": "1.14.0",
+      "datasets": "4.4.2",
+      "filelock": "3.20.3",
+      "jaxtyping": "0.3.2",
+      "matplotlib": "3.10.5",
+      "Deprecated": "1.2.18",
+      "urllib3": "2.6.3",
+      "safetensors": "0.7.0",
+      "tokenizers": "0.22.2",
+      "PyYAML": "6.0.3"
+    },
+    "sources": {
+      "Time-RCD": "https://github.com/thu-sail-lab/Time-RCD.git@372bb980426b2f67007311c6f3165ab789c79bef",
+      "granite-tsfm": "https://github.com/ibm-granite/granite-tsfm.git@9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d"
+    },
+    "torch": {
+      "version": "2.10.0+cpu",
+      "build_suffix": "cpu",
+      "cuda_available": false,
+      "cuda_version": null,
+      "cudnn_version": null,
+      "deterministic_algorithms": false,
+      "cudnn_deterministic": false,
+      "cudnn_benchmark": false
+    }
+  },
+  "pip_freeze": "pip_freeze.txt"
+}

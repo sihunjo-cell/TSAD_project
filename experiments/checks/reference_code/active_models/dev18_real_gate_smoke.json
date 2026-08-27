@@ -1,0 +1,25 @@
+{
+  "status": "passed",
+  "gate": "real_data_execution",
+  "series": "03",
+  "sample_count": 160,
+  "budget_id": "b5367ad431093",
+  "result": {
+    "model": "MWVAR",
+    "config_id": "c43024819503c",
+    "input_sha256": "130f7c4404f8bd5807cde20e69478dd176c8da976bccef82c2f02c5386a377b7",
+    "input_shape": [
+      160,
+      2
+    ],
+    "native_score_shape": [
+      160,
+      2
+    ],
+    "aggregated_score_shape": [
+      160
+    ],
+    "score_peak_to_peak": 0.008082684161793903,
+    "uses_labels": false
+  }
+}

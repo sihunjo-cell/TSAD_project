@@ -1,0 +1,101 @@
+﻿dataset,file_or_session,model,test_length,model_input_window_size,target_horizon,first_valid_score_index,source_time_index_of_first_core_score,source_time_index_after_last_core_score,source_timestamp_of_first_core_score,core_score_length,expected_saved_score_length,project_saved_axis,raw_wrapper_left_padding_count,raw_wrapper_right_padding_count,raw_wrapper_saved_score_length,project_padding_count,alignment_rule,alignment_valid,label_values_used
+GHL,series_01,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_01,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_01,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_01,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_02,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_02,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_02,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_02,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_03,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_03,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_03,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_03,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_04,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_04,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_04,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_04,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_05,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_05,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_05,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_05,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_06,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_06,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_06,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_06,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_07,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_07,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_07,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_07,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_08,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_08,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_08,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_08,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_09,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_09,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_09,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_09,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_10,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_10,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_10,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_10,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_11,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_11,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_11,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_11,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_12,CI-AE,160063,100,0,50,50,160014,,159964,159964,source[50:160014],50,49,160063,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_12,LSTM-AD,160063,100,1,100,100,160063,,159963,159963,source[100:160063],100,0,160063,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_12,USAD,160063,10,0,5,5,160059,,160054,160054,source[5:160059],5,4,160063,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_12,GDN,160063,5,1,5,5,160063,,160058,160058,source[5:160063],0,0,160058,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_13,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_13,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_13,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_13,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_14,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_14,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_14,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_14,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_15,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_15,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_15,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_15,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_16,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_16,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_16,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_16,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_17,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_17,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_17,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_17,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_18,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_18,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_18,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_18,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_19,CI-AE,131251,100,0,50,50,131202,,131152,131152,source[50:131202],50,49,131251,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_19,LSTM-AD,131251,100,1,100,100,131251,,131151,131151,source[100:131251],100,0,131251,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_19,USAD,131251,10,0,5,5,131247,,131242,131242,source[5:131247],5,4,131251,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_19,GDN,131251,5,1,5,5,131251,,131246,131246,source[5:131251],0,0,131246,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_20,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_20,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_20,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_20,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_21,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_21,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_21,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_21,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_22,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_22,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_22,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_22,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_23,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_23,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_23,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_23,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_24,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_24,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_24,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_24,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_25,CI-AE,150001,100,0,50,50,149952,,149902,149902,source[50:149952],50,49,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_25,LSTM-AD,150001,100,1,100,100,150001,,149901,149901,source[100:150001],100,0,150001,0,1-step target인 labels[W:]와 core를 직접 대응,True,False
+GHL,series_25,USAD,150001,10,0,5,5,149997,,149992,149992,source[5:149997],5,4,150001,0,window reconstruction score를 중앙 시점에 맞춘 core만 저장,True,False
+GHL,series_25,GDN,150001,5,1,5,5,150001,,149996,149996,source[5:150001],0,0,149996,0,1-step target인 labels[W:]와 core를 직접 대응,True,False

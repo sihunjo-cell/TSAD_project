@@ -1,27 +1,45 @@
-# 고정 실행 환경. 근거는 docs/lead/decisions.md와
-# docs/lead/process_0_preverify.md에 정리했다.
-# conda env 이름: tsad_fixed. torch build suffix는 장치에 맞추되 공개 버전은 같다.
+# 활성 여덟 모델의 공통 호환 환경이다. 원 저장소별 논문 재현 환경은 아니다.
+# packages와 sources는 최상위 호환 버전만 선언하며 실제 설치 결과는 pip freeze로 따로 봉인한다.
 
-python: "3.10.20"
+profile: project_compatibility
+python: "3.11.14"
+
+dependency_declaration:
+  scope: top_level_compatibility_pins
+  full_resolver_lock: false
+  installed_snapshot: pip_freeze_after_install
+
 packages:
-  numpy: "1.26.4"
-  torch: "2.2.2"
-  torch-geometric: "2.5.3"
-  pytorch-lightning: "2.6.2"
-  tensorboardX: "2.6.2.2"
+  numpy: "2.3.2"
   pandas: "2.3.3"
-  scikit-learn: "1.7.2"
+  scipy: "1.16.1"
+  scikit-learn: "1.7.1"
+  torch: "2.10.0"
+  torch-geometric: "2.7.0"
+  einops: "0.8.1"
+  transformers: "4.57.6"
+  huggingface-hub: "0.36.0"
+  accelerate: "1.14.0"
+  datasets: "4.4.2"
+  filelock: "3.20.3"
+  jaxtyping: "0.3.2"
+  matplotlib: "3.10.5"
+  Deprecated: "1.2.18"
+  urllib3: "2.6.3"
+  safetensors: "0.7.0"
+  tokenizers: "0.22.2"
   PyYAML: "6.0.3"
-  networkx: "3.4.2"
-  colorama: "0.4.6"
 
 sources:
-  pytorch-lightning: "git+https://github.com/gonzachiar/pytorch-lightning.git@834dbf3039ee82a2ac5e65eed25f9989222283c6"
+  Time-RCD: "git+https://github.com/thu-sail-lab/Time-RCD.git@372bb980426b2f67007311c6f3165ab789c79bef"
+  granite-tsfm: "git+https://github.com/ibm-granite/granite-tsfm.git@9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d"
+
+runtime_snapshot:
+  record_pip_freeze: true
+  record_torch_build_suffix: true
+  record_torch_cuda: true
+  record_cudnn: true
 
 accelerator:
   local_verification: cpu
   experiment: cpu_or_cuda
-
-# torch-geometric 선정과 pytorch-lightning 설치 근거는
-# docs/lead/process_0_preverify.md에 요약했다.
-# 별도 scratch 환경에서 확인한 torch 2.10은 이 환경 계약에 포함하지 않는다.

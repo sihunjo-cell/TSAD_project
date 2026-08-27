@@ -10,6 +10,49 @@ from src.common import verify_run_context as context
 
 
 class TestVerifyRunContext(unittest.TestCase):
+    def test_one_liners_identity_uses_the_official_gitlab_url(self):
+        self.assertEqual(
+            context.UPSTREAM_SOURCE_COMMITS[
+                "https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/"
+                "publications/iclr2026_timeseriesfoundationmodelsad"
+            ],
+            "dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9",
+        )
+        self.assertNotIn("KU-Leuven-DTAI/One-Liners", context.UPSTREAM_SOURCE_COMMITS)
+
+    def test_source_identity_covers_every_active_model_and_registry_contract(self):
+        repository_root = Path(__file__).resolve().parents[2]
+
+        identity = context.read_source_identity(repository_root)
+
+        for relative_path in (
+            "configs/model_registry.yaml",
+            "src/models/tier1/mwvar.py",
+            "src/models/tier1/sqdiff_last3.py",
+            "src/models/tier1/pca_legacy.py",
+            "src/models/tier2/paano/adapter.py",
+            "src/models/tier2/alora/adapter.py",
+            "src/models/tier2/gdn_official/adapter.py",
+            "src/models/tier3/time_rcd.py",
+            "src/models/tier3/tspulse.py",
+        ):
+            self.assertIn(relative_path, identity["local_model_sha256"])
+        self.assertEqual(
+            identity["upstream_source_commits"]["jinnnju/PaAno"],
+            "d4c67116190efa4592dc6a8a157ced0def68b6af",
+        )
+        self.assertEqual(
+            identity["upstream_source_commits"]["thu-sail-lab/Time-RCD"],
+            "372bb980426b2f67007311c6f3165ab789c79bef",
+        )
+        self.assertNotIn("manigalati/usad", identity["upstream_source_commits"])
+        for relative_path in (
+            "src/models/tier2/AE/adapter.py",
+            "src/models/tier2/LSTMAD/adapter.py",
+            "src/models/tier2/USAD/adapter.py",
+        ):
+            self.assertNotIn(relative_path, identity["local_model_sha256"])
+
     def test_git_failure_is_an_error_not_a_placeholder_hash(self):
         with patch.object(
             context.subprocess,
@@ -20,38 +63,26 @@ class TestVerifyRunContext(unittest.TestCase):
                 context.read_git_hash(Path("broken-repository"))
 
     def test_dirty_project_is_rejected_before_training(self):
-        responses = iter((
-            SimpleNamespace(stdout="a" * 40 + "\n"),
-            SimpleNamespace(stdout=" M src/model.py\n"),
-        ))
-        with patch.object(context.subprocess, "run", side_effect=lambda *_args, **_kwargs: next(responses)):
+        with (
+            patch.object(context, "read_source_identity", return_value={
+                "project_commit": "a" * 40,
+            }),
+            patch.object(context, "run_git", return_value=" M src/model.py"),
+        ):
             with self.assertRaisesRegex(RuntimeError, "TSAD 작업 트리가 clean하지 않다"):
-                context.verify_run_context("project", "fork")
+                context.verify_run_context("project")
 
-    def test_unpinned_fork_commit_is_rejected(self):
-        responses = iter((
-            SimpleNamespace(stdout="a" * 40 + "\n"),
-            SimpleNamespace(stdout=""),
-            SimpleNamespace(stdout="b" * 40 + "\n"),
-            SimpleNamespace(stdout=""),
-        ))
-        with patch.object(context.subprocess, "run", side_effect=lambda *_args, **_kwargs: next(responses)):
-            with self.assertRaisesRegex(RuntimeError, "GraGOD commit이 고정값과 다르다"):
-                context.verify_run_context("project", "fork")
-
-    def test_clean_pinned_repositories_return_their_commits(self):
-        pinned = context.EXPECTED_GRAGOD_COMMIT
-        responses = iter((
-            SimpleNamespace(stdout="a" * 40 + "\n"),
-            SimpleNamespace(stdout=""),
-            SimpleNamespace(stdout=pinned + "\n"),
-            SimpleNamespace(stdout=""),
-        ))
-        with patch.object(context.subprocess, "run", side_effect=lambda *_args, **_kwargs: next(responses)):
-            self.assertEqual(
-                context.verify_run_context("project", "fork"),
-                {"tsad_project": "a" * 40, "gragod_fork": pinned},
-            )
+    def test_clean_project_returns_local_source_identity(self):
+        identity = {
+            "project_commit": "a" * 40,
+            "local_model_sha256": {"src/model.py": "b" * 64},
+            "upstream_source_commits": context.UPSTREAM_SOURCE_COMMITS,
+        }
+        with (
+            patch.object(context, "read_source_identity", return_value=identity),
+            patch.object(context, "run_git", return_value=""),
+        ):
+            self.assertEqual(context.verify_run_context("project"), identity)
 
     def test_runtime_version_mismatch_is_rejected(self):
         environment = {
@@ -108,15 +139,16 @@ class TestVerifyRunContext(unittest.TestCase):
 
     def test_uncommitted_source_change_during_run_is_rejected(self):
         expected = {
-            "tsad_project": "a" * 40,
-            "gragod_fork": context.EXPECTED_GRAGOD_COMMIT,
+            "project_commit": "a" * 40,
+            "local_model_sha256": {"src/model.py": "b" * 64},
+            "upstream_source_commits": context.UPSTREAM_SOURCE_COMMITS,
         }
         with (
-            patch.object(context, "read_git_hash", side_effect=expected.values()),
-            patch.object(context, "run_git", side_effect=[" M src/model.py", ""]),
+            patch.object(context, "read_source_identity", return_value=expected),
+            patch.object(context, "run_git", return_value=" M src/model.py"),
         ):
             with self.assertRaisesRegex(RuntimeError, "실행 중 TSAD 작업 트리가 바뀌었다"):
-                context.verify_git_hashes_unchanged(expected, "project", "fork")
+                context.verify_source_identity_unchanged(expected, "project")
 
 
 if __name__ == "__main__":

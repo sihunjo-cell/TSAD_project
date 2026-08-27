@@ -1,0 +1,832 @@
+{
+  "schema_version": 1,
+  "row_count": 3276,
+  "series_count": 18,
+  "model_count": 8,
+  "config_count": 26,
+  "ratio_order": [
+    5,
+    10,
+    20,
+    40,
+    60,
+    80,
+    100
+  ],
+  "feasible_row_count": 2592,
+  "structurally_infeasible_row_count": 684,
+  "fully_feasible_logical_key_count": 79,
+  "fully_feasible_ledger_row_count": 1422,
+  "feasibility_decision_sha256": "a01914708e2ad9f11fd365d4bf6c1da366c2ee7fc44f6a698e986427faa6f4eb",
+  "models": {
+    "MWVAR": {
+      "tier": "t1",
+      "execution_status": "ready",
+      "target_use": "training_free",
+      "candidate_count": 1,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "40": 1,
+        "60": 1,
+        "80": 1,
+        "100": 1
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [
+          "c43024819503c"
+        ],
+        "10": [
+          "c43024819503c"
+        ],
+        "20": [
+          "c43024819503c"
+        ],
+        "40": [
+          "c43024819503c"
+        ],
+        "60": [
+          "c43024819503c"
+        ],
+        "80": [
+          "c43024819503c"
+        ],
+        "100": [
+          "c43024819503c"
+        ]
+      },
+      "q_floor": 5,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "c43024819503c"
+      ],
+      "dev18_minimum_primary_ratio_count_met": true,
+      "dev18_tier_representative_required_ratios": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [
+        "c43024819503c"
+      ],
+      "dev18_tier_representative_eligible": true,
+      "dev18_selection_support_status": "eligible_for_model_fixed_hpo"
+    },
+    "SQDIFF_LAST3": {
+      "tier": "t1",
+      "execution_status": "ready",
+      "target_use": "training_free",
+      "candidate_count": 1,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "40": 1,
+        "60": 1,
+        "80": 1,
+        "100": 1
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [
+          "c472288b30428"
+        ],
+        "10": [
+          "c472288b30428"
+        ],
+        "20": [
+          "c472288b30428"
+        ],
+        "40": [
+          "c472288b30428"
+        ],
+        "60": [
+          "c472288b30428"
+        ],
+        "80": [
+          "c472288b30428"
+        ],
+        "100": [
+          "c472288b30428"
+        ]
+      },
+      "q_floor": 5,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "c472288b30428"
+      ],
+      "dev18_minimum_primary_ratio_count_met": true,
+      "dev18_tier_representative_required_ratios": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [
+        "c472288b30428"
+      ],
+      "dev18_tier_representative_eligible": true,
+      "dev18_selection_support_status": "eligible_for_model_fixed_hpo"
+    },
+    "PCA_LEGACY": {
+      "tier": "t1",
+      "execution_status": "ready",
+      "target_use": "fit_validation",
+      "candidate_count": 4,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "40": 0,
+        "60": 0,
+        "80": 0,
+        "100": 4
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [],
+        "10": [],
+        "20": [],
+        "40": [],
+        "60": [],
+        "80": [],
+        "100": [
+          "c24a495574d36",
+          "c2fe6a5279bc1",
+          "cc1e2a9937297",
+          "cfc7d9fddbf38"
+        ]
+      },
+      "q_floor": 5,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "c24a495574d36",
+        "c2fe6a5279bc1",
+        "cc1e2a9937297",
+        "cfc7d9fddbf38"
+      ],
+      "dev18_minimum_primary_ratio_count_met": false,
+      "dev18_tier_representative_required_ratios": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [],
+      "dev18_tier_representative_eligible": false,
+      "dev18_selection_support_status": "insufficient_ratio_support"
+    },
+    "PaAno": {
+      "tier": "t2",
+      "execution_status": "ready",
+      "target_use": "fit_validation",
+      "candidate_count": 9,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "40": 3,
+        "60": 3,
+        "80": 6,
+        "100": 9
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [],
+        "10": [],
+        "20": [],
+        "40": [
+          "c486c198d51af",
+          "c867da53d531b",
+          "c78142611e61b"
+        ],
+        "60": [
+          "c486c198d51af",
+          "c867da53d531b",
+          "c78142611e61b"
+        ],
+        "80": [
+          "c486c198d51af",
+          "c867da53d531b",
+          "c78142611e61b",
+          "c0b08c90aa5f8",
+          "c7dd56f14a04e",
+          "c00ba5b22d349"
+        ],
+        "100": [
+          "c486c198d51af",
+          "c867da53d531b",
+          "c78142611e61b",
+          "c0b08c90aa5f8",
+          "c7dd56f14a04e",
+          "c00ba5b22d349",
+          "c274acf78c2ae",
+          "cabe0daecefe0",
+          "c4edb5b522474"
+        ]
+      },
+      "q_floor": 10,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "c486c198d51af",
+        "c867da53d531b",
+        "c78142611e61b"
+      ],
+      "dev18_minimum_primary_ratio_count_met": true,
+      "dev18_tier_representative_required_ratios": [
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [],
+      "dev18_tier_representative_eligible": false,
+      "dev18_selection_support_status": "eligible_for_model_fixed_hpo"
+    },
+    "ALoRa": {
+      "tier": "t2",
+      "execution_status": "ready",
+      "target_use": "fit_validation",
+      "candidate_count": 5,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "40": 0,
+        "60": 0,
+        "80": 0,
+        "100": 0
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [],
+        "10": [],
+        "20": [],
+        "40": [],
+        "60": [],
+        "80": [],
+        "100": []
+      },
+      "q_floor": 10,
+      "dev18_supported_ratios_at_or_above_q_floor": [],
+      "dev18_common_config_ids_across_supported_ratios": [],
+      "dev18_minimum_primary_ratio_count_met": false,
+      "dev18_tier_representative_required_ratios": [
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [],
+      "dev18_tier_representative_eligible": false,
+      "dev18_selection_support_status": "unavailable"
+    },
+    "GDN": {
+      "tier": "t2",
+      "execution_status": "ready",
+      "target_use": "fit_validation",
+      "candidate_count": 2,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 0,
+        "10": 2,
+        "20": 2,
+        "40": 2,
+        "60": 2,
+        "80": 2,
+        "100": 2
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [],
+        "10": [
+          "cf1a967db6cfe",
+          "c1168c94d4dfc"
+        ],
+        "20": [
+          "cf1a967db6cfe",
+          "c1168c94d4dfc"
+        ],
+        "40": [
+          "cf1a967db6cfe",
+          "c1168c94d4dfc"
+        ],
+        "60": [
+          "cf1a967db6cfe",
+          "c1168c94d4dfc"
+        ],
+        "80": [
+          "cf1a967db6cfe",
+          "c1168c94d4dfc"
+        ],
+        "100": [
+          "cf1a967db6cfe",
+          "c1168c94d4dfc"
+        ]
+      },
+      "q_floor": 10,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "cf1a967db6cfe",
+        "c1168c94d4dfc"
+      ],
+      "dev18_minimum_primary_ratio_count_met": true,
+      "dev18_tier_representative_required_ratios": [
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [
+        "cf1a967db6cfe",
+        "c1168c94d4dfc"
+      ],
+      "dev18_tier_representative_eligible": true,
+      "dev18_selection_support_status": "eligible_for_model_fixed_hpo"
+    },
+    "TimeRCD": {
+      "tier": "t3",
+      "execution_status": "ready",
+      "target_use": "strict_zero_shot",
+      "candidate_count": 1,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "40": 1,
+        "60": 1,
+        "80": 1,
+        "100": 1
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [
+          "c1c5aeea6f7d3"
+        ],
+        "10": [
+          "c1c5aeea6f7d3"
+        ],
+        "20": [
+          "c1c5aeea6f7d3"
+        ],
+        "40": [
+          "c1c5aeea6f7d3"
+        ],
+        "60": [
+          "c1c5aeea6f7d3"
+        ],
+        "80": [
+          "c1c5aeea6f7d3"
+        ],
+        "100": [
+          "c1c5aeea6f7d3"
+        ]
+      },
+      "q_floor": 5,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "c1c5aeea6f7d3"
+      ],
+      "dev18_minimum_primary_ratio_count_met": true,
+      "dev18_tier_representative_required_ratios": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [
+        "c1c5aeea6f7d3"
+      ],
+      "dev18_tier_representative_eligible": true,
+      "dev18_selection_support_status": "eligible_for_model_fixed_hpo"
+    },
+    "TSPulse": {
+      "tier": "t3",
+      "execution_status": "ready",
+      "target_use": "strict_zero_shot",
+      "candidate_count": 3,
+      "fully_feasible_config_count_by_ratio": {
+        "5": 3,
+        "10": 3,
+        "20": 3,
+        "40": 3,
+        "60": 3,
+        "80": 3,
+        "100": 3
+      },
+      "fully_feasible_config_ids_by_ratio": {
+        "5": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ],
+        "10": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ],
+        "20": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ],
+        "40": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ],
+        "60": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ],
+        "80": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ],
+        "100": [
+          "c12c5e6196ea5",
+          "cb3bd93b0152d",
+          "c04a7985c3759"
+        ]
+      },
+      "q_floor": 5,
+      "dev18_supported_ratios_at_or_above_q_floor": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_common_config_ids_across_supported_ratios": [
+        "c12c5e6196ea5",
+        "cb3bd93b0152d",
+        "c04a7985c3759"
+      ],
+      "dev18_minimum_primary_ratio_count_met": true,
+      "dev18_tier_representative_required_ratios": [
+        5,
+        10,
+        20,
+        40,
+        60,
+        80,
+        100
+      ],
+      "dev18_tier_representative_config_ids": [
+        "c12c5e6196ea5",
+        "cb3bd93b0152d",
+        "c04a7985c3759"
+      ],
+      "dev18_tier_representative_eligible": true,
+      "dev18_selection_support_status": "eligible_for_model_fixed_hpo"
+    }
+  },
+  "tiers": {
+    "t1": {
+      "q_floor": 5,
+      "minimum_primary_ratio_count": 3,
+      "dev18_model_fixed_hpo_models": [
+        "MWVAR",
+        "SQDIFF_LAST3"
+      ],
+      "dev18_tier_representative_models": [
+        "MWVAR",
+        "SQDIFF_LAST3"
+      ]
+    },
+    "t2": {
+      "q_floor": 10,
+      "minimum_primary_ratio_count": 3,
+      "dev18_model_fixed_hpo_models": [
+        "PaAno",
+        "GDN"
+      ],
+      "dev18_tier_representative_models": [
+        "GDN"
+      ]
+    },
+    "t3": {
+      "q_floor": 5,
+      "minimum_primary_ratio_count": 3,
+      "dev18_model_fixed_hpo_models": [
+        "TimeRCD",
+        "TSPulse"
+      ],
+      "dev18_tier_representative_models": [
+        "TimeRCD",
+        "TSPulse"
+      ]
+    }
+  },
+  "fully_feasible_physical_keys": [
+    {
+      "model": "GDN",
+      "config_id": "c1168c94d4dfc",
+      "physical_ratio": 10
+    },
+    {
+      "model": "GDN",
+      "config_id": "c1168c94d4dfc",
+      "physical_ratio": 20
+    },
+    {
+      "model": "GDN",
+      "config_id": "c1168c94d4dfc",
+      "physical_ratio": 40
+    },
+    {
+      "model": "GDN",
+      "config_id": "c1168c94d4dfc",
+      "physical_ratio": 60
+    },
+    {
+      "model": "GDN",
+      "config_id": "c1168c94d4dfc",
+      "physical_ratio": 80
+    },
+    {
+      "model": "GDN",
+      "config_id": "c1168c94d4dfc",
+      "physical_ratio": 100
+    },
+    {
+      "model": "GDN",
+      "config_id": "cf1a967db6cfe",
+      "physical_ratio": 10
+    },
+    {
+      "model": "GDN",
+      "config_id": "cf1a967db6cfe",
+      "physical_ratio": 20
+    },
+    {
+      "model": "GDN",
+      "config_id": "cf1a967db6cfe",
+      "physical_ratio": 40
+    },
+    {
+      "model": "GDN",
+      "config_id": "cf1a967db6cfe",
+      "physical_ratio": 60
+    },
+    {
+      "model": "GDN",
+      "config_id": "cf1a967db6cfe",
+      "physical_ratio": 80
+    },
+    {
+      "model": "GDN",
+      "config_id": "cf1a967db6cfe",
+      "physical_ratio": 100
+    },
+    {
+      "model": "MWVAR",
+      "config_id": "c43024819503c",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PCA_LEGACY",
+      "config_id": "c24a495574d36",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PCA_LEGACY",
+      "config_id": "c2fe6a5279bc1",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PCA_LEGACY",
+      "config_id": "cc1e2a9937297",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PCA_LEGACY",
+      "config_id": "cfc7d9fddbf38",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c00ba5b22d349",
+      "physical_ratio": 80
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c00ba5b22d349",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c0b08c90aa5f8",
+      "physical_ratio": 80
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c0b08c90aa5f8",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c274acf78c2ae",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c486c198d51af",
+      "physical_ratio": 40
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c486c198d51af",
+      "physical_ratio": 60
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c486c198d51af",
+      "physical_ratio": 80
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c486c198d51af",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c4edb5b522474",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c78142611e61b",
+      "physical_ratio": 40
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c78142611e61b",
+      "physical_ratio": 60
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c78142611e61b",
+      "physical_ratio": 80
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c78142611e61b",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c7dd56f14a04e",
+      "physical_ratio": 80
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c7dd56f14a04e",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c867da53d531b",
+      "physical_ratio": 40
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c867da53d531b",
+      "physical_ratio": 60
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c867da53d531b",
+      "physical_ratio": 80
+    },
+    {
+      "model": "PaAno",
+      "config_id": "c867da53d531b",
+      "physical_ratio": 100
+    },
+    {
+      "model": "PaAno",
+      "config_id": "cabe0daecefe0",
+      "physical_ratio": 100
+    },
+    {
+      "model": "SQDIFF_LAST3",
+      "config_id": "c472288b30428",
+      "physical_ratio": 100
+    },
+    {
+      "model": "TSPulse",
+      "config_id": "c04a7985c3759",
+      "physical_ratio": 100
+    },
+    {
+      "model": "TSPulse",
+      "config_id": "c12c5e6196ea5",
+      "physical_ratio": 100
+    },
+    {
+      "model": "TSPulse",
+      "config_id": "cb3bd93b0152d",
+      "physical_ratio": 100
+    },
+    {
+      "model": "TimeRCD",
+      "config_id": "c1c5aeea6f7d3",
+      "physical_ratio": 100
+    }
+  ],
+  "status": "complete_with_declared_static_unavailability",
+  "config_registry_sha256": "ff6d5ef9e5f8a43c74b143e9750c8f2475597002ed140de6f2baf951eb42c53c",
+  "input_manifest_sha256": "f653c804c44ea0b147c5edff38ecd6c786bd7189d93ffc07a8068ee0dfa274d4",
+  "inventory_sha256": "b26775c4b9159110880cc8df42ff36dd7b7eded4dc754c514d0fb371401fde7c",
+  "audit_snapshot_sha256": "dc4f351bc59e90f450971884b93fe9ec9747ad60bc7b55e99cd64ae02530d590",
+  "audit_status": "approved_with_disclosed_source_training_contamination",
+  "builder_sha256": "d1fb45a53bff6b94eadc4aa40462c9709167c1f40aa6e260255777f748e6074d",
+  "feasibility_code_sha256": "9f55732170f844a9dd0f97847990441d419ba9958b5747c071600739b55e4ea2",
+  "split_code_sha256": "d13bd740aeae881f474153f49fb4c3d325b8aaf413ca3bae7679ab25130fc8a0",
+  "data_preprocessing_sha256": "fa216fbd04786df86be9c3621fef20efa4f94791f2d209b0b26859817ce4159f",
+  "ledger_fields": [
+    "model",
+    "tier",
+    "execution_status",
+    "target_use",
+    "config_id",
+    "config_order",
+    "logical_ratio",
+    "physical_ratio",
+    "uses_training_prefix",
+    "series",
+    "series_order",
+    "family",
+    "training_boundary",
+    "row_count",
+    "test_length",
+    "feature_count",
+    "available_count",
+    "fit_count",
+    "validation_count",
+    "status",
+    "status_reason",
+    "derived_json",
+    "config_registry_sha256",
+    "input_manifest_sha256",
+    "inventory_sha256"
+  ],
+  "ledger_sha256": "7270c170bf30160207a97df2531bef73efad010b796d7353d3332670a94991fe",
+  "labels_or_scores_read": false
+}

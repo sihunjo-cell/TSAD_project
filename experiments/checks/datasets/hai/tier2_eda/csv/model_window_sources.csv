@@ -1,0 +1,4 @@
+﻿dataset,model,source_type,source,window_value,applies_to,actual_override,source_commit,project_selected,reason
+HAI,GDN,논문,GDN AAAI 2021,5,SWaT·WADI,해당 없음,paper,True,논문 실험값을 우선한다.
+HAI,GDN,공식 코드,d-ailin/GDN main.py 기본값,15,명령행 기본값,기본값 사용 시 15,9853899da860682669a134e4af315d036aab4eca,False,논문 실험값 5와 다르므로 채택하지 않는다.
+HAI,GDN,현재 config,configs/gdn_hyperparams.yaml,5,GHL·HAI,명시값 5,project,True,논문값과 일치하며 모든 비율과 두 데이터셋에 고정한다.

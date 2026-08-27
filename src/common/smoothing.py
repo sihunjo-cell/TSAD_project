@@ -7,10 +7,12 @@ import numpy
 
 
 def trailing_average_smoothing(scores: numpy.ndarray, window: int = 4) -> numpy.ndarray:
-    """(n_samples, n_features) 점수를 채널별 독립으로 시간축 후행 평균한다."""
+    """scalar 또는 채널 점수를 시간축 후행 평균한다."""
     scores = numpy.asarray(scores, dtype=float)
-    if scores.ndim != 2:
-        raise ValueError(f"입력은 (n_samples, n_features) 2차원이어야 한다: shape {scores.shape}")
+    if scores.ndim not in (1, 2):
+        raise ValueError(f"입력은 1차원 또는 2차원이어야 한다: shape {scores.shape}")
+    if window < 1:
+        raise ValueError(f"window는 1 이상이어야 한다: {window}")
 
     smoothed = numpy.zeros_like(scores)
     for time_index in range(window - 1, scores.shape[0]):

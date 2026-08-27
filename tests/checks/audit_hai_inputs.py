@@ -1,10 +1,9 @@
-"""HAI 23.05 훈련 4세션의 10% 조건과 전처리를 점검한다.
+"""HAI 23.05 훈련 4세션의 누적 비율 조건과 전처리를 점검한다.
 
 모델 설정에는 훈련 파일 통계만 사용한다.
 """
 
 import hashlib
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -16,7 +15,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.common.save_scores import snapshot_config
-from src.data_split.take_training_prefix import compute_kept_length
+from src.common.experiment_config import load_dataset_ratios, load_validation_fraction
+from src.data_split.split_ratio_prefix import compute_prefix_counts
 
 
 EXPERIMENT_DIR = REPOSITORY_ROOT / "experiments" / "checks" / "datasets" / "hai"
@@ -24,8 +24,9 @@ DATA_DIR = REPOSITORY_ROOT.parent / "shared_data" / "TSAD_project" / "HAI-23.05"
 LOGS_DIR = EXPERIMENT_DIR / "logs"
 TRAIN_FILES = tuple(f"hai-train{session}.csv" for session in range(1, 5))
 EXPECTED_FEATURE_COUNT = 86
-RATIOS = (0.10, 1.00)
-VALIDATION_FRACTION = 0.1
+RATIO_PERCENTS = load_dataset_ratios("HAI")
+RATIOS = tuple(percent / 100 for percent in RATIO_PERCENTS)
+VALIDATION_FRACTION = load_validation_fraction()
 CURRENT_WINDOW_SIZES = (5,)
 
 
@@ -67,31 +68,35 @@ def build_ratio_feasibility_rows(
     window_sizes=CURRENT_WINDOW_SIZES,
     validation_fraction: float = VALIDATION_FRACTION,
 ) -> list[dict]:
-    """세션별 앞쪽 누적분의 train·validation·정규화 표본 수를 센다."""
+    """세션별 현재 q-prefix 안의 fit·validation 표본 수를 센다."""
+    if validation_fraction != 0.2:
+        raise ValueError("HAI validation_fraction은 현재 prefix의 0.2로 고정한다")
     rows = []
     for ratio in ratios:
-        kept_length = compute_kept_length(train_length, ratio)
-        validation_length = math.ceil(validation_fraction * kept_length)
-        model_train_length = kept_length - validation_length
+        ratio_percent = int(round(ratio * 100))
+        available_length, fit_length, validation_length = compute_prefix_counts(
+            train_length, ratio_percent,
+        )
+        model_train_length = fit_length
         for window_size in window_sizes:
             train_window_count = model_train_length - window_size
             validation_window_count = validation_length - window_size
-            normalization_sample_count = kept_length - window_size
             rows.append({
                 "session": session,
                 "ratio": ratio,
                 "window_size": window_size,
                 "original_train_length": train_length,
-                "kept_length": kept_length,
+                "available_length": available_length,
+                "fit_length": fit_length,
                 "model_train_length": model_train_length,
                 "validation_length": validation_length,
                 "train_window_count": train_window_count,
                 "validation_window_count": validation_window_count,
-                "normalization_sample_count": normalization_sample_count,
+                "scaler_fit_observation_count": fit_length,
+                "validation_transform_observation_count": validation_length,
                 "feasible": min(
                     train_window_count,
                     validation_window_count,
-                    normalization_sample_count,
                 ) > 0,
             })
     return rows
@@ -101,12 +106,18 @@ def build_ratio_channel_activity_rows(
     train_features: pandas.DataFrame,
     session: int,
     ratios=RATIOS,
+    validation_fraction: float = VALIDATION_FRACTION,
 ) -> list[dict]:
-    """비율별로 각 채널이 적어도 두 값을 관측했는지 기록한다."""
+    """현재 q-prefix 안의 fit 구간에서 채널 활동을 기록한다."""
+    if validation_fraction != 0.2:
+        raise ValueError("HAI validation_fraction은 현재 prefix의 0.2로 고정한다")
     rows = []
     for ratio in ratios:
-        kept_length = compute_kept_length(len(train_features), ratio)
-        active_channels = train_features.iloc[:kept_length].nunique() > 1
+        ratio_percent = int(round(ratio * 100))
+        _, fit_length, _ = compute_prefix_counts(
+            len(train_features), ratio_percent,
+        )
+        active_channels = train_features.iloc[:fit_length].nunique() > 1
         rows.extend(
             {
                 "session": session,
@@ -195,6 +206,10 @@ def run_hai_preflight() -> None:
             "data_dir": str(DATA_DIR),
             "files": inventory_frame[["file_name", "sha256"]].to_dict("records"),
             "ratios": RATIOS,
+            "ratio_unit": "fraction_of_normal_training_current_prefix",
+            "validation_split_order": "after_ratio_per_session",
+            "ratio_base": "normal_training_per_session",
+            "scaler_fit_scope": "fit_subsets_of_execution_training_sessions",
             "validation_fraction": VALIDATION_FRACTION,
             "current_window_sizes": CURRENT_WINDOW_SIZES,
             "expected_feature_count": EXPECTED_FEATURE_COUNT,

@@ -1,7 +1,263 @@
 # 실행 입력의 정확한 파일 지문. GHL·HAI train은 exp01 preflight snapshot,
 # HAI test·label은 2026-08-17 실물 SHA-256 대조값이다.
 
+roles:
+  official20_provenance:
+    ordered_members:
+      - dataset: DEV18
+        series: "01"
+      - dataset: DEV18
+        series: "02"
+      - dataset: DEV18
+        series: "03"
+      - dataset: DEV18
+        series: "04"
+      - dataset: GHL
+        name: 040_GHL_id_9_Sensor_tr_50000_1st_92001.csv
+      - dataset: GHL
+        name: 049_GHL_id_18_Sensor_tr_50000_1st_109001.csv
+      - dataset: DEV18
+        series: "05"
+      - dataset: DEV18
+        series: "06"
+      - dataset: DEV18
+        series: "07"
+      - dataset: DEV18
+        series: "08"
+      - dataset: DEV18
+        series: "09"
+      - dataset: DEV18
+        series: "10"
+      - dataset: DEV18
+        series: "11"
+      - dataset: DEV18
+        series: "12"
+      - dataset: DEV18
+        series: "13"
+      - dataset: DEV18
+        series: "14"
+      - dataset: DEV18
+        series: "15"
+      - dataset: DEV18
+        series: "16"
+      - dataset: DEV18
+        series: "17"
+      - dataset: DEV18
+        series: "18"
+  dev18_selection:
+    dataset: DEV18
+  ghl25_final:
+    dataset: GHL
+  train1_to_test1:
+    dataset: HAI
+    normal_training_files: [hai-train1.csv]
+    test_files: [hai-test1.csv]
+  train1_train2_to_test2:
+    dataset: HAI
+    normal_training_files: [hai-train1.csv, hai-train2.csv]
+    test_files: [hai-test2.csv]
+
 datasets:
+  DEV18:
+    files:
+      - series: "01"
+        order: 1
+        family: MSL
+        source_directory: tuning
+        name: 004_MSL_id_3_Sensor_tr_530_1st_630.csv
+        training_boundary: 530
+        row_count: 2430
+        feature_count: 55
+        feature_names_sha256: e3cf9fef6ee1ac38857a1645557007c624602b971496bc0b9ba1a058a8f74f06
+        size_bytes: 577095
+        sha256: 8c66d4a5525db15840d4d58d881d647ce1e61a5388ebc603ecf2eadbd6c046a8
+      - series: "02"
+        order: 2
+        family: MSL
+        source_directory: tuning
+        name: 011_MSL_id_10_Sensor_tr_1525_1st_4590.csv
+        training_boundary: 1525
+        row_count: 6100
+        feature_count: 55
+        feature_names_sha256: e3cf9fef6ee1ac38857a1645557007c624602b971496bc0b9ba1a058a8f74f06
+        size_bytes: 1445433
+        sha256: f266d167f0db1fd709423ecb59c01b567acd99f4d97e2df81d74d7d22f0b7b1c
+      - series: "03"
+        order: 3
+        family: MITDB
+        source_directory: tuning
+        name: 023_MITDB_id_5_Medical_tr_25000_1st_36913.csv
+        training_boundary: 25000
+        row_count: 100000
+        feature_count: 2
+        feature_names_sha256: 4d7c8ee91488bdedec8809b6ee813fdefbdbe6cc104f8a045c6368af6aeaa9aa
+        size_bytes: 1484351
+        sha256: 130f7c4404f8bd5807cde20e69478dd176c8da976bccef82c2f02c5386a377b7
+      - series: "04"
+        order: 4
+        family: MITDB
+        source_directory: tuning
+        name: 028_MITDB_id_10_Medical_tr_37500_1st_39948.csv
+        training_boundary: 37500
+        row_count: 150000
+        feature_count: 2
+        feature_names_sha256: 4d7c8ee91488bdedec8809b6ee813fdefbdbe6cc104f8a045c6368af6aeaa9aa
+        size_bytes: 2140360
+        sha256: b7bcf3bbe8215bb35da728da1b2fc9d49c2200f696bf8daba8a32f792b9b0dc7
+      - series: "05"
+        order: 5
+        family: SMD
+        source_directory: tuning
+        name: 062_SMD_id_6_Facility_tr_7180_1st_15131.csv
+        training_boundary: 7180
+        row_count: 28722
+        feature_count: 38
+        feature_names_sha256: 17a90b5ada94bcc0ed63c4f59e2da1b078ebb5272b95bc28753286463b336784
+        size_bytes: 7811204
+        sha256: dda20568da0041b19f12eaf05d6f5dc88f37283c83d4b2f3a3816212849de577
+      - series: "06"
+        order: 6
+        family: SMD
+        source_directory: tuning
+        name: 072_SMD_id_16_Facility_tr_7119_1st_15849.csv
+        training_boundary: 7119
+        row_count: 28479
+        feature_count: 38
+        feature_names_sha256: 17a90b5ada94bcc0ed63c4f59e2da1b078ebb5272b95bc28753286463b336784
+        size_bytes: 8399285
+        sha256: 2c1a273cc2e8bb9742d00c8be0632217275053b528007d1430a59c1f01e3d8e9
+      - series: "07"
+        order: 7
+        family: LTDB
+        source_directory: tuning
+        name: 082_LTDB_id_4_Medical_tr_4456_1st_4556.csv
+        training_boundary: 4456
+        row_count: 100000
+        feature_count: 2
+        feature_names_sha256: 2feba2aa16edd40c8a74ef532112d4c128521d475dc3e511232ab71e0969d8ef
+        size_bytes: 1261256
+        sha256: 698edd323bc804f797cf5d8e4222d70844f10202081d4379543f162315f43183
+      - series: "08"
+        order: 8
+        family: SVDB
+        source_directory: tuning
+        name: 090_SVDB_id_7_Medical_tr_12157_1st_12257.csv
+        training_boundary: 12157
+        row_count: 50000
+        feature_count: 2
+        feature_names_sha256: 2feba2aa16edd40c8a74ef532112d4c128521d475dc3e511232ab71e0969d8ef
+        size_bytes: 628354
+        sha256: 443e3e64f65cb7c4002c4e149dc12997889d7f2e74cfdb275b023a3a2b4ab846
+      - series: "09"
+        order: 9
+        family: SVDB
+        source_directory: tuning
+        name: 107_SVDB_id_24_Medical_tr_32805_1st_32905.csv
+        training_boundary: 32805
+        row_count: 230400
+        feature_count: 2
+        feature_names_sha256: 2feba2aa16edd40c8a74ef532112d4c128521d475dc3e511232ab71e0969d8ef
+        size_bytes: 3200090
+        sha256: 79af5662ff1534500c68e74263822019bd2f0ed25d82f46e46f8779888730219
+      - series: "10"
+        order: 10
+        family: SVDB
+        source_directory: tuning
+        name: 113_SVDB_id_30_Medical_tr_4552_1st_4652.csv
+        training_boundary: 4552
+        row_count: 230400
+        feature_count: 2
+        feature_names_sha256: 2feba2aa16edd40c8a74ef532112d4c128521d475dc3e511232ab71e0969d8ef
+        size_bytes: 2945634
+        sha256: c79e1884bc009b1b0d11ca8b27c5c4d33a535f949de2ee4851ae81e5e422eda7
+      - series: "11"
+        order: 11
+        family: TAO
+        source_directory: tuning
+        name: 120_TAO_id_5_Environment_tr_500_1st_3.csv
+        training_boundary: 500
+        row_count: 10000
+        feature_count: 3
+        feature_names_sha256: 737280bde37674faa272068ab70c8491f21dc1374a9e575f4b44cc311ae4e603
+        size_bytes: 211593
+        sha256: 5926d15432d2b67d7348b6107c06daa7707b78f3994e0d9fb11b70afc74a6763
+      - series: "12"
+        order: 12
+        family: TAO
+        source_directory: tuning
+        name: 126_TAO_id_11_Environment_tr_500_1st_7.csv
+        training_boundary: 500
+        row_count: 10000
+        feature_count: 3
+        feature_names_sha256: 737280bde37674faa272068ab70c8491f21dc1374a9e575f4b44cc311ae4e603
+        size_bytes: 211767
+        sha256: bb5df8d457b6b06ae6d9386651252294e22f9a5c3ffe58264c47a9b3b1b7679e
+      - series: "13"
+        order: 13
+        family: OPPORTUNITY
+        source_directory: tuning
+        name: 131_OPPORTUNITY_id_3_HumanActivity_tr_7016_1st_26691.csv
+        training_boundary: 7016
+        row_count: 28066
+        feature_count: 248
+        feature_names_sha256: 20a52c0b3333e12a3e9c708f42539f16ef4a93ebf997039f9d8f48b1df0c862c
+        size_bytes: 41279685
+        sha256: da34489a3117911ac3ca04dcd4e0e2c153e499cd96bcb6add38b050124d796f4
+      - series: "14"
+        order: 14
+        family: CATSv2
+        source_directory: tuning
+        name: 140_CATSv2_id_3_Sensor_tr_28307_1st_28407.csv
+        training_boundary: 28307
+        row_count: 400000
+        feature_count: 17
+        feature_names_sha256: 300c01635aad30f07efc96784d0729355b2f59f65691d8b960c185765326c5d7
+        size_bytes: 105415516
+        sha256: c4e9706efd923a595d93ade46d20cad0ac586bc704eec5ec98009afda585db7b
+      - series: "15"
+        order: 15
+        family: SMAP
+        source_directory: tuning
+        name: 149_SMAP_id_6_Sensor_tr_2128_1st_5000.csv
+        training_boundary: 2128
+        row_count: 8512
+        feature_count: 25
+        feature_names_sha256: b6148134f97a938f7a5362204411999b82f4f1a9bfe3971f17634975a548aed1
+        size_bytes: 903500
+        sha256: 06ec1ec91cb267026426f796a26efb9f2b8000a9a7d91384fea187308b968970
+      - series: "16"
+        order: 16
+        family: SMAP
+        source_directory: tuning
+        name: 164_SMAP_id_21_Sensor_tr_1976_1st_4200.csv
+        training_boundary: 1976
+        row_count: 7907
+        feature_count: 25
+        feature_names_sha256: b6148134f97a938f7a5362204411999b82f4f1a9bfe3971f17634975a548aed1
+        size_bytes: 806601
+        sha256: 263494508921547457ab3340b3ee92ec949650b21e2e886021011b348cf510e3
+      - series: "17"
+        order: 17
+        family: Exathlon
+        source_directory: tuning
+        name: 178_Exathlon_id_5_Facility_tr_12538_1st_12638.csv
+        training_boundary: 12538
+        row_count: 129197
+        feature_count: 19
+        feature_names_sha256: 11701d68b606b516c22c3ec5bd855f2239c567de6416542f1417fc3a867dadde
+        size_bytes: 21892023
+        sha256: ade5f3cdbffa2b3464497babe566041dff871bb9d5e9da9d1e17f3fefdedc16c
+      - series: "18"
+        order: 18
+        family: Exathlon
+        source_directory: tuning
+        name: 195_Exathlon_id_22_Facility_tr_10766_1st_12590.csv
+        training_boundary: 10766
+        row_count: 43066
+        feature_count: 31
+        feature_names_sha256: decbf000eb5e819f06e200ef31b344e3179b1c738b9ab7c864d1ce85114eb985
+        size_bytes: 11893438
+        sha256: 2825858c31806a7ed49befa912d5cd078ea36d4dd9f7dae2b7925d7e2c4b1b9d
   GHL:
     files:
       - name: 032_GHL_id_1_Sensor_tr_50000_1st_65001.csv

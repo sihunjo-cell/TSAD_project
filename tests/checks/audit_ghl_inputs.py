@@ -5,7 +5,6 @@
 """
 
 import hashlib
-import math
 import re
 import subprocess
 import sys
@@ -18,7 +17,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.common.save_scores import snapshot_config
-from src.data_split.take_training_prefix import compute_kept_length
+from src.common.experiment_config import load_dataset_ratios, load_validation_fraction
+from src.data_split.split_ratio_prefix import compute_prefix_counts
 
 
 EXPERIMENT_DIR = REPOSITORY_ROOT / "experiments" / "checks" / "datasets" / "ghl"
@@ -29,8 +29,9 @@ EXPECTED_ARCHIVE_INDICES = set(range(32, 57))
 EXPECTED_SERIES = set(range(1, 26))
 EXPECTED_FEATURE_COUNT = 19
 
-RATIOS = (0.05, 0.10, 0.20, 0.50, 1.00)
-VALIDATION_FRACTION = 0.1
+RATIO_PERCENTS = load_dataset_ratios("GHL")
+RATIOS = tuple(percent / 100 for percent in RATIO_PERCENTS)
+VALIDATION_FRACTION = load_validation_fraction()
 # 현재 구현한 GDN의 잠정 window만 실행 가능성을 검사한다.
 CURRENT_WINDOW_SIZES = (5,)
 
@@ -54,12 +55,18 @@ def build_ratio_channel_quality_rows(
     train_features: pandas.DataFrame,
     series: int,
     ratios=RATIOS,
+    validation_fraction: float = VALIDATION_FRACTION,
 ) -> list[dict]:
-    """앞쪽 비율별 학습 구간에서 채널 통계를 계산한다."""
+    """현재 q-prefix 안의 앞 80% fit 구간에서 채널 통계를 계산한다."""
+    if validation_fraction != 0.2:
+        raise ValueError("GHL validation_fraction은 현재 prefix의 0.2로 고정한다")
     rows = []
     for ratio in ratios:
-        kept_length = compute_kept_length(len(train_features), ratio)
-        prefix_features = train_features.iloc[:kept_length]
+        ratio_percent = int(round(ratio * 100))
+        available_length, fit_length, validation_length = compute_prefix_counts(
+            len(train_features), ratio_percent,
+        )
+        prefix_features = train_features.iloc[:fit_length]
         for channel in prefix_features.columns:
             values = prefix_features[channel]
             finite_values = values[numpy.isfinite(values.to_numpy())]
@@ -70,7 +77,9 @@ def build_ratio_channel_quality_rows(
             rows.append({
                 "series": series,
                 "ratio": ratio,
-                "kept_length": kept_length,
+                "available_length": available_length,
+                "fit_length": fit_length,
+                "validation_length": validation_length,
                 "channel": channel,
                 "missing_value_count": int(values.isna().sum()),
                 "nonfinite_value_count": int((~numpy.isfinite(values.to_numpy())).sum()),
@@ -150,30 +159,34 @@ def build_ratio_feasibility_rows(
     validation_fraction: float = VALIDATION_FRACTION,
 ) -> list[dict]:
     """비율·현재 잠정 W마다 train/validation 윈도 수를 계산한다."""
+    if validation_fraction != 0.2:
+        raise ValueError("GHL validation_fraction은 현재 prefix의 0.2로 고정한다")
     rows = []
     for ratio in ratios:
-        kept_length = compute_kept_length(train_length, ratio)
-        validation_length = math.ceil(validation_fraction * kept_length)
-        model_train_length = kept_length - validation_length
+        ratio_percent = int(round(ratio * 100))
+        available_length, fit_length, validation_length = compute_prefix_counts(
+            train_length, ratio_percent,
+        )
+        model_train_length = fit_length
         for window_size in window_sizes:
             train_window_count = model_train_length - window_size
             validation_window_count = validation_length - window_size
-            normalization_sample_count = kept_length - window_size
             rows.append({
                 "series": series,
                 "ratio": ratio,
                 "window_size": window_size,
                 "original_train_length": train_length,
-                "kept_length": kept_length,
+                "available_length": available_length,
+                "fit_length": fit_length,
                 "model_train_length": model_train_length,
                 "validation_length": validation_length,
                 "train_window_count": train_window_count,
                 "validation_window_count": validation_window_count,
-                "normalization_sample_count": normalization_sample_count,
+                "scaler_fit_observation_count": fit_length,
+                "validation_transform_observation_count": validation_length,
                 "feasible": min(
                     train_window_count,
                     validation_window_count,
-                    normalization_sample_count,
                 ) > 0,
             })
     return rows
@@ -233,6 +246,10 @@ def run_ghl_preflight() -> None:
             "data_dir": str(DATA_DIR),
             "files": inventory_frame[["file_name", "sha256"]].to_dict("records"),
             "ratios": RATIOS,
+            "ratio_unit": "fraction_of_normal_training_current_prefix",
+            "validation_split_order": "after_ratio",
+            "ratio_base": "normal_training",
+            "scaler_fit_scope": "current_ratio_fit_subset",
             "validation_fraction": VALIDATION_FRACTION,
             "current_window_sizes": CURRENT_WINDOW_SIZES,
             "expected_feature_count": EXPECTED_FEATURE_COUNT,

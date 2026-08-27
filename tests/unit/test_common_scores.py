@@ -7,27 +7,27 @@ import unittest
 
 import numpy
 
-from src.common.save_scores import save_score_arrays, save_score_metadata, snapshot_config
-
-
-class TestSaveScoreMetadata(unittest.TestCase):
-    def test_sidecar_created_with_dryrun_settings(self):
-        # 1-step forecast: window_size=8, test 200행 → 점수 길이 192.
-        with tempfile.TemporaryDirectory() as output_dir:
-            path = save_score_metadata(
-                output_dir, dataset="SYNTH", series=0, model="GDN", tier="t0",
-                ratio=100, seed=1, window_size=8, test_length=200,
-                score_length=192, label_slice=(8, None),
-            )
-            self.assertEqual(os.path.basename(path),
-                             "SYNTH__00__GDN__t0__r100__s1__raw__trainnorm.meta.json")
-            with open(path, encoding="utf-8") as metadata_file:
-                metadata = json.load(metadata_file)
-            self.assertEqual(metadata["label_slice"], [8, None])
-            self.assertEqual(metadata["score_length"], 192)
+from src.common.save_scores import (
+    save_score_arrays,
+    snapshot_config,
+)
 
 
 class TestSaveScoreArrays(unittest.TestCase):
+    def test_scalar_scores_save_two_files_without_fake_channels(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            saved_paths = save_score_arrays(
+                numpy.array([1.0, 3.0, 5.0]), output_dir,
+                dataset="GHL", series=1, model="TimeRCD", tier="t3",
+                ratio=100, seed=3, norm_kind="trainnorm", smoothing_window=2,
+            )
+            names = sorted(os.path.basename(path) for path in saved_paths)
+            self.assertEqual(names, [
+                "GHL__01__TimeRCD__t3__r100__s3__raw__trainnorm.npy",
+                "GHL__01__TimeRCD__t3__r100__s3__smoothed__trainnorm.npy",
+            ])
+            self.assertFalse(any("channels" in name for name in names))
+
     def test_four_files_with_convention_names_and_values(self):
         # 3×2 장난감 배열, smoothing_window=2 로 손계산 가능하게 한다.
         # channel_scores = [[1,5],[2,1],[3,2]]
@@ -58,6 +58,23 @@ class TestSaveScoreArrays(unittest.TestCase):
             numpy.testing.assert_array_equal(
                 arrays["GHL__03__GDN__t2__r010__s1__smoothed__trainnorm.npy"], [0.0, 3.0, 2.5])
 
+    def test_rejects_empty_nonfinite_or_above_two_dimensions(self):
+        invalid_arrays = (
+            numpy.empty((0, 2)),
+            numpy.ones((2, 2, 2)),
+            numpy.array([[1.0, numpy.nan]]),
+            numpy.array([[1.0, numpy.inf]]),
+        )
+        with tempfile.TemporaryDirectory() as output_dir:
+            for invalid in invalid_arrays:
+                with self.subTest(shape=invalid.shape):
+                    with self.assertRaises(ValueError):
+                        save_score_arrays(
+                            invalid, output_dir, dataset="GHL", series=1,
+                            model="GDN", tier="t2", ratio=5, seed=1,
+                            norm_kind="trainnorm",
+                        )
+            self.assertEqual(os.listdir(output_dir), [])
 
 class TestSnapshotConfig(unittest.TestCase):
     def test_snapshot_contains_config_and_git_hash(self):

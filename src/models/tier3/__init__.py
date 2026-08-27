@@ -1,1 +1,53 @@
-"""Tier 3 models."""
+"""Tier 3 foundation-model adapters."""
+
+from .time_rcd import (
+    TIME_RCD_CHECKPOINT_FILE,
+    TIME_RCD_CHECKPOINT_REVISION,
+    TIME_RCD_CHECKPOINT_SHA256,
+    TIME_RCD_CONTEXT_LENGTH,
+    TIME_RCD_SOURCE_COMMIT,
+    get_time_rcd_status,
+    load_time_rcd_model,
+    score_time_rcd,
+    verify_time_rcd_checkpoint,
+)
+from .tspulse import (
+    TSPULSE_AGGREGATION_WINDOWS,
+    TSPULSE_CHECKPOINT_FILE,
+    TSPULSE_CHECKPOINT_REVISION,
+    TSPULSE_CHECKPOINT_SHA256,
+    TSPULSE_CONTEXT_LENGTH,
+    TSPULSE_HEADS,
+    TSPULSE_MODEL_NAME,
+    TSPULSE_PATCH_SIZE,
+    TSPULSE_SOURCE_COMMIT,
+    align_tspulse_scores,
+    load_tspulse_components,
+    score_tspulse,
+    verify_tspulse_checkpoint,
+)
+
+__all__ = [
+    "TIME_RCD_CHECKPOINT_FILE",
+    "TIME_RCD_CHECKPOINT_REVISION",
+    "TIME_RCD_CHECKPOINT_SHA256",
+    "TIME_RCD_CONTEXT_LENGTH",
+    "TIME_RCD_SOURCE_COMMIT",
+    "get_time_rcd_status",
+    "load_time_rcd_model",
+    "score_time_rcd",
+    "verify_time_rcd_checkpoint",
+    "TSPULSE_AGGREGATION_WINDOWS",
+    "TSPULSE_CHECKPOINT_FILE",
+    "TSPULSE_CHECKPOINT_REVISION",
+    "TSPULSE_CHECKPOINT_SHA256",
+    "TSPULSE_CONTEXT_LENGTH",
+    "TSPULSE_HEADS",
+    "TSPULSE_MODEL_NAME",
+    "TSPULSE_PATCH_SIZE",
+    "TSPULSE_SOURCE_COMMIT",
+    "align_tspulse_scores",
+    "load_tspulse_components",
+    "score_tspulse",
+    "verify_tspulse_checkpoint",
+]

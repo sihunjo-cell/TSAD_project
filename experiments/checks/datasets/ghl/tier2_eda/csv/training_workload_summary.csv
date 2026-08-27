@@ -1,0 +1,701 @@
+﻿dataset,training_scope,ratio,model,training_unit,source_session_count,model_instance_count,train_window_count_per_model,train_window_count_all_models,validation_window_count_per_model,validation_window_count_all_models,batch_size,drop_last,train_batches_per_epoch_per_model,train_batches_per_epoch_all_models,optimizer_steps_per_batch,optimizer_updates_per_epoch_per_model,optimizer_updates_per_epoch_all_models,validation_batches_per_model,validation_batches_all_models,max_epochs,maximum_optimizer_updates,early_stopping_rule,workload_status,actual_optimizer_updates_status,fit_validation_boundary_crossing_window_count,session_boundary_crossing_window_count,windows_excluded_to_preserve_session_boundaries
+GHL,series_01,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_01,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_01,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_01,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_01,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_01,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_01,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_01,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_02,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_02,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_03,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_03,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_04,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_04,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_05,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_05,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_06,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_06,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_07,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_07,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_08,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_08,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_09,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_09,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_10,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_10,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_11,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_11,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,5,CI-AE,one_model_per_channel,1,19,1699,32281,3895,74005,128,True,13,247,1,13,247,31,589,50,12350,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,5,GDN,one_multivariate_model,1,1,1793,1793,3989,3989,32,False,57,57,1,57,57,125,125,50,2850,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,5,LSTM-AD,one_multivariate_model,1,1,1698,1698,3894,3894,128,False,14,14,1,14,14,31,31,50,700,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,5,USAD,one_multivariate_model,1,1,1789,1789,3985,3985,128,False,14,14,2,28,28,32,32,70,1960,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,10,CI-AE,one_model_per_channel,1,19,3496,66424,3895,74005,128,True,27,513,1,27,513,31,589,50,25650,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,10,GDN,one_multivariate_model,1,1,3590,3590,3989,3989,32,False,113,113,1,113,113,125,125,50,5650,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,10,LSTM-AD,one_multivariate_model,1,1,3495,3495,3894,3894,128,False,28,28,1,28,28,31,31,50,1400,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,10,USAD,one_multivariate_model,1,1,3586,3586,3985,3985,128,False,29,29,2,58,58,32,32,70,4060,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,20,CI-AE,one_model_per_channel,1,19,7090,134710,3895,74005,128,True,55,1045,1,55,1045,31,589,50,52250,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,20,GDN,one_multivariate_model,1,1,7184,7184,3989,3989,32,False,225,225,1,225,225,125,125,50,11250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,20,LSTM-AD,one_multivariate_model,1,1,7089,7089,3894,3894,128,False,56,56,1,56,56,31,31,50,2800,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,20,USAD,one_multivariate_model,1,1,7180,7180,3985,3985,128,False,57,57,2,114,114,32,32,70,7980,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,40,CI-AE,one_model_per_channel,1,19,14279,271301,3895,74005,128,True,111,2109,1,111,2109,31,589,50,105450,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,40,GDN,one_multivariate_model,1,1,14373,14373,3989,3989,32,False,450,450,1,450,450,125,125,50,22500,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,40,LSTM-AD,one_multivariate_model,1,1,14278,14278,3894,3894,128,False,112,112,1,112,112,31,31,50,5600,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,40,USAD,one_multivariate_model,1,1,14369,14369,3985,3985,128,False,113,113,2,226,226,32,32,70,15820,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,60,CI-AE,one_model_per_channel,1,19,21468,407892,3895,74005,128,True,167,3173,1,167,3173,31,589,50,158650,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,60,GDN,one_multivariate_model,1,1,21562,21562,3989,3989,32,False,674,674,1,674,674,125,125,50,33700,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,60,LSTM-AD,one_multivariate_model,1,1,21467,21467,3894,3894,128,False,168,168,1,168,168,31,31,50,8400,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,60,USAD,one_multivariate_model,1,1,21558,21558,3985,3985,128,False,169,169,2,338,338,32,32,70,23660,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,80,CI-AE,one_model_per_channel,1,19,28657,544483,3895,74005,128,True,223,4237,1,223,4237,31,589,50,211850,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,80,GDN,one_multivariate_model,1,1,28751,28751,3989,3989,32,False,899,899,1,899,899,125,125,50,44950,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,80,LSTM-AD,one_multivariate_model,1,1,28656,28656,3894,3894,128,False,224,224,1,224,224,31,31,50,11200,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,80,USAD,one_multivariate_model,1,1,28747,28747,3985,3985,128,False,225,225,2,450,450,32,32,70,31500,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_12,100,CI-AE,one_model_per_channel,1,19,35845,681055,3895,74005,128,True,280,5320,1,280,5320,31,589,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,100,GDN,one_multivariate_model,1,1,35939,35939,3989,3989,32,False,1124,1124,1,1124,1124,125,125,50,56200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,100,LSTM-AD,one_multivariate_model,1,1,35844,35844,3894,3894,128,False,281,281,1,281,281,31,31,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_12,100,USAD,one_multivariate_model,1,1,35935,35935,3985,3985,128,False,281,281,2,562,562,32,32,70,39340,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_13,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_13,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_14,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_14,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_15,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_15,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_16,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_16,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_17,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_17,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_18,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_18,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,5,CI-AE,one_model_per_channel,1,19,1870,35530,4276,81244,128,True,14,266,1,14,266,34,646,50,13300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,5,GDN,one_multivariate_model,1,1,1964,1964,4370,4370,32,False,62,62,1,62,62,137,137,50,3100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,5,LSTM-AD,one_multivariate_model,1,1,1869,1869,4275,4275,128,False,15,15,1,15,15,34,34,50,750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,5,USAD,one_multivariate_model,1,1,1960,1960,4366,4366,128,False,16,16,2,32,32,35,35,70,2240,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,10,CI-AE,one_model_per_channel,1,19,3839,72941,4276,81244,128,True,29,551,1,29,551,34,646,50,27550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,10,GDN,one_multivariate_model,1,1,3933,3933,4370,4370,32,False,123,123,1,123,123,137,137,50,6150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,10,LSTM-AD,one_multivariate_model,1,1,3838,3838,4275,4275,128,False,30,30,1,30,30,34,34,50,1500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,10,USAD,one_multivariate_model,1,1,3929,3929,4366,4366,128,False,31,31,2,62,62,35,35,70,4340,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,20,CI-AE,one_model_per_channel,1,19,7776,147744,4276,81244,128,True,60,1140,1,60,1140,34,646,50,57000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,20,GDN,one_multivariate_model,1,1,7870,7870,4370,4370,32,False,246,246,1,246,246,137,137,50,12300,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,20,LSTM-AD,one_multivariate_model,1,1,7775,7775,4275,4275,128,False,61,61,1,61,61,34,34,50,3050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,20,USAD,one_multivariate_model,1,1,7866,7866,4366,4366,128,False,62,62,2,124,124,35,35,70,8680,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,40,CI-AE,one_model_per_channel,1,19,15651,297369,4276,81244,128,True,122,2318,1,122,2318,34,646,50,115900,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,40,GDN,one_multivariate_model,1,1,15745,15745,4370,4370,32,False,493,493,1,493,493,137,137,50,24650,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,40,LSTM-AD,one_multivariate_model,1,1,15650,15650,4275,4275,128,False,123,123,1,123,123,34,34,50,6150,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,40,USAD,one_multivariate_model,1,1,15741,15741,4366,4366,128,False,123,123,2,246,246,35,35,70,17220,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,60,CI-AE,one_model_per_channel,1,19,23526,446994,4276,81244,128,True,183,3477,1,183,3477,34,646,50,173850,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,60,GDN,one_multivariate_model,1,1,23620,23620,4370,4370,32,False,739,739,1,739,739,137,137,50,36950,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,60,LSTM-AD,one_multivariate_model,1,1,23525,23525,4275,4275,128,False,184,184,1,184,184,34,34,50,9200,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,60,USAD,one_multivariate_model,1,1,23616,23616,4366,4366,128,False,185,185,2,370,370,35,35,70,25900,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,80,CI-AE,one_model_per_channel,1,19,31401,596619,4276,81244,128,True,245,4655,1,245,4655,34,646,50,232750,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,80,GDN,one_multivariate_model,1,1,31495,31495,4370,4370,32,False,985,985,1,985,985,137,137,50,49250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,80,LSTM-AD,one_multivariate_model,1,1,31400,31400,4275,4275,128,False,246,246,1,246,246,34,34,50,12300,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,80,USAD,one_multivariate_model,1,1,31491,31491,4366,4366,128,False,247,247,2,494,494,35,35,70,34580,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_19,100,CI-AE,one_model_per_channel,1,19,39276,746244,4276,81244,128,True,306,5814,1,306,5814,34,646,50,290700,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,100,GDN,one_multivariate_model,1,1,39370,39370,4370,4370,32,False,1231,1231,1,1231,1231,137,137,50,61550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,100,LSTM-AD,one_multivariate_model,1,1,39275,39275,4275,4275,128,False,307,307,1,307,307,34,34,50,15350,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_19,100,USAD,one_multivariate_model,1,1,39366,39366,4366,4366,128,False,308,308,2,616,616,35,35,70,43120,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_20,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_20,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_21,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_21,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_22,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_22,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_23,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_23,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_24,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_24,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,5,CI-AE,one_model_per_channel,1,19,2151,40869,4901,93119,128,True,16,304,1,16,304,39,741,50,15200,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,5,GDN,one_multivariate_model,1,1,2245,2245,4995,4995,32,False,71,71,1,71,71,157,157,50,3550,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,5,LSTM-AD,one_multivariate_model,1,1,2150,2150,4900,4900,128,False,17,17,1,17,17,39,39,50,850,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,5,USAD,one_multivariate_model,1,1,2241,2241,4991,4991,128,False,18,18,2,36,36,39,39,70,2520,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,10,CI-AE,one_model_per_channel,1,19,4401,83619,4901,93119,128,True,34,646,1,34,646,39,741,50,32300,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,10,GDN,one_multivariate_model,1,1,4495,4495,4995,4995,32,False,141,141,1,141,141,157,157,50,7050,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,10,LSTM-AD,one_multivariate_model,1,1,4400,4400,4900,4900,128,False,35,35,1,35,35,39,39,50,1750,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,10,USAD,one_multivariate_model,1,1,4491,4491,4991,4991,128,False,36,36,2,72,72,39,39,70,5040,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,20,CI-AE,one_model_per_channel,1,19,8901,169119,4901,93119,128,True,69,1311,1,69,1311,39,741,50,65550,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,20,GDN,one_multivariate_model,1,1,8995,8995,4995,4995,32,False,282,282,1,282,282,157,157,50,14100,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,20,LSTM-AD,one_multivariate_model,1,1,8900,8900,4900,4900,128,False,70,70,1,70,70,39,39,50,3500,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,20,USAD,one_multivariate_model,1,1,8991,8991,4991,4991,128,False,71,71,2,142,142,39,39,70,9940,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,40,CI-AE,one_model_per_channel,1,19,17901,340119,4901,93119,128,True,139,2641,1,139,2641,39,741,50,132050,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,40,GDN,one_multivariate_model,1,1,17995,17995,4995,4995,32,False,563,563,1,563,563,157,157,50,28150,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,40,LSTM-AD,one_multivariate_model,1,1,17900,17900,4900,4900,128,False,140,140,1,140,140,39,39,50,7000,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,40,USAD,one_multivariate_model,1,1,17991,17991,4991,4991,128,False,141,141,2,282,282,39,39,70,19740,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,60,CI-AE,one_model_per_channel,1,19,26901,511119,4901,93119,128,True,210,3990,1,210,3990,39,741,50,199500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,60,GDN,one_multivariate_model,1,1,26995,26995,4995,4995,32,False,844,844,1,844,844,157,157,50,42200,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,60,LSTM-AD,one_multivariate_model,1,1,26900,26900,4900,4900,128,False,211,211,1,211,211,39,39,50,10550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,60,USAD,one_multivariate_model,1,1,26991,26991,4991,4991,128,False,211,211,2,422,422,39,39,70,29540,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,80,CI-AE,one_model_per_channel,1,19,35901,682119,4901,93119,128,True,280,5320,1,280,5320,39,741,50,266000,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,80,GDN,one_multivariate_model,1,1,35995,35995,4995,4995,32,False,1125,1125,1,1125,1125,157,157,50,56250,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,80,LSTM-AD,one_multivariate_model,1,1,35900,35900,4900,4900,128,False,281,281,1,281,281,39,39,50,14050,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,80,USAD,one_multivariate_model,1,1,35991,35991,4991,4991,128,False,282,282,2,564,564,39,39,70,39480,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0
+GHL,series_25,100,CI-AE,one_model_per_channel,1,19,44901,853119,4901,93119,128,True,350,6650,1,350,6650,39,741,50,332500,none,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,100,GDN,one_multivariate_model,1,1,44995,44995,4995,4995,32,False,1407,1407,1,1407,1407,157,157,50,70350,patience=10,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,100,LSTM-AD,one_multivariate_model,1,1,44900,44900,4900,4900,128,False,351,351,1,351,351,39,39,50,17550,patience=3,fixed_for_pretraining_audit,execution log required,0,0,0
+GHL,series_25,100,USAD,one_multivariate_model,1,1,44991,44991,4991,4991,128,False,352,352,2,704,704,39,39,70,49280,none,fixed_project_transfer_rule,batch_size fixed by project transfer rule; execution log required,0,0,0

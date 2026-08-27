@@ -2,26 +2,39 @@
 
 common:
   downsample_factor: 1
+  validation_fraction: 0.2
+  validation_position: tail
+  validation_split_order: after_ratio
+  ratio_base: normal_training
   timestamp_as_feature: false
   label_as_feature: false
   label_aggregation: null  # downsample_factor=1이라 집계하지 않는다.
+  scaling_owner: registered_executor
+  input_dispatch: registered_executor_v1
   input_scaling:
-    method: minmax
-    fit_split: train
-    transform_splits: [train, validation, test]
-    clip: false
+    training_free: none
+    pca_legacy: model_internal_window_standardscaler_fit_only
+    tier2: external_minmax_fit_only
+    strict_zero_shot: none
 
 datasets:
   GHL:
-    ratios: [5, 10, 20, 50, 100]
+    ratios: [5, 10, 20, 40, 60, 80, 100]
     ratio_application: per_training_session
     feature_count: 19
     scaler_fit_scope: current_series_train
   HAI:
-    ratios: [10, 100]
+    ratios: [5, 10, 20, 40, 60, 80, 100]
     ratio_application: per_training_session
-    training_sessions: 4
-    test_sessions: 2
+    main_executions:
+      - id: train1_to_test1
+        normal_training_sessions: [train1]
+        test_session: test1
+      - id: train1_train2_to_test2
+        normal_training_sessions: [train1, train2]
+        test_session: test2
+    deferred_training_sessions: [train3, train4]
     feature_count: 86
-    scaler_fit_scope: all_training_sessions_train
+    validation_split_scope: current_ratio_prefix_per_session
+    scaler_fit_scope: fit_subsets_of_execution_training_sessions
     cross_session_windows: false

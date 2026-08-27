@@ -1,0 +1,5 @@
+﻿dataset,model,source_class,synthetic_batch_size,input_shape,expected_output_shapes,actual_output_shapes,forward_passed,reference_source_matches,reference_forward_passed,forward_error,full_module_import_ready,full_module_import_error,model_training_executed,scope
+GHL,CI-AE,AE_raw(TSB).py:InnerAutoencoder,2,"[2, 100]","[[2, 100]]","[[2, 100]]",True,True,True,,False,ModuleNotFoundError: No module named 'statsmodels',False,model core forward only; wrapper fit and predict were not called
+GHL,LSTM-AD,LSTMAD_raw.py:LSTMModel,2,"[2, 100, 19]","[[1, 2, 19]]","[[1, 2, 19]]",True,True,True,,False,ModuleNotFoundError: No module named 'torchinfo',False,model core forward only; wrapper fit and predict were not called
+GHL,USAD,USAD_raw.py:USADModel,2,"[2, 10, 19]","[[2, 190], [2, 190], [2, 190]]","[[2, 190], [2, 190], [2, 190]]",True,False,False,,True,,False,local TSB port interface only; official USAD source is not yet present
+GHL,GDN,src.models.tier2.GDN.model.GDN,2,"[2, 19, 5]","[[2, 19]]","[[2, 19]]",True,True,True,,False,ModuleNotFoundError: No module named 'src.models.tier2.gdn',False,model core forward only; wrapper fit and predict were not called
