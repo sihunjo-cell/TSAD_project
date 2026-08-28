@@ -1,72 +1,150 @@
 # 사전 점검 결과
 
-이 문서는 실험 전에 확인한 문제와 현재 조치만 모은다. 조사 과정과 일회성 진단 코드는
-보존하지 않는다.
+갱신일: 2026-08-27
 
-## 현재 상태
+## 현재 판정
 
-저는 계층 1·2·3 모델과 점수 산출을 맡는다. 계층 2는 파라미터 EDA와 네 모델 adapter,
-GHL·HAI runner, 합성 실행 검증까지 마쳤다. 실데이터 학습은 아직 하지 않았다. 강혁의 최종
-검토가 현재 판단을 바꾸면 영향받는 부분만 다시 계산한다.
+현행 기준은 [계획서 v5](plan_v5.md)다. 본실험은 GHL과 HAI이며, TSB-AD-M 비-GHL 18개는
+모델·recipe 선택용 튜닝 패널이다. 활성 roster는 Tier 1 `MWVAR·SQDIFF_LAST3·PCA_LEGACY`,
+Tier 2 `PaAno·ALoRa·GDN`, Tier 3 `TimeRCD·TSPulse`다.
 
-지우의 채점기와 ℓ_max, 주혜의 난이도·통계 코드는 대신 만들지 않았다.
+GDN은 공식 `d-ailin/GDN` 적응 구현 하나만 활성 모델로 인정한다. 과거 HAI 전용 GDN 실행과
+그래프 보조 분석은 폐기했으며 활성 registry와 runner에서도 제거했다. 두 구현을 비교하거나
+동등성을 증명하는 작업은 필요하지 않다.
 
-## 확인한 문제와 조치
+Dev18 Role-A 감사와 manifest 인수, label-blind 정적 feasibility, exact `equal_trial` panel과
+`budget_id=b5367ad431093`, VUS-PR evaluator와 시계열별 `ℓ_max`까지 닫았다. 현재 정지선은
+전체 exact panel을 실행하기 직전이다.
 
-| 점검 대상 | 확인한 내용 | 현재 조치 |
+Dev18 18개 원본은 감사와 160×2 gate smoke에만 썼다. 전체 모델 점수와 HPO는 실행하지 않았다.
+라벨은 Role-A 오염·구간 감사와 evaluator 대조에만 썼고 feasibility, 예산, checkpoint forward와
+gate smoke에서는 읽지 않았다. TimeRCD와 TSPulse의 준비 상태는 `ready`다.
+
+## 데이터 EDA 인수 조건
+
+강혁의 예외 역할로 Dev18은 아래 근거를 확정해 인수했다. GHL25와 HAI는 같은 기준의 최종
+인수가 아직 남아 있다.
+
+| 범주 | 필요한 근거 | 인수 판정 |
 | --- | --- | --- |
-| GDN 입력 | GraGOD의 `reshape`가 batch와 node 축의 값 순서를 섞었다. | 해당 두 줄을 `permute`로 고치고 수정본을 GDN 코드 옆에 뒀다. |
-| 점수 후처리 | GraGOD smoothing이 feature 축에 작용하고 마지막 점수를 버렸다. | 후행 4칸 smoothing과 `L-W` 정렬을 이 프로젝트에서 처리한다. |
-| 분할과 정규화 | 비율별 누적 구간마다 validation을 다시 잘라 검증 구간까지 달라졌다. | 전체 정상 구간의 마지막 10%를 고정 validation으로 먼저 분리한다. 남은 fit pool의 누적 비율만 학습과 scaler fit에 쓰고 validation·test에는 transform만 적용한다. |
-| 비율별 데이터 감사 | 과거 누적 구간을 전체 학습 구간의 통계와 비교해 이후 관측치가 기준에 들어갔다. | 전체 구간과의 대표성 계산과 해당 CSV 생성을 없앴다. 각 누적 구간 안의 표본 수·채널 변화·분산만 검사한다. |
-| GHL 입력 | 25개 시계열의 학습 길이는 39,938·43,750·50,000이고 센서는 19개다. | 5·10·20·40·60·80·100%의 공통 누적 격자를 쓴다. 관계 구조 회복이나 최적 비율로 해석하지 않는다. |
-| HAI 입력 | HAI 23.05는 훈련 4세션, 테스트 2세션, 센서 86개다. | 파일 경계를 보존하고 7개 공통 비율을 쓴다. `topk=22`는 본실험 전 프로젝트 전이값으로 고정했다. |
-| 계층 2 입력 길이 | 고정 lag 6개의 자기상관 중앙값으로 모델 입력 길이 60·120을 정할 근거가 없었다. | 논문과 채택 구현을 우선해 CI-AE 100, LSTM-AD 100, USAD 10, GDN 5로 고정했다. EDA는 비율별 계산 가능성만 검사한다. |
-| 센서 열 순서 | GHL 25개는 센서 이름 집합이 같지만 10개 파일에서 두 온도 센서의 열 위치가 바뀐다. | 원본 차이는 감사표에 남기고 센서명 기준 공통 순서로 재배열한다. HAI 6세션의 순서는 같았다. |
-| 계층 2 원본 코드 | CI-AE scaler 축, LSTM-AD·USAD의 내부 분할과 split별 정규화가 공통 전처리 규칙과 충돌했다. CI-AE의 최저 손실 가중치도 복사본이 아니라 마지막 epoch 상태를 가리켰다. 공식 USAD와 TSB-AD 포팅은 구조와 점수식이 다르다. | 원 wrapper는 쓰지 않는다. CI-AE·LSTM-AD는 TSB-AD core만, USAD는 지정한 공식 core만 부르는 얇은 adapter를 만들었다. 분할·MinMax·점수 저장은 프로젝트 규칙이 맡는다. |
-| 점수 정렬 | CI-AE·USAD·LSTM-AD 원 wrapper는 앞뒤 점수를 복제해 길이를 `L`로 만든다. | 복제 padding을 버리고 실제 core만 원시 시점 범위와 함께 저장하는 규칙으로 고정했다. |
-| 적용 가능성 | 두 데이터셋의 NaN·Inf는 0개였고 세션·fit 경계를 넘는 window도 0개였다. | EDA 결과는 그대로 보존했다. 공식 USAD 구조를 포함한 네 adapter를 합성 데이터로 학습·복원·추론해 점수 길이와 source 범위를 다시 확인했다. |
-| GDN 설정 | 논문, 공식 실행 코드와 GraGOD의 값이 일부 달랐다. | 로컬 adapter가 attention dropout 0, output dropout 0.2를 분리한다. scheduler와 gradient clipping은 쓰지 않으며 topk는 GHL 5·HAI 22로 고정했다. |
-| GDN 실행 import | 배치 entrypoint가 삭제된 소문자 GDN 경로를 import했다. | 모든 실행 경로를 `src/models/tier2/GDN/`으로 통일하고 외부 GraGOD fork 의존성을 없앴다. |
-| 실행 흐름 | snapshot부터 점수 저장까지 실제 호출 형태를 확인할 필요가 있었다. | 네 모델의 checkpoint 복원, 점수 8벌, 전체 metadata와 완료 판정을 합성 입력으로 확인했다. HAI형 GDN은 train 4세션·test 2세션과 인접행렬 2벌까지 검사했다. |
+| 파일 신원 | 역할, 상대 경로, 파일명, 바이트 크기, SHA-256 | 원본 목록과 모두 일치 |
+| shape | 행 수, feature 수, feature 이름·순서 | 모델 입력 열을 재현 가능 |
+| 경계 | 정상 학습·테스트 인덱스, prefix 기준 `N` | 범위가 겹치거나 비지 않음 |
+| 값 품질 | numeric 여부, NaN·Inf·결측·중복 timestamp | 수치와 처리 방침이 명시됨 |
+| 라벨 | 학습 구간 오염, 테스트 라벨 길이, 이상 구간 개수·길이 | 모델 입력과 채점 입력을 분리 가능 |
+| 채널 | constant·IQR 0·고상관 현황 | 삭제 없이 원형 보존 |
+| 주기성 | 학습 구간 ACF 후보와 lag 상한 | 지우의 `ℓ_max` 검토에 전달 가능 |
+| HAI 세션 | 각 CSV의 독립 세션 여부, 86개 센서 순서 | window·통계가 파일 경계를 넘지 않음 |
 
-GHL의 5% fit subset은 475개 파일·채널 조합 중 246개가 constant했고 IQR이 0인 조합은
-279개였다. 전체 fit pool에서는 constant가 0개, IQR이 0인 조합이 150개였다. 고정
-validation은 전 비율에서 같은 36개 constant와 221개 IQR=0 조합을 유지했다. 5%는 충분한
-학습량이 아니라 저데이터 경계를 보는 조건이다.
+공식 `TSB-AD-M-Tuning.csv` 20개는 provenance 목록이다. GHL 09·18을 뺀 18개 튜닝 패널과
+GHL25의 교집합은 0건이어야 한다. 공식20과 GHL25의 교집합이 GHL 09·18 두 건인 것은 정상이다.
 
-HAI에서 훈련 4세션을 채널별로 합친 pooled 기준 변화 채널은 5%와 10%에서 60개,
-20% 이상에서 66개였다. 5% fit subset의 훈련 세션·채널 344개 조합 중 constant는 130개, IQR=0은
-139개였다. 이 수치는 학습 충분성을 뜻하지 않는다.
+EDA가 모델 window, HPO winner, VUS-PR, threshold나 채널 삭제를 정하지 않는다. 값이 부족하면
+모델 담당자가 추정하지 않고 강혁에게 보완을 요청한다.
 
-고정한 window로 유효 학습·validation window가 0개인 조합은 없었다. HAI GDN의 합산
-epoch당 batch는 10%에서 2,521개, 100%에서 25,211개다. GHL CI-AE는 센서별 모델 19개의
-작업량을 합산했다. 표의 최대 update는 조기 종료가 없을 때의 상한이며 실제값은 실행 로그로
-확정한다. USAD workload는 본실험 전 고정한 batch 128로 계산한다.
+## 공식 source 사전 기록
 
-USAD batch와 GDN topk의 출처 선택 대기는 0개다. 두 EDA manifest는 같은 run ID를 쓰고
-생성 파일 SHA-256 대조를 통과했다. 당시 manifest에 남긴 adapter 항목은 이번 구현과 합성
-검증으로 닫았으며, 기존 EDA 산출물은 다시 만들지 않았다. `tsad_fixed`의 환경 버전 계약도 맞았다.
+아래 source는 모델 구현의 출발점이다. 표의 기록만으로 실제 실행 준비가 끝난 것은 아니다.
 
-## 남긴 것
+| 모델·참고 코드 | 봉인 후보 commit | license | 현행 용도와 남은 확인 |
+| --- | --- | --- | --- |
+| One-Liners | `dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9` | MIT | MWVAR·SQDIFF 기준점. 다변량 채널 처리와 길이 `L` 계약 확인 |
+| TSB-AD | `e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48` | Apache-2.0 | PCA 참고. benchmark의 threshold·후처리는 사용하지 않음 |
+| PaAno | `d4c67116190efa4592dc6a8a157ced0def68b6af` | MIT | train/test 세션 분리와 point score 정렬 확인 |
+| ALoRa | `97dcc4a337710e6dc72c1a67893717c9538bae1a` | EUPL-1.2 | GHL 19채널·HAI 86채널 shape와 라벨 threshold 분리 확인 |
+| GDN | `9853899da860682669a134e4af315d036aab4eca` | MIT | 유일한 활성 GDN. 1-step score 정렬과 fit-only scaler 확인 |
+| Time-RCD | `372bb980426b2f67007311c6f3165ab789c79bef` | Apache-2.0 | multi checkpoint SHA와 target-derived normalization 비사용 확인 |
+| TSPulse | `9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d` | Apache-2.0 | AD revision·checkpoint SHA, raw score head와 길이 `L` 확인 |
 
-반복할 가치가 있는 데이터 감사와 Tier 2 합성 dry-run만 `tests/checks/`에 남겼다. dry-run의
-원시 점수와 checkpoint는 시스템 임시 폴더에서 검증 후 지우고, 결과 요약만
-`experiments/checks/tier2_implementation/implementation_manifest.json`에 남긴다. GraGOD 입력 축 수정은
-`src/models/tier2/GDN/model.py`에 보존한다. GHL 실행 결과는
-`experiments/01_ghl_main/`, HAI 실행 결과는 `experiments/02_hai_extension/`에 저장된다.
+`CATCH`는 공식 source의 license 파일과 검증된 실행 경로가 없어 활성 roster에서 제외했다.
+과거 모델과 candidate-only 조사 항목은 현재 feasibility와 HPO 예산에 넣지 않는다.
 
-GHL·HAI 데이터 감사는 수정한 코드로 다시 실행해 로그와 snapshot을 갱신했다. 전체 구간을
-기준으로 삼던 대표성 CSV는 제거했다. 계층 2 EDA는 사전 고정한 모델 입력 길이만 검사하며
-`vus_l_max`는 계산하지 않는다.
+## 분할과 누수 계약
 
-문제를 찾는 데만 쓴 진단 코드와 중복 검증 문서는 삭제했다.
+비율은 `005`, `010`, `020`, `040`, `060`, `080`, `100`이다. 각 파일의 정상 학습 구간 앞쪽
+`floor(N×q/100)`개만 현재 관측량으로 쓴다. 학습형 모델은 그 안에서
+`fit=floor(0.8×available)`, `validation=available-fit`으로 시간순 분할한다.
 
-## 실데이터 실행 전 조건
+Tier 2 입력 scaler는 fit에만 맞춘다. validation과 test에는 transform만 적용한다. score
+calibration은 같은 `q` validation의 raw score만 쓴다. 전체 정상 구간의 마지막 10%를 낮은
+비율에 미리 주지 않는다. training-free Tier 1과 strict zero-shot에는 `q`별 target calibration을
+적용하지 않는다.
 
-계층 2 실데이터 학습 전에는 이번 변경을 commit해 작업 트리를 clean 상태로 만들고, 연구실
-서버의 accelerator와 `tsad_fixed` 환경 계약을 확인한다. 서버에서도 합성 dry-run을 한 번
-통과한 뒤 본실험 runner를 시작한다.
+HAI 첫 실행은 train1의 현재 prefix, 둘째 실행은 train1·train2의 현재 prefix만 쓴다. 훈련 파일은
+각자 80:20으로 나누고 window와 calibration score를 파일 사이에 만들지 않는다. 첫 scaler는
+train1 fit, 둘째 scaler는 train1·train2 fit의 합에만 맞춘다.
 
-지우의 채점기와 주혜의 난이도·통계 절차는 계층 2 모델 구현의 종료 조건이 아니다. 모델 점수를
-최종 지표와 통계 결과로 합칠 때 필요하므로, 해당 산출물이 오기 전에는 최종 통합 실험만 멈춘다.
+## 정적 feasibility의 입력과 출력
+
+강혁 manifest를 인수한 뒤 모든 `(model, config_id, q, tuning_series)`에 대해 아래 항목을
+label-blind로 계산한다.
+
+- `available_count`, `fit_count`, `validation_count`, `test_count`
+- window·patch 생성 개수와 최소 연속 score 개수
+- feature 수, GDN top-k와 attention pair 제약
+- HAI 단일·다중 훈련 세션 지원 여부
+- `valid`, `status_reason`, registry·manifest SHA-256
+
+정적 불가능 조합은 실행하지 않고 `unavailable`로 남긴다. 같은 `q`의 튜닝 패널 18개 전부를
+처리할 수 있는 설정만 해당 `q`의 후보가 된다. 늦게 시작하는 모델 때문에 Tier `q_floor`를
+올리지 않는다.
+
+정적 원표가 끝난 뒤에만 각 Tier의 feasible 모델 수와 공통 config 수를 계산하고 `equal_trial`
+exact panel을 만든다. panel과 순서, seed, 실패·동률 규칙을 승인한 뒤 `budget_id`를 봉인한다.
+
+Dev18 원표는 3,276행이며 feasible 2,592행, structurally infeasible 684행이다. 18개 모두 가능한
+logical key는 79개이고 이에 해당하는 원표 행은 1,422개다. 중복 logical ratio를 물리 실행으로
+접으면 43개 key가 남는다. ALoRa는 저채널 pair 제약으로 unavailable이다. PCA_LEGACY는 `q100`,
+PaAno는 `q40` 이상, GDN은 `q10` 이상에서만 후보가 남는다.
+
+equal-trial config 수는 Tier 1·2·3 순서로 `1·2·1`이다. target-free 실행을 `r100` 한 벌로 접은
+exact panel은 물리 실행 65건, primary logical score 89행이다. TSPulse의 primary score variant는
+`raw_max` 하나로 고정했고 `time·fft·pred`는 진단용으로만 남겼다. 예산은 `sealed`, 실행 준비는
+`ready`다. 18개 전체 물리 실행은 1,170건이며 완성할 primary logical score 원표는 1,602행이다.
+
+## 활성 모델 실행 전 확인
+
+각 모델은 합성 입력에서만 아래 계약을 먼저 확인한다.
+
+| 모델 | 최소 확인 |
+| --- | --- |
+| MWVAR | 공식 window 96, `ddof=1`, 중앙 정렬과 길이 `L` |
+| SQDIFF_LAST3 | lag 3, trailing 4점, 계수 `4/3`, 길이 `L` |
+| PCA_LEGACY | fit-only scaler·PCA, component grid와 길이 `L` |
+| PaAno | patch score의 test-only stitching, 세션 경계와 길이 `L` |
+| ALoRa | window stitching, fit-only pair 선택, 19·86채널 shape |
+| GDN | 공식 활성 경로의 `[B,C,W]` 입력, `L-W` score, `labels[W:]` |
+| TimeRCD | multi checkpoint forward, target normalization 비사용, 길이 `L` |
+| TSPulse | 공식 time·FFT·prediction raw score, native scaling·smoothing 우회, 길이 `L` |
+
+GDN 검사는 한 구현의 충실도 검사다. 과거 구현과 수치 결과를 맞추는 회귀나 HAI edge 재현은
+수행하지 않는다.
+
+## Dev18 실행 전에 닫은 항목
+
+- 본실험은 GHL·HAI, TSB 비-GHL 18개는 사전 튜닝이라는 역할 구분
+- 활성 모델 roster와 GDN 단일화 결정
+- `Q`, 80:20 prefix 내부 분할, fit-only scaler와 라벨 비개입 원칙
+- GHL25 25개와 HAI 두 실행의 평가 범위
+- `raw__trainnorm` 주점수와 점수 정렬·metadata 기본 계약
+- 모델 담당자, 강혁, 지우, 주혜의 생성 책임과 인수 순서
+- 최종 비용 목적함수에 필요한 시간·memory·artifact·관측량 원자료 범위
+- 공식 TSB-AD `opt` VUS-PR과 현재 evaluator의 고정 fixture 대조, 최대 절대 오차 0
+- Dev18 18개 시계열별 training-only `ℓ_max`와 evaluator·generator SHA-256
+- TimeRCD·TSPulse의 Dev18 1,536×2 checkpoint forward, finite·비상수·CPU 결정성
+- CPython 3.11.14 `tsad_models_311` 공통 환경과 `requirements.txt`·`pip freeze`
+- score manifest의 exact budget key, metadata·score·실행 증거 SHA와 최대 3회 시도
+- 실제 Dev18 160×2 MWVAR gate smoke, label 비사용, 4.3초 실행
+
+공식 구현 대조가 현재 evaluator SHA에 묶였으므로 독립 oracle을 별도 하드 게이트로 두지 않는다.
+공식 TSB-AD가 비교 기준이며 point adjustment와 test-derived normalization은 이 실행에 들어가지
+않는다.
+
+## 현재 남은 항목
+
+- Dev18: clean worktree에서 봉인된 단일 진입 파일로 exact panel 실행
+- GHL25·HAI: 각 본실험을 열기 전 Role-A EDA·manifest 최종 승인
+- 최종 평가: GHL·HAI score가 생긴 뒤 threshold와 보조 F1 원표 연결
+
+GHL25·HAI 항목은 Dev18 튜닝을 막지 않는다. 다음 시작점은
+`tests/ghl_main/run_dev18_tuning.py`를 옵션 없이 실행하는 2단계 exact panel이다.

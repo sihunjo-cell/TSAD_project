@@ -1,0 +1,23 @@
+{
+  "protocol": {
+    "input": "normal training data only; timestamp and labels excluded",
+    "acf": "normalized autocorrelation via FFT",
+    "lag_search": [1, 500],
+    "peak_rule": "acf[lag] > acf[lag-1] and acf[lag] > acf[lag+1]",
+    "selection": "median of first strict local-peak lags; no test labels or score files"
+  },
+  "GHL": {
+    "input_scope": "all 25 files, before each filename tr_ boundary",
+    "nonconstant_channels": 475,
+    "detected_peak_channels": 125,
+    "l_max_samples": 332
+  },
+  "HAI": {
+    "input_scope": "hai-train1.csv only, so condition 1 has no future-training information",
+    "nonconstant_channels": 66,
+    "detected_peak_channels": 42,
+    "first_peak_lag_median": 165.0,
+    "l_max_samples": 165,
+    "applies_to_conditions": [1, 2]
+  }
+}

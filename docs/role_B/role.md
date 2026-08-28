@@ -1,44 +1,78 @@
-# B(지우) — 채점기·ℓ_max
+# B(지우) — VUS-PR·선택표
 
-지우님은 모델을 구현하거나 실행하지 않습니다. 제가 계층 1·2·3에서 만든 점수 배열을 같은
-규칙으로 채점하는 독립 평가자입니다.
+지우님은 모델 담당자가 만든 threshold 전 연속 점수를 같은 규칙으로 채점하고, TSB 튜닝 패널에서
+모델과 recipe를 고정합니다. 모델 본체와 runner는 수정하지 않습니다.
 
-## 입력 계약
+## 입력
 
-점수 파일명은 아래 형식을 따릅니다.
+입력은 `dev18_score_manifest.csv`와 각 score의 metadata입니다. 이름에 남은 `dev18`은
+TSB-AD-M 비-GHL 튜닝 패널 18개의 내부 식별자이며 별도 본실험 데이터셋이 아닙니다.
 
-```
-{dataset}__{series:02d}__{model}__{tier}__r{ratio:03d}__s{seed}__{raw|smoothed}__{trainnorm|testnorm}(__channels).npy
-```
+`config_id`, score SHA-256, source 범위, label slice와 실제 배열 길이가 맞지 않으면 채점을
+멈춥니다. 모델별 offset을 채점기에서 추측하지 않고 metadata를 읽습니다. GDN은 test 길이 `L`,
+window `W`일 때 `L-W` 점수와 `labels[W:]`를 받습니다.
 
-`trainnorm` 집계본이 본 채점 대상입니다. `testnorm`은 부록에 따로 싣고 `__channels`가 붙은
-배열은 회수 분석용으로만 씁니다. metadata의 `score_length`와 `label_slice`가 실제 배열과
-맞지 않으면 채점을 멈춥니다. GDN 점수 길이는 `L-W`, 라벨은 `labels[W:]`입니다.
+## 평가기
 
-모델별 예외를 채점 코드에 하드코딩하지 않습니다. 모든 모델은 `score_interface.md`의 같은
-점수·metadata 계약으로 받습니다.
+주지표는 `raw__trainnorm` VUS-PR입니다. threshold 250개는 VUS 적분 격자이며 현장 경보
+threshold가 아닙니다. AUPRC와 point adjustment 없는 F1은 보조 지표로 둘 수 있지만 주 선택
+규칙을 바꾸지 않습니다. test-optimal threshold와 point adjustment는 본 결과에 쓰지 않습니다.
 
-## 구현할 것
+`ℓ_max`는 강혁님이 넘긴 학습 구간 주기성 근거를 받고 GHL·HAI 성능을 보기 전에 고정합니다.
+이상 구간 길이는 선택값을 최적화하는 근거로 쓰지 않습니다. `ℓ/2`, `ℓ`, `2ℓ`은 본 규칙을
+바꾸지 않는 민감도입니다.
 
-VUS-PR을 주지표로 계산하고 점수 분위수 위치 250개를 threshold로 씁니다. AUPRC와
-point-adjust를 적용하지 않은 F1은 보조 지표로 같은 원표에 둡니다. 테스트셋에서 최적
-threshold를 찾는 경로는 본 결과에 쓰지 않습니다.
+평가기의 최소 검증은 parser, score-label 정렬, 상수·무작위 점수와 point adjustment 대조입니다.
+검증한 evaluator와 `ℓ_max` 명세의 SHA-256을 모든 채점 원표에 연결합니다.
 
-ℓ_max는 아래 세 후보를 비교한 뒤 채널별 자기상관 국소 최대의 중앙값으로 정합니다.
+## TSB 튜닝과 선택
 
-1. 채널별 자기상관 국소 최대의 중앙값
-2. 이상 구간 길이의 중앙값
-3. 공정 지식으로 정한 주기
+공식 `TSB-AD-M-Tuning.csv` 20개 중 GHL 09·18을 뺀 18개만 모델·recipe 선택에 씁니다. 먼저
+시계열별 seed 평균을 내고 10개 family를 각각 `1/10`로 평균합니다. `1/18` 시계열 macro는
+민감도로만 남깁니다.
 
-이상 구간 길이는 비교와 탈락 사유에만 쓰고 선택값 최적화에는 넣지 않습니다. 선택값과 lag
-상한은 실험 전에 고정합니다.
+모델 선택은 봉인된 `equal_trial` panel에서 family leave-one-out 바깥 검증으로 합니다. 각
+holdout family마다 나머지 9개 family에서 recipe를 고른 뒤 holdout 점수를 모아 `S(m)`을
+계산합니다. 모델을 고른 뒤 같은 panel의 18개 전체에서 고정 recipe 한 벌을 정합니다. 점수 차이가
+`1e-6` 이내면 `(model, config_id, score_variant)` 사전순으로 고릅니다.
 
-채점기는 무작위 점수가 낮은 값을 받는지, point-adjust가 점수를 부풀리는지 검증해야 합니다.
-parser, 라벨 정렬, 상수 점수와 비유한 값 입력도 최소 테스트로 확인합니다. `ℓ/2`, `ℓ`,
-`2ℓ` 비교는 본 규칙을 바꾸지 않는 부록 민감도 분석입니다.
+필수 출력은 아래 파일입니다.
 
-출력은 `데이터셋 × 시계열 × 모델 × 비율 × seed × raw/smoothed × 정규화 방식`의 채점
-원표입니다. 성능 해석과 계층별 우열은 쓰지 않고 주혜에게 넘깁니다.
+1. `dev18_trial_score_ledger.csv`: 시계열·seed·model·config·`q`별 채점 원표
+2. `model_fixed_policy.csv`: 활성 모델별 고정 recipe와 지원 `q`
+3. `tier_fixed_policy.csv`: Tier별 대표 모델과 고정 recipe
+4. `family_lofo.csv`: 10개 holdout family별 선택 config와 바깥 점수
+5. `final_policy_membership.csv`: GHL25·HAI가 소비할 단일 실행 요청
 
-완료 신호는 파서 호환 확인, ℓ_max와 threshold 확정, 무작위·point-adjust 검증과 채점기
-테스트 통과입니다.
+모든 파일과 검토용 그림은 `experiments/01_ghl_main/results/dev18_tuning/` 한 폴더에 둡니다.
+모델별 파일은 `PaAno.csv`, `PaAno.png`처럼 짧게 이름을 붙입니다. `models.csv·png`에는 전체
+모델의 고정 파라미터와 선택·제외 이유를, `selection.csv·png`에는 Tier 대표와 family-LOFO
+선택 이유를 함께 남깁니다.
+
+비율별 재튜닝과 Tier 내부 모델 교체 표는 선택적 민감도입니다. 주실험을 열기 위한 필수 산출물이
+아니며, 만들더라도 같은 튜닝 원표를 재사용합니다.
+
+## GHL·HAI 실행 요청과 채점
+
+선택표가 봉인되면 `final_policy_membership.csv`를 만들어 모델 담당자에게 넘깁니다. 이 파일에는
+split, model, `config_id`, 평가 비율, 실제 점수 비율, score variant와 runnable 상태만 둡니다.
+runner는 이 실행 요청만 소비합니다. 지우님의 선택식이나 VUS-PR을 runner 안에서 다시 계산하지
+않습니다.
+
+GHL25에서는 모든 활성 모델의 `model_fixed` 지원점을 빠뜨리지 않습니다. 그래야 마지막 비용
+목적함수가 Tier 대표 외의 더 싼 후보도 비교할 수 있습니다. `tier_fixed`는 계층별 주분석입니다.
+GHL 결과로 TSB 선택표나 membership을 다시 만들지 않습니다.
+
+HAI는 `train1 → test1`, `train1+train2 → test2`를 별도 행으로 채점합니다. 모델·recipe는 TSB
+튜닝에서 고정한 값을 그대로 씁니다. 두 결과를 먼저 따로 넘기고, 요약이 필요할 때만 같은
+가중치로 산술평균합니다.
+
+최종 출력은 `ghl25_score_ledger.csv`와 `hai_score_ledger.csv`입니다. 성능 해석, 통계와 교차점은
+주혜님에게 넘깁니다. 현장 operating threshold는 비용 단가와 제약이 정해지는 마지막 단계에서
+별도로 선택합니다.
+
+## 완료 신호
+
+evaluator·`ℓ_max` 신원, TSB 튜닝 원표, 두 고정 정책표와 final membership이 서로 맞고 GHL·HAI
+채점 원표가 봉인되면 완료입니다. 모델 구현, runner 수정, 난이도·통계·비용 가중치 결정은 완료
+범위에 넣지 않습니다.

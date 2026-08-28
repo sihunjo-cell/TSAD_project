@@ -4,6 +4,7 @@ CLAUDE.md
 *.local.md
 docs/superpowers/
 dummy/
+.runtime/
 
 # 로컬 원본 데이터: 저장소 밖에 두고 경로·SHA-256·분석 결과만 추적한다.
 TSB-AD-M/
@@ -22,6 +23,7 @@ experiments/02_hai_extension/scores/**/*.ckpt
 experiments/02_hai_extension/scores/**/COMPLETE
 experiments/01_ghl_main/logs/*
 !experiments/01_ghl_main/logs/.gitkeep
+experiments/01_ghl_main/results/dev18_tuning/
 experiments/02_hai_extension/logs/*
 !experiments/02_hai_extension/logs/.gitkeep
 experiments/01_ghl_main/snapshots/*

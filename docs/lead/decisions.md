@@ -1,128 +1,132 @@
 # 현재 결정
 
-이 문서는 지금 유효한 결정만 적는다. 조사 과정, 파일별 줄 번호, 폐기한 후보는 남기지 않는다.
-판단을 바꿀 때는 충분히 확인한 뒤 해당 문장과 관련 설정을 함께 고친다.
+갱신일: 2026-08-27
 
-## 연구 범위와 역할
+이 문서는 [계획서 v5](plan_v5.md)의 확정 결정을 짧게 기록한다. 설계 이유와 전체 절차는 계획서를
+따르고, 값이 아직 정해지지 않은 항목을 완료된 결정처럼 쓰지 않는다.
 
-`plan_v4.md`가 연구 설계 원본이며 현재 준비 상태는 `process_0_preverify.md`가 관리한다.
-저는 계층 1·2·3 모델과 공통 점수 생산을 맡는다. 강혁은 데이터와 Manifest, 주기성을
-확인한다. 지우는 VUS-PR, threshold 250개, ℓ_max와 채점기 검증을 담당한다.
-주혜는 난이도 분할, 구간 hit, Jaccard, 통계와 결과 해석을 맡는다.
+## 연구 범위
 
-외부 담당자의 결과가 오기 전에는 그 역할을 대신 구현하지 않는다. 실데이터 학습도 실행 전
-조건이 모두 정리될 때까지 시작하지 않는다.
+최종 목적은 제조 현장의 cold-start TSAD 도입안을 비용까지 포함한 목적함수로 고르는 것이다.
+본실험 데이터는 GHL과 HAI다. TSB-AD-M 비-GHL 18개는 모델과 recipe를 고르는 사전 튜닝 패널이며
+세 번째 본실험 데이터셋이 아니다.
 
-## 데이터와 전처리
+주분석은 고정된 모델·recipe에 target 정상 prefix가 늘어날 때 성능과 비용이 어떻게 달라지는지
+본다. 비율별 재튜닝과 모델 교체는 운영 민감도이며 데이터 양의 단독 효과로 해석하지 않는다.
 
-GHL과 HAI는 5·10·20·40·60·80·100% 조건을 쓴다. 이 값은 저데이터 구간을 촘촘히 보고
-40% 이후 증가 양상도 같은 간격으로 비교하는 사전 격자다. 관계 구조 회복 지점이나 최적
-비율을 뜻하지 않는다.
-각 조건은 고정 validation을 뺀 fit pool의 앞쪽 누적분만 사용한다. 이후 시점의 데이터만 골라 과거의 저데이터
-상태를 대신하는 통제군은 두지 않는다. 현시점부터 데이터가 얼마나 더 쌓여야 하는지를 재는
-프로젝트 질문과 맞지 않기 때문이다.
-비율별 데이터 감사도 과거 누적분을 나중의 전체 구간 통계와 대조하지 않는다. 각 시점까지
-관측한 데이터만으로 표본 수·채널 변화·분산을 검사한다.
+## 데이터 역할
 
-HAI는 23.05의 센서 86개를 사용한다. CSV 한 파일을 연속 세션 하나로 보고 파일 사이에는
-윈도를 만들지 않는다. 훈련 4세션은 한 모델을 학습하는 데 함께 쓰고 테스트 2세션은 따로
-채점한다. GDN 이웃 수는 본실험 전에 정한 프로젝트 전이 규칙에 따라 GHL 5, HAI 22로 고정한다.
+1. 공식 `TSB-AD-M-Tuning.csv` 20개는 provenance와 SHA-256 확인용 원본 목록이다.
+2. GHL 09·18을 뺀 18개는 TSB 튜닝 패널이다. 나머지 파일과 순서는 고정한다.
+3. GHL 09·18을 포함한 GHL25 전체는 주실험이다. 튜닝 패널과 GHL25의 교집합은 0건이다.
+4. HAI 23.05는 `train1 → test1`, `train1+train2 → test2` 두 실행으로 외부 확인한다.
+5. HAI train3·train4는 본 결과 뒤의 선택적 시간순 민감도에만 남긴다.
 
-다운샘플 배율은 1이다. timestamp와 label은 모델 입력에서 뺀다. GHL과 HAI가 제공하는 정상
-학습 구간에서 고정 validation을 먼저 분리한 뒤 남은 fit pool에 학습 비율을 적용한다.
+TSB 튜닝의 TAO 11·12번은 공식 `tr_500` 안에 이상 라벨이 각각 48개와 40개 있다. 공식
+TSB-AD의 고정 commit도 `tr_` prefix를 라벨로 정제하지 않고 그대로 학습 입력에 쓴다. 이 두
+파일을 빼거나 라벨로 걸러내면 18개 패널과 label-blind 계약이 함께 깨지므로 공식 prefix를
+보존한다. 모델은 라벨을 받지 않으며 TAO family leave-one-out 결과로 오염 영향을 따로 확인한다.
 
-전체 정상 학습 구간의 마지막 10%를 고정 validation으로 한 번만 분리한다. 나머지 fit pool의
-앞쪽 5·10·20·40·60·80·100%를 시간순 누적 subset으로 쓴다. scaler는 현재 비율의 fit
-subset에만 fit하고 같은 고정 validation과 test에는 transform만 적용한다. GHL은 시계열마다,
-HAI는 같은 비율의 훈련 4세션 fit subset을 합쳐 scaler 하나를 맞춘다.
+기존 파일명과 저장 경로의 `dev18`은 TSB 튜닝 패널을 가리키는 내부 식별자다. 문서 산문에서는
+혼선을 막으려고 “TSB 비-GHL 튜닝 패널 18개”라고 쓴다.
 
-## 계층 2 모델 입력 길이
+## 역할과 인수 순서
 
-모델 입력 길이는 GHL의 모든 학습 비율에서 바꾸지 않는다. CI-AE와 LSTM-AD는 100, USAD는
-10, GDN은 5다. HAI GDN도 5를 쓴다. CI-AE와 LSTM-AD는 채택한 TSB-AD wrapper의 실제
-기본값을 따른다. USAD 10은 논문의 window 민감도 결과와 WADI 설정을 바탕으로 GHL 결과를
-보기 전에 정한 transfer 기준이다. GDN 5는 논문의 SWaT·WADI 실험값이다.
+강혁은 데이터 EDA와 manifest를 승인한다. 모델 담당자는 이 근거로 정적 feasibility를 계산하고
+모델·본실험 함수, 점수와 실행 증거를 만든다. 지우는 VUS-PR, `ℓ_max`, 튜닝 채점과 선택표를 맡는다.
+주혜는 난이도, hit, Wilcoxon, TOST, bootstrap, 교차점과 결과표를 맡는다.
 
-이 값은 ACF나 테스트 성능으로 고른 최적값이 아니다. EDA는 고정한 입력 길이로 각 비율에서
-학습·validation window가 생기는지만 검사한다. `vus_l_max`는 모델 입력 길이와 별개이며
-지우가 맡는다.
+인수 순서는 `강혁 → 모델 담당자 → 지우 → 모델 담당자 final 실행 → 지우 final 채점 → 주혜 →
+비용 최적화`다. 지우의 선택표는 모델 점수가 생긴 뒤 만들어지므로 정적 feasibility의 선행 조건이
+아니다. 모델 runner는 지우의 선택식을 다시 계산하지 않고 `final_policy_membership.csv`만 실행
+요청으로 소비한다.
 
-CI-AE는 센서마다 AE 하나를 따로 학습하고 가중치를 공유하지 않는다. 그래야 채널 사이의
-정보 전달을 막는 대조군이라는 정의가 유지된다.
+## 활성 모델
 
-학습 비율만 바꾼다. 모델 구조, 입력 길이, hidden·latent 차원, learning rate, batch, 최대
-epoch와 early stopping, optimizer, 이상 점수, 전처리와 정규화는 모델별로 한 번 정한 뒤 모든
-비율과 seed에 고정한다. 값이 충돌하면 논문의 데이터셋별 실험값, 공식 config·notebook,
-공식 CLI 기본값, TSB-AD 기본값, 프로젝트 임의값 순으로 판단한다. GHL에 직접 대응하는 공식
-값이 없는 USAD batch는 128, GDN topk는 GHL 5·HAI 22를 본실험 전 프로젝트 전이 규칙으로
-고정했다. 성능을 본 뒤 바꾸지 않는다.
+- Tier 1: `MWVAR`, `SQDIFF_LAST3`, `PCA_LEGACY`
+- Tier 2: `PaAno`, `ALoRa`, `GDN`
+- Tier 3: `TimeRCD`, `TSPulse`
 
-USAD는 논문의 WADI 항목에서 window 10, latent 100, 최대 70 epoch만 옮긴다. GHL 원 관측
-간격은 유지하므로 WADI 전처리 전체를 복제한 profile이라고 부르지 않는다. 두 개의 Adam
-`lr=0.001`, 조기 종료 없음, 점수 가중치 `(0.5,0.5)`도 고정한다. 공식 SWaT notebook의
-batch 7,919는 SWaT window 수에 맞춘 값이라 GHL로 곧바로 옮길 근거가 없다. 따라서 batch
-128을 프로젝트 고정 전이값으로 쓰고 모든 비율과 seed에 유지한다. 공식 학습은
-batch마다 optimizer를 두 번 갱신하므로 update 수도 `2×batch 수×70`으로 계산한다.
+GDN은 공식 `d-ailin/GDN` commit
+`9853899da860682669a134e4af315d036aab4eca`를 기준으로 한
+`src/models/tier2/gdn_official/` 구현 하나만 활성화한다. 과거 HAI 전용 GDN 구현과 edge/Jaccard
+보조 분석은 연구 범위에서 제외한다. 두 구현의 성능 비교나 동등성 검증도 하지 않는다.
 
-학습 손실과 저장 점수는 구분한다. CI-AE·LSTM-AD·USAD·GDN의 학습 손실은 각 출처 구현의
-MSE 규칙을 유지한다. 저장 점수는 공통 비교를 위해 채널별 절대오차를 쓴다. CI-AE와 USAD는
-window 안의 절대오차를 채널별 평균하고 중앙 시점에 놓는다. 학습·validation 오차로 채널별
-median·IQR 정규화를 맞춘 뒤 max로 집계한다.
+`CATCH`는 license와 검증된 공식 실행 경로가 없어 활성 후보에서 제외한다. MOMENT, CrossAD,
+DADA, CAROTS, ScatterAD도 이번 roster에 넣지 않는다. 결과를 본 뒤 후보를 추가하지 않는다.
 
-재구성 모델은 원 wrapper의 복제 padding을 쓰지 않는다. CI-AE의 core 점수는
-`source[50:L-49]`, USAD는 `source[5:L-4]`에 대응한다. LSTM-AD는 `source[100:L]`, GDN은
-`source[5:L]`에 맞춘다. 실제 범위는 점수 metadata에 저장한다.
+## 비율과 분할
 
-## GDN 실행 규칙
+`Q={005,010,020,040,060,080,100}`이다. 각 파일의 manifest training prefix `[0,N)`에서
+`floor(N×q/100)`개 앞쪽 시점만 제공한다. GHL·HAI의 prefix는 정상이며 TSB 튜닝의 TAO 두
+파일에는 위에서 밝힌 원본 오염이 있다. 학습형 모델은 이 prefix 안에서 다시 80:20으로
+fit·validation을 나눈다. 전체 정상 구간의 뒤쪽을 낮은 비율에 미리 주지 않는다.
 
-GraGOD GDN의 입력 축 순서를 바로잡는 두 줄 수정은
-`src/models/tier2/GDN/model.py`에 보존한다. 데이터는 전처리한 텐서를
-자체 러너로 직접 주입한다. GraGOD의 점수 후처리는 쓰지 않는다.
+Tier 2 입력 scaler는 fit에만 맞추고 validation과 test에는 transform만 적용한다. 학습형 score
+교정 통계는 같은 prefix의 validation raw score만 쓴다. training-free Tier 1과 strict zero-shot은
+target calibration을 쓰지 않는다. HAI window와 validation score는 파일 경계를 넘지 않는다.
 
-raw는 채널별 정규화 점수를 max로 집계한다. smoothed는 같은 점수에 시간축 후행 4칸 평균을
-적용한 뒤 max로 집계하며 처음 3개 시점은 0이다. 학습·validation 오차에서 구한 median과
-IQR을 테스트에 적용한 `trainnorm`이 기본 결과다. 테스트 자체 통계를 쓴 `testnorm`은 부록
-대조용으로만 만든다. IQR epsilon은 0.01이다.
+정적 `q_floor={t1:5,t2:10,t3:5}`를 유지한다. 강혁 manifest로 길이·채널 제약을 다시 계산했을 때
+모순이 생기면 점수 생성 전에 결정을 다시 봉인한다.
 
-window 5, 최대 50 epoch, patience 10, betas `(0.9,0.99)`는 논문의 SWaT·WADI 설정을
-따른다. 새 데이터셋에 바로 적용할 공통값은 공식 `run.sh`의 embedding 64, hidden 128,
-output layer 1개, batch 32, stride 1, Adam `lr=0.001`, `weight_decay=0`을 쓴다. dropout 0.2도
-원 저자 모델을 따른다. `run.sh`와 `TimeDataset`의 실제 동작에 맞춰 학습·평가 stride는 모두
-1이다. 원 저자 학습 경로에는 scheduler와 gradient
-clipping이 없지만 현재 GraGOD trainer는 둘을 강제한다. GraGOD는 dropout 0.2를 attention과
-출력에 함께 적용해 원 저자 경로와도 다르다. 출처 선택은 끝났고 이 세 동작의 adapter만
-남았다. validation 0.1은 프로젝트 공통 고정 분할 규칙이다. topk는 GHL 5·HAI 22로
-고정했다. GHL
-seed는 1~3, HAI seed는 1~10이다.
+## 모델과 recipe 선택
 
-1-step forecast 점수 길이는 `L-W`, 대응 라벨은 `labels[W:]`다. 여러 세션은 세션별 window
-dataset만 합치며 원시 배열을 이어 붙이지 않는다. HAI 테스트 세션은 같은 학습 모델로 각각
-점수를 만든다.
+primary HPO는 `equal_trial`이다. 정적 feasibility 뒤 Tier별 후보 수가 확정되면 각 모델에 같은
+수의 full-fidelity trial을 배정한다. exact panel은 `budget_id=b5367ad431093`으로 봉인했으며
+시계열당 물리 실행 65건, primary logical score 89행이다.
+`runtime_matched`는 timing 근거가 모인 뒤의 선택적 민감도다.
 
-HAI 그래프는 best checkpoint의 embedding으로 다시 계산한다. self-edge 포함본과 제거본을
-모두 저장하고 Jaccard에는 제거본을 쓴다. 이웃 비율 0.25를 바탕으로 한 GHL 5·HAI 22는
-본실험 전에 고정한 프로젝트 전이 규칙이며 데이터에서 고른 최적값은 아니다.
+Tier 대표 후보는 `q_floor` 이상 모든 주분석 비율과 GHL25·HAI 두 실행을 정적으로 지원해야 한다.
+후보가 없으면 Tier를 `unavailable`로 남기며 시작 비율을 올려 되살리지 않는다. 모델별 고정 곡선은
+각 모델의 실제 지원 범위에서 보존한다.
 
-## 실행과 재현성
+stochastic 모델의 TSB 튜닝 seed는 `{0,1,2}`, GHL final seed는 `{3,4,5,6,7}`이다.
+deterministic 모델은 한 번 실행한다. 일부 데이터나 축소 epoch로 예선하지 않는다.
 
-GHL GDN 본 실험은 `25×7×3=525`, HAI GDN 확장은 `7×10=70`개 학습 조합이다. GHL
-실행에는 앞쪽 누적분만 쓴다.
+주 선택 지표는 `raw__trainnorm` VUS-PR이다. seed 평균 뒤 10개 family를 동일 가중한다. 모델은
+family leave-one-out 바깥 검증으로 고르고, 선택 모델의 recipe는 같은 봉인 예산으로 18개 전체에서
+한 번 고정한다. 점수 차이가 `1e-6` 이내면 `(model, config_id, score_variant)` 사전순으로 고른다.
+비용은 동률 처리에 쓰지 않는다.
 
-실행 전에는 입력 크기와 SHA-256, 설정, package와 소스 버전, clean 상태를 확인한다.
-snapshot은 학습보다 먼저 저장한다. 학습·train-reference 추론·test 추론 시간과 accelerator는
-따로 기록한다. 점수, metadata, best checkpoint, early stopping 로그, snapshot과 필요한 HAI
-edge가 모두 있고 종료 검증을 통과해야 `COMPLETE`로 인정한다.
+필수 정책표는 `model_fixed_policy.csv`와 `tier_fixed_policy.csv`다. 전자는 비용 최적화가 모든
+활성 모델의 후보를 볼 수 있게 하며, 후자는 계층별 주분석을 고정한다. 비율별 재튜닝·모델 교체
+표는 선택적 민감도다. 주실험 runner의 필수 입력은 `final_policy_membership.csv` 하나다.
 
-실행 코드가 바뀌면 clean 환경에서 합성 dry-run을 한 번 통과시킨다. forecast 오차가 비유한
-값이거나 embedding의 norm이 0이면 해당 산출물을 만들지 않는다. 입력 파일이나 loader가
-바뀌지 않았다면 같은 대형 지문 검사를 반복하지 않는다.
+## 점수와 재현성
 
-## 폴더와 기록
+adapter는 threshold 전 연속 score만 만든다. point adjustment, anomaly ratio, test-optimal
+threshold, test-derived normalization과 test loss 기반 조기 종료를 쓰지 않는다. 주결과는
+`raw__trainnorm`, smoothing과 `testnorm`은 민감도다.
 
-모델과 공통 코드는 `src/`, 실험 실행과 검증 코드는 `tests/`, 실행 결과는 `experiments/`에
-둔다. GHL 결과는 `experiments/01_ghl_main/`, HAI 결과는
-`experiments/02_hai_extension/`, 반복 가능한 점검 결과는 `experiments/checks/`에 모은다.
+GDN score는 1-step forecast 오차다. test 길이가 `L`, window가 `W`면 score 길이는 `L-W`,
+`source_start=W`, label은 `labels[W:]`다. 활성 GDN 하나의 이 계약만 확인한다.
 
-한 번 쓰는 진단 코드는 저장하지 않는다. 필요한 경우 인라인이나 임시 폴더에서 실행한 뒤
-바로 지우고, 프로젝트 문서에는 확인된 문제와 최종 조치만 짧게 남긴다. 코드 주석은 동작의
-이유를 설명할 때만 쓰며 조사한 저장소와 줄 번호를 나열하지 않는다.
+각 실행은 config, 입력 SHA-256, package 버전, source commit, checkpoint SHA-256, seed와 split을
+snapshot에 남긴다. 학습·validation 추론·test 추론·전처리 시간, peak memory, artifact 크기,
+관측 수와 검증 가능한 지속시간 근거도 저장한다. 실패·timeout·unavailable은 성공 score로 만들지
+않고 manifest에 이유와 재시도 수를 적는다.
+
+## 최종 평가와 비용
+
+GHL25는 모든 활성 모델의 고정-recipe 곡선을 보존한다. Tier 대표만 남기지 않는다. HAI는 TSB
+튜닝에서 정한 모델과 recipe를 두 실행에 그대로 적용한다. GHL이나 HAI 결과로 정책을 다시 고르지
+않는다.
+
+주혜는 GHL `1/25` macro, paired bootstrap, Wilcoxon, TOST와 지속 교차점을 만든다. 같은 시계열의
+일곱 `q`를 독립 표본으로 세지 않는다. HAI 두 실행은 따로 보고하고 GHL과 합쳐 검정하지 않는다.
+
+최종 행동 단위는 `(tier, model, config_id, q, operating_threshold)`다. GHL·HAI split은 행동이
+아니라 평가 근거를 구분하는 문맥이다. 목적함수는 정상
+데이터 관측비, 현장 재학습비, 반복 추론비, memory·artifact 비용, 오탐비와 미탐비를 합친다. HPO는
+개발비로 따로 보고한다. GHL에서 시간 근거가 없으면 관측 수를 임의의 초 단위로 바꾸지 않는다.
+비용 가중치와 현장 제약은 성능·비용 원자료가 봉인된 뒤 정한다.
+
+## 아직 열려 있는 결정
+
+- GHL25·HAI Role-A manifest의 최종 승인 상태
+- 비용 항목별 단가, 반복 횟수, latency·memory·최소 성능 제약
+- adaptive 정책 민감도를 실제로 추가할지 여부
+
+Dev18 입력, feasibility, exact budget, VUS-PR, 시계열별 `ℓ_max`, TimeRCD·TSPulse checkpoint와
+공통 Python 환경은 승인됐다. 현재 게이트는 TSB 비-GHL 18개 exact panel 실행 직전이며, 위의
+GHL25·HAI 항목은 이 튜닝을 막지 않는다.

@@ -10,7 +10,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.ghl_main import run_dev18_tuning
 from tests.ghl_main.run_dev18_tuning import (
+    _evidence_directory,
+    _load_completion_receipt,
+    _load_score_manifest,
+    _replace_manifest_rows,
+    _write_completion_receipt,
     _validate_bound_run_files,
     _validate_primary_manifest_rows,
     build_final_membership_rows,
@@ -124,6 +130,140 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertEqual(selection["tier_fixed"][0]["selected_model"], "M1")
         self.assertIn("family-LOFO", selection["tier_fixed"][0]["selection_reason"])
 
+    def test_execution_priority_puts_small_work_before_expensive_models(self):
+        specs = [
+            {"model": "TSPulse", "ratio": 100, "seed": 0,
+             "config_id": "tspulse", "hyperparameters": {}},
+            {"model": "GDN", "ratio": 100, "seed": 2,
+             "config_id": "gdn-large", "hyperparameters": {"embedding": 128}},
+            {"model": "GDN", "ratio": 10, "seed": 0,
+             "config_id": "gdn-large", "hyperparameters": {"embedding": 128}},
+            {"model": "GDN", "ratio": 10, "seed": 0,
+             "config_id": "gdn-small", "hyperparameters": {"embedding": 64}},
+            {"model": "PaAno", "ratio": 40, "seed": 0,
+             "config_id": "paano", "hyperparameters": {}},
+            {"model": "TimeRCD", "ratio": 100, "seed": 0,
+             "config_id": "timercd", "hyperparameters": {}},
+            {"model": "PCA_LEGACY", "ratio": 100, "seed": 0,
+             "config_id": "pca", "hyperparameters": {}},
+            {"model": "MWVAR", "ratio": 100, "seed": 0,
+             "config_id": "mwvar", "hyperparameters": {}},
+            {"model": "SQDIFF_LAST3", "ratio": 100, "seed": 0,
+             "config_id": "sqdiff", "hyperparameters": {}},
+        ]
+        ordered = sorted(specs, key=run_dev18_tuning._execution_priority)
+        self.assertEqual(
+            [(spec["model"], spec["ratio"], spec["hyperparameters"].get("embedding"))
+             for spec in ordered],
+            [
+                ("SQDIFF_LAST3", 100, None),
+                ("MWVAR", 100, None),
+                ("PCA_LEGACY", 100, None),
+                ("TimeRCD", 100, None),
+                ("PaAno", 40, None),
+                ("GDN", 10, 64),
+                ("GDN", 10, 128),
+                ("GDN", 100, 128),
+                ("TSPulse", 100, None),
+            ],
+        )
+
+    def test_series_priority_uses_manifest_workload(self):
+        entries = [
+            {"series": "01", "order": 1, "row_count": 100, "feature_count": 10},
+            {"series": "02", "order": 2, "row_count": 10, "feature_count": 2},
+            {"series": "03", "order": 3, "row_count": 5, "feature_count": 4},
+        ]
+        self.assertEqual(
+            [entry["series"] for entry in sorted(
+                entries, key=run_dev18_tuning._series_execution_priority,
+            )],
+            ["02", "03", "01"],
+        )
+
+    def test_series_evidence_directories_do_not_overwrite_each_other(self):
+        base = Path("scores") / "tier2" / "GDN" / "config"
+        self.assertEqual(_evidence_directory(base, 1), base / "series_01")
+        self.assertEqual(_evidence_directory(base, 18), base / "series_18")
+        self.assertNotEqual(
+            _evidence_directory(base, 1), _evidence_directory(base, 18),
+        )
+
+    def test_completed_manifest_row_survives_restart(self):
+        row = {
+            "series": "01", "model": "GDN", "config_id": "gdn-small",
+            "physical_ratio": "10", "seed": "0", "score_variant": "",
+            "status": "complete", "budget_id": "b123456789abc",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "score_manifest.csv"
+            _replace_manifest_rows([], [row], path)
+
+            loaded = _load_score_manifest(path)
+
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0]["status"], "complete")
+        self.assertEqual(loaded[0]["model"], "GDN")
+
+    def test_interrupted_manifest_write_preserves_previous_progress(self):
+        completed = {
+            "series": "01", "model": "GDN", "config_id": "gdn-small",
+            "physical_ratio": "10", "seed": "0", "score_variant": "",
+            "status": "complete", "budget_id": "b123456789abc",
+        }
+        pending = {
+            "series": "02", "model": "GDN", "config_id": "gdn-small",
+            "physical_ratio": "10", "seed": "0", "score_variant": "",
+            "status": "complete", "budget_id": "b123456789abc",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "score_manifest.csv"
+            rows = _replace_manifest_rows([], [completed], path)
+
+            def interrupt_write(write_path, *_args):
+                Path(write_path).write_text("partial", encoding="utf-8")
+                raise KeyboardInterrupt
+
+            with patch(
+                "tests.ghl_main.run_dev18_tuning._write_csv",
+                side_effect=interrupt_write,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    _replace_manifest_rows(rows, [pending], path)
+            try:
+                reloaded = _load_score_manifest(path)
+            except ValueError:
+                reloaded = []
+
+        self.assertEqual(len(reloaded), 1)
+        self.assertEqual(reloaded[0]["series"], "01")
+
+    def test_completion_receipt_recovers_rows_before_manifest_update(self):
+        spec = {
+            "model": "TSPulse", "config_id": "c123456789abc",
+            "ratio": 100, "seed": 0,
+        }
+        panel = {
+            "primary_score_variants": ["raw_max"],
+            "diagnostic_score_variants": ["time"],
+        }
+        rows = [{
+            "series": "03", "model": "TSPulse",
+            "config_id": "c123456789abc", "physical_ratio": 100,
+            "seed": 0, "score_variant": variant, "status": "complete",
+            "budget_id": "b123456789abc",
+        } for variant in ("raw_max", "time")]
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "completion.json"
+            _write_completion_receipt(path, rows)
+            recovered = _load_completion_receipt(
+                path, spec=spec, panel_row=panel, series=3,
+                budget_id="b123456789abc",
+            )
+
+        self.assertEqual(recovered, rows)
+
     def test_membership_reuses_target_free_r100_and_marks_unsupported_rows(self):
         selection = select_tuning_policies(
             _rows(), self.registry, self.budget, evaluator_sha256="d" * 64,
@@ -175,7 +315,10 @@ class TestDev18Tuning(unittest.TestCase):
             root = Path(directory)
             snapshot = root / "run_snapshot.json"
             snapshot.write_text(
-                json.dumps({"project_commit": "a" * 40}), encoding="utf-8",
+                json.dumps({
+                    "project_commit": "a" * 40,
+                    "environment": {"runtime_snapshot": {"sha256": "c" * 64}},
+                }), encoding="utf-8",
             )
             metadata = {"run_snapshot": {
                 "file": snapshot.name,
@@ -183,11 +326,23 @@ class TestDev18Tuning(unittest.TestCase):
             }, "training_files": {}}
             with patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root):
                 _validate_bound_run_files(
-                    metadata, expected_project_commit="a" * 40,
+                    metadata,
+                    expected_project_commit="a" * 40,
+                    expected_environment={
+                        "runtime_snapshot": {"sha256": "c" * 64},
+                    },
                 )
                 with self.assertRaisesRegex(ValueError, "commit"):
                     _validate_bound_run_files(
                         metadata, expected_project_commit="b" * 40,
+                    )
+                with self.assertRaisesRegex(ValueError, "환경"):
+                    _validate_bound_run_files(
+                        metadata,
+                        expected_project_commit="a" * 40,
+                        expected_environment={
+                            "runtime_snapshot": {"sha256": "d" * 64},
+                        },
                     )
 
     def test_primary_manifest_must_match_exact_budget_keys(self):

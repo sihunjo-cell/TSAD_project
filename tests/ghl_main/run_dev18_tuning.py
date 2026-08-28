@@ -30,7 +30,7 @@ if KOREAN_FONT_PATH.is_file():
     matplotlib.rcParams["axes.unicode_minus"] = False
 
 from src.common.equal_trial_budget import build_equal_trial_budget, registry_space_sha256
-from src.common.execution_identity import file_sha256
+from src.common.execution_identity import file_sha256, load_input_manifest_role
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
 from src.common.model_registry import (
     load_model_registry_with_sha,
@@ -38,7 +38,10 @@ from src.common.model_registry import (
 )
 from src.common.verify_run_context import verify_runtime_versions
 from src.채점기.vus_pr import vus_pr
-from tests.checks.run_checkpoint_smoke import collect_environment_identity
+from tests.checks.seal_runtime_environment import (
+    collect_runtime_environment_identity,
+    validate_runtime_snapshot,
+)
 from tests.ghl_main.build_dev18_budget import _load_current_feasibility
 
 
@@ -69,6 +72,29 @@ OFFICIAL_TSB_AD_COMMIT = "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48"
 FINAL_SPLIT_ROLES = (
     "ghl25_final", "train1_to_test1", "train1_train2_to_test2",
 )
+EXPECTED_MODEL_RUNTIME_ORDER = {
+    "SQDIFF_LAST3": 0,
+    "MWVAR": 1,
+    "PCA_LEGACY": 2,
+    "TimeRCD": 3,
+    "PaAno": 4,
+    "GDN": 5,
+    "TSPulse": 6,
+}
+
+
+def _execution_priority(spec: dict) -> tuple:
+    return (
+        EXPECTED_MODEL_RUNTIME_ORDER[spec["model"]],
+        spec["ratio"],
+        spec["hyperparameters"].get("embedding", 0),
+        spec["config_id"],
+        spec["seed"],
+    )
+
+
+def _series_execution_priority(entry: dict) -> tuple:
+    return entry["row_count"] * entry["feature_count"], entry["order"]
 
 
 def _read_json(path) -> dict:
@@ -203,36 +229,9 @@ def _validate_checkpoint_report(model_name: str, registry: dict, budget: dict) -
 
 
 def _validate_environment_snapshot(environment: dict) -> dict:
-    runtime_path = (
-        REPOSITORY_ROOT / "experiments" / "checks" / "reference_code"
-        / "environment" / "runtime.json"
+    return validate_runtime_snapshot(
+        environment, repository_root=REPOSITORY_ROOT,
     )
-    runtime = _read_json(runtime_path)
-    requirements_path = REPOSITORY_ROOT / "src" / "models" / "requirements.txt"
-    environment_path = REPOSITORY_ROOT / "configs" / "environment.yaml"
-    freeze_path = runtime_path.parent / runtime.get("pip_freeze", "")
-    installed = subprocess.run(
-        [sys.executable, "-m", "pip", "freeze"],
-        capture_output=True, text=True, check=True,
-    ).stdout.splitlines()
-    valid = (
-        runtime.get("environment") == "tsad_models_311"
-        and Path(runtime.get("python_executable", "")).resolve() == Path(sys.executable).resolve()
-        and runtime.get("requirements") == {
-            "file": "src/models/requirements.txt",
-            "sha256": file_sha256(requirements_path),
-        }
-        and runtime.get("environment_config") == {
-            "file": "configs/environment.yaml",
-            "sha256": file_sha256(environment_path),
-        }
-        and runtime.get("identity") == environment
-        and freeze_path.is_file()
-        and freeze_path.read_text(encoding="utf-8").splitlines() == installed
-    )
-    if not valid:
-        raise ValueError("현재 Python 환경이 requirements·runtime 봉인과 다르다")
-    return runtime
 
 
 def prepare_tuning(*, data_root=DEFAULT_DATA_ROOT, require_clean=True) -> dict:
@@ -266,13 +265,14 @@ def prepare_tuning(*, data_root=DEFAULT_DATA_ROOT, require_clean=True) -> dict:
         model: _validate_checkpoint_report(model, registry, budget)
         for model in ("TimeRCD", "TSPulse")
     }
-    environment = collect_environment_identity()
+    environment = collect_runtime_environment_identity()
     verify_runtime_versions(
         __import__("yaml").safe_load((
             REPOSITORY_ROOT / "configs" / "environment.yaml"
         ).read_text(encoding="utf-8"))
     )
-    _validate_environment_snapshot(environment)
+    runtime_snapshot = _validate_environment_snapshot(environment)
+    environment = {**environment, "runtime_snapshot": runtime_snapshot}
 
     data_root = Path(data_root)
     if not (data_root / "tuning").is_dir():
@@ -824,14 +824,21 @@ def _load_score_manifest(path=DEFAULT_SCORE_MANIFEST_PATH) -> list[dict]:
         return list(reader)
 
 
-def _replace_manifest_rows(existing, replacements, path=DEFAULT_SCORE_MANIFEST_PATH) -> list[dict]:
+def _merge_manifest_rows(existing, replacements) -> list[dict]:
     by_key = {_manifest_key(row): row for row in existing}
     for row in replacements:
         by_key[_manifest_key(row)] = {
             field: row.get(field, "") for field in SCORE_MANIFEST_FIELDS
         }
-    rows = sorted(by_key.values(), key=_manifest_key)
-    _write_csv(path, rows, SCORE_MANIFEST_FIELDS)
+    return sorted(by_key.values(), key=_manifest_key)
+
+
+def _replace_manifest_rows(existing, replacements, path=DEFAULT_SCORE_MANIFEST_PATH) -> list[dict]:
+    path = Path(path)
+    rows = _merge_manifest_rows(existing, replacements)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    _write_csv(temporary_path, rows, SCORE_MANIFEST_FIELDS)
+    temporary_path.replace(path)
     return rows
 
 
@@ -873,6 +880,60 @@ def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, enviro
     return path
 
 
+def _evidence_directory(output_directory: Path, series: int) -> Path:
+    return Path(output_directory) / f"series_{series:02d}"
+
+
+def _completion_receipt_path(spec: dict, series: int) -> Path:
+    from tests.ghl_main.run_registered_models import build_output_directory
+
+    experiment_directory = REPOSITORY_ROOT / "experiments" / "01_ghl_main"
+    return _evidence_directory(
+        build_output_directory(experiment_directory, spec), series,
+    ) / "completion.json"
+
+
+def _write_completion_receipt(path: Path, rows: list[dict]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    temporary_path.write_text(
+        json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+
+
+def _load_completion_receipt(
+    path: Path, *, spec: dict, panel_row: dict, series: int, budget_id: str,
+) -> list[dict]:
+    path = Path(path)
+    if not path.is_file():
+        return []
+    rows = _read_json(path)
+    if not isinstance(rows, list):
+        raise ValueError("Dev18 완료 영수증 형식이 잘못됐다")
+    expected_keys = {
+        tuple(map(str, (
+            f"{series:02d}", spec["model"], spec["config_id"], spec["ratio"],
+            spec["seed"], variant,
+        )))
+        for variant in _expected_variants(panel_row)
+    }
+    actual_keys = [_manifest_key(row) for row in rows]
+    if (
+        len(actual_keys) != len(set(actual_keys))
+        or set(actual_keys) != expected_keys
+        or any(
+            row.get("status") != "complete"
+            or row.get("budget_id") != budget_id
+            for row in rows
+        )
+    ):
+        raise ValueError("Dev18 완료 영수증이 exact 실행과 다르다")
+    return rows
+
+
 def _record_seed_state(snapshot_path: Path, result: dict) -> None:
     snapshot = _read_json(snapshot_path)
     snapshot["seed_state"] = result["seed_state"]
@@ -884,6 +945,7 @@ def _record_seed_state(snapshot_path: Path, result: dict) -> None:
 
 def _validate_bound_run_files(
     metadata: dict, *, expected_project_commit: str | None = None,
+    expected_environment: dict | None = None,
 ) -> None:
     references = [metadata.get("run_snapshot")]
     references.extend((metadata.get("training_files") or {}).values())
@@ -899,12 +961,21 @@ def _validate_bound_run_files(
             raise ValueError("Dev18 실행 증거 SHA-256이 실제 파일과 다르다")
         if "bytes" in reference and path.stat().st_size != reference["bytes"]:
             raise ValueError("Dev18 checkpoint byte 수가 실제 파일과 다르다")
-    if expected_project_commit is not None:
+    if expected_project_commit is not None or expected_environment is not None:
         snapshot_path = (
             REPOSITORY_ROOT / metadata["run_snapshot"]["file"]
         ).resolve()
-        if _read_json(snapshot_path).get("project_commit") != expected_project_commit:
+        snapshot = _read_json(snapshot_path)
+        if (
+            expected_project_commit is not None
+            and snapshot.get("project_commit") != expected_project_commit
+        ):
             raise ValueError("Dev18 재개 snapshot의 project commit이 현재 HEAD와 다르다")
+        if (
+            expected_environment is not None
+            and snapshot.get("environment") != expected_environment
+        ):
+            raise ValueError("Dev18 재개 snapshot의 실행 환경이 현재 봉인과 다르다")
 
 
 def _save_training_files(output_directory: Path, result: dict) -> tuple[int, dict]:
@@ -965,6 +1036,7 @@ def _expected_variants(panel_row: dict) -> tuple[str, ...]:
 def _completed_run(
     manifest_rows, *, spec: dict, panel_row: dict, series: int,
     input_manifest_path, expected_project_commit: str,
+    expected_environment: dict,
 ) -> bool:
     from tests.ghl_main.check_registered_outputs import check_registered_output
     from tests.ghl_main.run_registered_models import build_output_directory
@@ -998,6 +1070,7 @@ def _completed_run(
         _validate_bound_run_files(
             _read_json(metadata_path),
             expected_project_commit=expected_project_commit,
+            expected_environment=expected_environment,
         )
     return True
 
@@ -1005,6 +1078,7 @@ def _completed_run(
 def _run_one_spec(
     spec: dict, panel_row: dict, inputs: dict, *, series: int,
     device: str, environment: dict, input_manifest_path, retry_count: int,
+    budget_id: str,
 ) -> list[dict]:
     from src.common.execution_evidence import build_execution_evidence
     from src.common.execution_identity import EXECUTION_IDENTITY_FIELDS
@@ -1015,7 +1089,10 @@ def _run_one_spec(
 
     experiment_directory = REPOSITORY_ROOT / "experiments" / "01_ghl_main"
     base_directory = build_output_directory(experiment_directory, spec)
-    snapshot_path = _write_run_snapshot(base_directory, spec, inputs, environment)
+    evidence_directory = _evidence_directory(base_directory, series)
+    snapshot_path = _write_run_snapshot(
+        evidence_directory, spec, inputs, environment,
+    )
     import torch
 
     if device.startswith("cuda") and torch.cuda.is_available():
@@ -1037,7 +1114,9 @@ def _run_one_spec(
         if device.startswith("cuda") and torch.cuda.is_available()
         else peak_bytes / 1024 ** 2
     )
-    artifact_bytes, training_files = _save_training_files(base_directory, result)
+    artifact_bytes, training_files = _save_training_files(
+        evidence_directory, result,
+    )
     split = result["split"]
     split_count = 0 if split is None else 1 if isinstance(split, dict) else len(split)
     unavailable_duration = {
@@ -1120,9 +1199,12 @@ def _run_one_spec(
             "score_file": _relative(raw_score), "score_sha256": file_sha256(raw_score),
             "metadata_file": _relative(metadata_path),
             "metadata_sha256": file_sha256(metadata_path),
-            "budget_id": spec.get("budget_id", "") or "",
+            "budget_id": budget_id,
             "retry_count": retry_count,
         })
+    _write_completion_receipt(
+        evidence_directory / "completion.json", saved_rows,
+    )
     return saved_rows
 
 
@@ -1142,16 +1224,29 @@ def execute_panel(
 ) -> list[dict]:
     """18개 series에 exact 65-run panel을 재개형으로 실행한다."""
     _require_cuda_or_remote(device=device, remote_execution=remote_execution)
+    if device.startswith("cuda"):
+        from src.common.set_reproducible_seed import set_reproducible_seed
+
+        set_reproducible_seed(0)
     readiness = prepare_tuning(data_root=data_root, require_clean=True)
     budget = _read_json(DEFAULT_BUDGET_PATH)
     specs, panel_by_key = _specs_for_budget(budget)
+    specs.sort(key=_execution_priority)
     manifest_rows = _load_score_manifest()
     input_manifest_path = REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
+    input_manifest, _ = load_input_manifest_role(
+        input_manifest_path, "development", "dev18_selection",
+    )
+    series_entries = sorted(
+        input_manifest["datasets"]["DEV18"]["files"],
+        key=_series_execution_priority,
+    )
     environment = readiness["environment"]
     project_commit = _git_head()
     from tests.ghl_main.run_registered_models import load_registered_inputs
 
-    for series in range(1, 19):
+    for entry in series_entries:
+        series = int(entry["series"])
         inputs = load_registered_inputs(
             spec=specs[0], input_manifest_path=input_manifest_path,
             series=f"{series:02d}", data_root=data_root,
@@ -1163,7 +1258,26 @@ def execute_panel(
                 manifest_rows, spec=spec, panel_row=panel_row, series=series,
                 input_manifest_path=input_manifest_path,
                 expected_project_commit=project_commit,
+                expected_environment=environment,
             ):
+                continue
+            recovered = _load_completion_receipt(
+                _completion_receipt_path(spec, series),
+                spec=spec, panel_row=panel_row, series=series,
+                budget_id=budget["budget_id"],
+            )
+            if recovered:
+                candidate_rows = _merge_manifest_rows(manifest_rows, recovered)
+                if not _completed_run(
+                    candidate_rows, spec=spec, panel_row=panel_row, series=series,
+                    input_manifest_path=input_manifest_path,
+                    expected_project_commit=project_commit,
+                    expected_environment=environment,
+                ):
+                    raise ValueError("Dev18 완료 영수증 산출물을 복구하지 못했다")
+                manifest_rows = _replace_manifest_rows(
+                    manifest_rows, recovered,
+                )
                 continue
             prior_rows = [
                 row for row in manifest_rows
@@ -1184,7 +1298,7 @@ def execute_panel(
                     completed = _run_one_spec(
                         spec, panel_row, inputs, series=series, device=device,
                         environment=environment, input_manifest_path=input_manifest_path,
-                        retry_count=attempt,
+                        retry_count=attempt, budget_id=budget["budget_id"],
                     )
                 except Exception as error:
                     failed = [{
@@ -1205,8 +1319,6 @@ def execute_panel(
                     if attempt + 1 == maximum_attempts:
                         raise
                     continue
-                for row in completed:
-                    row["budget_id"] = budget["budget_id"]
                 manifest_rows = _replace_manifest_rows(manifest_rows, completed)
                 break
             _require_same_worktree(project_commit)
