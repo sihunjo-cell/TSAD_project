@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from src.common.equal_trial_budget import build_equal_trial_budget
-from src.common.execution_identity import file_sha256
+from src.common.execution_identity import file_sha256, sealed_crlf_text_sha256
 from src.common.model_registry import load_model_registry_with_sha
 
 
@@ -29,8 +29,10 @@ def _load_current_feasibility(repository_root: Path, directory: Path, registry_s
         "input_manifest_sha256": file_sha256(
             repository_root / "configs" / "input_manifest.yaml"
         ),
-        "inventory_sha256": file_sha256(audit_root / "logs" / "inventory.csv"),
-        "audit_snapshot_sha256": file_sha256(
+        "inventory_sha256": sealed_crlf_text_sha256(
+            audit_root / "logs" / "inventory.csv"
+        ),
+        "audit_snapshot_sha256": sealed_crlf_text_sha256(
             audit_root / "snapshots" / "audit.json"
         ),
         "ledger_sha256": file_sha256(ledger_path),

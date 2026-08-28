@@ -1,6 +1,7 @@
 """Dev18 equal-trial exact panel과 순환 없는 budget seal을 검증한다."""
 
 import hashlib
+import json
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -12,13 +13,16 @@ from src.common.equal_trial_budget import (
     build_equal_trial_budget,
     registry_space_sha256,
 )
-from src.common.execution_identity import file_sha256
+from src.common.execution_identity import file_sha256, sealed_crlf_text_sha256
 from src.common.model_feasibility import (
     build_dev18_feasibility_rows,
     summarize_dev18_feasibility,
 )
 from src.common.model_registry import load_model_registry_with_sha
-from tests.ghl_main.build_dev18_budget import build_dev18_budget_artifact
+from tests.ghl_main.build_dev18_budget import (
+    _load_current_feasibility,
+    build_dev18_budget_artifact,
+)
 from tests.ghl_main.build_dev18_feasibility import build_dev18_feasibility_artifacts
 
 
@@ -187,11 +191,19 @@ class TestEqualTrialBudget(unittest.TestCase):
             )
             for target, field in targets:
                 with self.subTest(field=field):
+                    digest = (
+                        sealed_crlf_text_sha256
+                        if field in {"inventory_sha256", "audit_snapshot_sha256"}
+                        else file_sha256
+                    )
+
                     def changed_digest(path, *, _target=target):
-                        return "0" * 64 if Path(path) == _target else file_sha256(path)
+                        return "0" * 64 if Path(path) == _target else digest(path)
 
                     with patch(
-                        "tests.ghl_main.build_dev18_budget.file_sha256",
+                        "tests.ghl_main.build_dev18_budget."
+                        + ("sealed_crlf_text_sha256" if digest is sealed_crlf_text_sha256
+                           else "file_sha256"),
                         side_effect=changed_digest,
                     ), self.assertRaisesRegex(ValueError, field):
                         build_dev18_budget_artifact(
@@ -199,6 +211,49 @@ class TestEqualTrialBudget(unittest.TestCase):
                             feasibility_directory=feasibility_directory,
                             output_path=directory / "budget.json",
                         )
+
+    def test_accepts_linux_checkout_of_windows_sealed_audit_text(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary_directory:
+            repository_root = Path(temporary_directory)
+            feasibility_directory = repository_root / "feasibility"
+            audit_root = (
+                repository_root / "experiments" / "checks" / "datasets" / "dev18"
+            )
+            paths = {
+                "input_manifest_sha256": repository_root / "configs/input_manifest.yaml",
+                "inventory_sha256": audit_root / "logs/inventory.csv",
+                "audit_snapshot_sha256": audit_root / "snapshots/audit.json",
+                "ledger_sha256": feasibility_directory / "dev18_feasibility_ledger.csv",
+                "builder_sha256": repository_root / "tests/ghl_main/build_dev18_feasibility.py",
+                "feasibility_code_sha256": repository_root / "src/common/model_feasibility.py",
+                "split_code_sha256": repository_root / "src/data_split/split_ratio_prefix.py",
+                "data_preprocessing_sha256": repository_root / "configs/data_preprocessing.yaml",
+            }
+            for path in paths.values():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"field,value\n1,2\n")
+
+            summary = {
+                "status": "complete_with_declared_static_unavailability",
+                "row_count": 3276,
+                "labels_or_scores_read": False,
+                "config_registry_sha256": "a" * 64,
+                **{field: file_sha256(path) for field, path in paths.items()},
+            }
+            for field in ("inventory_sha256", "audit_snapshot_sha256"):
+                summary[field] = hashlib.sha256(
+                    paths[field].read_bytes().replace(b"\n", b"\r\n")
+                ).hexdigest()
+            summary_path = feasibility_directory / "dev18_feasibility_summary.json"
+            summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+            _, _, loaded = _load_current_feasibility(
+                repository_root, feasibility_directory, "a" * 64,
+            )
+
+        self.assertEqual(loaded, summary)
 
 
 if __name__ == "__main__":
