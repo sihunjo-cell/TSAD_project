@@ -25,7 +25,7 @@
 폴더에서 설치 파일을 실행한다. 설치 중에는 GPU를 켜지 않는다.
 
 ```bash
-git clone -b experiment/gdn-sihun https://github.com/sihunjo-cell/TSAD_project.git
+git clone -b codex/lightning-dev18 https://github.com/sihunjo-cell/TSAD_project.git
 cd TSAD_project
 bash tests/checks/setup_lightning_studio.sh
 ```
