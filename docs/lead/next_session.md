@@ -20,8 +20,8 @@ C:\Users\simon\anaconda3\envs\tsad_models_311\python.exe tests\ghl_main\run_dev1
 ```
 
 CUDA가 없는 로컬 노트북 대신 Lightning AI를 쓸 때는
-[Lightning AI 실행 절차](lightning_studio.md)에 따라 무료 CPU Studio에서 환경을 한 번 설치하고,
-single T4로 바꾼 뒤 아래 진입 파일을 실행한다.
+[Lightning AI 실행 절차](lightning_studio.md)에 따라 무료 CPU Studio에서 환경을 한 번 설치한다.
+이전 T4 결과를 초기화한 뒤 non-interruptible L4에서 자원 gate를 통과해야 아래 진입 파일을 실행한다.
 
 ```bash
 python tests/checks/run_lightning_dev18.py

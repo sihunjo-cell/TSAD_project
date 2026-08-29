@@ -142,7 +142,8 @@ GDN 검사는 한 구현의 충실도 검사다. 과거 구현과 수치 결과�
 
 ## 현재 남은 항목
 
-- Dev18: clean worktree에서 봉인된 단일 진입 파일로 exact panel 실행
+- Dev18: non-interruptible L4의 80% 자원 gate를 통과한 clean worktree에서 봉인된 단일 진입
+  파일로 exact panel 실행
 - GHL25·HAI: 각 본실험을 열기 전 Role-A EDA·manifest 최종 승인
 - 최종 평가: GHL·HAI score가 생긴 뒤 threshold와 보조 F1 원표 연결
 

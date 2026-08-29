@@ -55,6 +55,23 @@ class TestLightningDev18(unittest.TestCase):
         self.assertEqual(events[0][1], 0)
         self.assertEqual(evidence, {"sha256": "a" * 64})
 
+    def test_resource_gate_is_validated_before_runtime_is_sealed(self):
+        from tests.checks.run_lightning_dev18 import validate_then_seal_runtime
+
+        events = []
+
+        def validate_gate():
+            events.append("gate")
+            return {"status": "passed"}
+
+        result = validate_then_seal_runtime(
+            validate_resource_gate=validate_gate,
+            seal_runtime=lambda: events.append("seal") or {"sha256": "a" * 64},
+        )
+
+        self.assertEqual(events, ["gate", "seal"])
+        self.assertEqual(result["resource_gate"]["status"], "passed")
+
 
 if __name__ == "__main__":
     unittest.main()

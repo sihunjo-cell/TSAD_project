@@ -43,8 +43,27 @@ unzip .runtime/lightning_dev18_input.zip -d ../shared_data/TSAD_project
 
 ## GPU에서 실행
 
-설치와 업로드를 마친 뒤 Studio 장치를 single T4 GPU로 바꾼다. 선택할 수 있다면 interruptible
-T4를 써서 credit 소모를 줄인다. 프로젝트 폴더에서 아래 명령 하나만 실행한다.
+설치와 업로드를 마친 뒤 Studio 장치를 `1×L4`, `Interruptible off`로 바꾼다. 이전 T4 실행이
+있다면 프로젝트 폴더에서 삭제 대상을 먼저 확인하고 Dev18 실행 결과와 T4 환경 봉인만 지운다.
+입력 ZIP, 설치한 package, checkpoint cache와 봉인된 Dev18 예산은 남는다.
+
+```bash
+python tests/checks/reset_lightning_dev18.py
+python tests/checks/reset_lightning_dev18.py --confirm DELETE_DEV18_RUN
+```
+
+본 튜닝보다 먼저 자원 gate를 실행한다. 18개 입력의 크기와 SHA-256, 저장 공간 25GB를 먼저
+확인한다. 경량 모델은 입력 크기로 RAM 상한을 계산하고 `PaAno·GDN·TimeRCD·TSPulse`는 exact
+panel의 config별 최대 배치만 별도 프로세스에서 실행한다. 학습형 모델은 한 update만 수행한다.
+GPU나 RAM 사용률이 80%에 닿으면 실패로 판정한다.
+
+```bash
+python tests/checks/check_dev18_resources.py
+```
+
+마지막 JSON의 `status`가 `passed`일 때만 아래 명령으로 전체 panel을 시작한다. 점검 결과는
+`.runtime/dev18_resource_gate.json`에 저장된다. 본실험 진입 파일은 이 파일이 없거나 현재
+GPU·driver·VRAM·코드 commit·입력 manifest·예산과 다르면 실행을 거부한다.
 
 ```bash
 python tests/checks/run_lightning_dev18.py
@@ -54,12 +73,13 @@ python tests/checks/run_lightning_dev18.py
 `.runtime/runtime.json`에 봉인한다. 이어서 기존 Dev18 준비 검사를 통과한 뒤 1,170건 panel을
 시작한다. 첫 봉인 뒤 package나 GPU 환경이 달라지면 재개하지 않는다.
 
-무료 Studio는 실행 중 재시작될 수 있다. Studio가 멈추거나 무료 credit을 다 쓰면 환경을 고치지 말고
-같은 Studio에서 같은 T4를 선택한 뒤 위 명령을 다시 실행한다. 완료된 score와 metadata의 SHA-256을
+Studio가 멈추거나 credit을 다 쓰면 환경을 고치지 말고 같은 Studio에서 같은 non-interruptible L4를
+선택한 뒤 위 명령을 다시 실행한다. 완료된 score와 metadata의 SHA-256을
 확인해 건너뛴다. 점수 저장 직후 진행 원표를 쓰기 전에 끊겨도 완료 영수증으로 복구하므로 끝난
-trial을 다시 계산하지 않는다. CUDA 실행에 `--remote-execution`을 붙이지 않는다. 이 panel은 실측
-timing이 아직 없어서 무료 credit 안에 전부 끝난다고 단정하지 않는다. 먼저 무료분을 모두 쓰고,
-남은 실행 수와 누적 시간을 확인한 뒤에만 추가 credit을 산다.
+trial을 다시 계산하지 않는다. 실행 중이던 trial에서 끊기면 그 trial 하나만 처음부터 다시 시작한다.
+CUDA 실행에 `--remote-execution`을 붙이지 않는다. 이 panel은 실측
+timing이 아직 없어서 보유 credit 안에 전부 끝난다고 단정하지 않는다. 남은 실행 수와 누적 시간을
+확인한 뒤에만 추가 credit을 산다.
 
 진행 원표는 `experiments/01_ghl_main/logs/dev18_score_manifest.csv`, 최종 선택 결과는
 `experiments/01_ghl_main/results/dev18_tuning/`에 생긴다. 전체 score까지 포함하면 저장 공간이
@@ -69,6 +89,7 @@ timing이 아직 없어서 무료 credit 안에 전부 끝난다고 단정하지
 ## 중단 조건
 
 - `git status --short`가 비어 있지 않으면 실행하지 않는다.
-- GPU 종류, Python, package 또는 source commit이 바뀌면 기존 panel과 섞지 않는다.
+- GPU 종류, Python, package 또는 source commit이 바뀌면 기존 panel과 섞지 않는다. GPU를 바꿀
+  때는 위 초기화 명령으로 기존 Dev18 실행과 runtime 봉인을 함께 지운다.
 - `.runtime/runtime.json` 불일치는 환경을 자동으로 덮어쓰지 않는다.
 - 데이터 SHA-256이나 길이가 manifest와 다르면 원본을 다시 올리고 임의 수정본은 쓰지 않는다.

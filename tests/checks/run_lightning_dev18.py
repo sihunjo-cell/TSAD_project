@@ -37,8 +37,15 @@ def seal_lightning_runtime(
     return ensure_runtime_snapshot(environment=environment)
 
 
+def validate_then_seal_runtime(*, validate_resource_gate, seal_runtime) -> dict:
+    """현재 GPU의 자원 gate가 통과된 뒤에만 실행 환경을 봉인한다."""
+    resource_gate = validate_resource_gate()
+    return {"resource_gate": resource_gate, "runtime": seal_runtime()}
+
+
 def main() -> None:
     from src.common.set_reproducible_seed import set_reproducible_seed
+    from tests.checks.check_dev18_resources import validate_resource_report
     from tests.checks.seal_runtime_environment import (
         collect_runtime_environment_identity,
         ensure_runtime_snapshot,
@@ -49,10 +56,13 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     arguments = parser.parse_args()
     require_lightning_cuda()
-    seal_lightning_runtime(
-        set_reproducible_seed=set_reproducible_seed,
-        collect_environment_identity=collect_runtime_environment_identity,
-        ensure_runtime_snapshot=ensure_runtime_snapshot,
+    validate_then_seal_runtime(
+        validate_resource_gate=validate_resource_report,
+        seal_runtime=lambda: seal_lightning_runtime(
+            set_reproducible_seed=set_reproducible_seed,
+            collect_environment_identity=collect_runtime_environment_identity,
+            ensure_runtime_snapshot=ensure_runtime_snapshot,
+        ),
     )
     result = run_tuning(data_root=arguments.data_root, device="cuda")
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
