@@ -14,6 +14,7 @@ TARGET_USES = {"fit_validation", "training_free", "strict_zero_shot"}
 TARGET_FREE_USES = {"training_free", "strict_zero_shot"}
 TIMING_FIELDS = (
     "split_preprocess_seconds",
+    "model_setup_seconds",
     "training_seconds",
     "validation_inference_seconds",
     "test_inference_seconds",
@@ -145,9 +146,9 @@ def _sum_timing(timing: Mapping) -> float:
     try:
         total = math.fsum(timing[field] for field in TIMING_FIELDS)
     except (KeyError, OverflowError) as error:
-        raise ValueError("네 timing 값의 합은 유한해야 한다") from error
+        raise ValueError("다섯 timing 값의 합은 유한해야 한다") from error
     if not math.isfinite(total):
-        raise ValueError("네 timing 값의 합은 유한해야 한다")
+        raise ValueError("다섯 timing 값의 합은 유한해야 한다")
     return total
 
 
@@ -193,7 +194,7 @@ def validate_execution_evidence(values: Mapping) -> dict:
     runtime_seconds = _nonnegative_number(values["runtime_seconds"], "runtime_seconds")
     timing_sum = _sum_timing(timing)
     if not math.isclose(runtime_seconds, timing_sum, rel_tol=1e-12, abs_tol=1e-12):
-        raise ValueError("runtime_seconds가 네 timing 값의 합과 다르다")
+        raise ValueError("runtime_seconds가 다섯 timing 값의 합과 다르다")
     return {
         "measurement_protocol_id": protocol_id,
         "execution_phase": phase,

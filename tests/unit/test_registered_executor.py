@@ -5,13 +5,18 @@ import os
 import random
 import unittest
 from copy import deepcopy
+from importlib import import_module as real_import_module
+from types import SimpleNamespace
 
 import numpy
 import torch
 from unittest.mock import patch
 
 from src.common.model_registry import load_model_registry
-from src.common.run_registered_model import execute_registered_model
+from src.common.run_registered_model import (
+    execute_registered_model,
+    load_target_free_setup_entrypoint,
+)
 from src.common.set_reproducible_seed import set_reproducible_seed
 from tests.ghl_main.run_registered_models import build_specs
 
@@ -103,52 +108,95 @@ class TestRegisteredExecutor(unittest.TestCase):
                 self.assertEqual(result["validation_outputs"], ())
                 self.assertEqual(result["calibration_scope"], "none")
 
-    def test_tspulse_prepares_once_and_honors_injected_entrypoint(self):
+    def test_tier3_prepares_once_and_times_setup_separately(self):
         sessions = (
             numpy.zeros((12, 2), dtype=float),
             numpy.ones((12, 2), dtype=float),
         )
-        prepared_calls = []
-        score_calls = []
+        for model in ("TimeRCD", "TSPulse"):
+            events = []
 
-        def build_scorer(**arguments):
-            prepared_calls.append(arguments)
+            def build_scorer(**arguments):
+                events.append(("build", arguments))
 
-            def scorer(session):
-                score_calls.append(numpy.array(session, copy=True))
+                def scorer(session):
+                    events.append(("score", numpy.array(session, copy=True)))
+                    return _score_output(session)
+
+                return scorer
+
+            def load_builder(requested_model):
+                events.append(("import", requested_model))
+                return build_scorer
+
+            with self.subTest(model=model), patch(
+                "src.common.run_registered_model.load_target_free_setup_entrypoint",
+                side_effect=load_builder,
+            ), patch(
+                "src.common.run_registered_model.time.perf_counter",
+                side_effect=(0.0, 2.0, 5.0, 9.0),
+            ), patch(
+                "src.common.run_registered_model._synchronize_cuda",
+                side_effect=lambda device: events.append(("sync", device)),
+            ):
+                result = execute_registered_model(
+                    self.specs[model], test_sessions=sessions, device="cpu",
+                )
+
+            self.assertEqual(events[0], ("import", model))
+            self.assertEqual(events[1][0], "build")
+            self.assertEqual(events[1][1]["channel_count"], 2)
+            self.assertEqual([event[0] for event in events], [
+                "import", "build", "sync", "score", "score", "sync",
+            ])
+            self.assertEqual(result["timing"]["model_setup_seconds"], 2.0)
+            self.assertEqual(result["timing"]["test_inference_seconds"], 4.0)
+            self.assertGreaterEqual(result["timing"]["model_setup_seconds"], 0.0)
+            self.assertGreaterEqual(result["timing"]["test_inference_seconds"], 0.0)
+            self.assertEqual(len(result["test_outputs"]), 2)
+
+    def test_target_free_setup_loader_maps_both_tier3_builders(self):
+        time_rcd_builder = lambda **arguments: arguments
+        tspulse_builder = lambda **arguments: arguments
+        modules = {
+            "src.models.tier3.time_rcd": SimpleNamespace(
+                build_time_rcd_official_scorer=time_rcd_builder,
+            ),
+            "src.models.tier3.tspulse": SimpleNamespace(
+                build_tspulse_official_scorer=tspulse_builder,
+            ),
+        }
+        with patch(
+            "src.common.run_registered_model.importlib.import_module",
+            side_effect=modules.__getitem__,
+        ) as importer:
+            self.assertIs(load_target_free_setup_entrypoint("TimeRCD"), time_rcd_builder)
+            self.assertIs(load_target_free_setup_entrypoint("TSPulse"), tspulse_builder)
+            self.assertIsNone(load_target_free_setup_entrypoint("MWVAR"))
+        self.assertEqual([call.args[0] for call in importer.call_args_list], list(modules))
+
+    def test_tier3_honors_injected_legacy_entrypoint(self):
+        sessions = (
+            numpy.zeros((12, 2), dtype=float),
+            numpy.ones((12, 2), dtype=float),
+        )
+        for model in ("TimeRCD", "TSPulse"):
+            injected_calls = []
+
+            def injected_entrypoint(session, **arguments):
+                injected_calls.append((numpy.array(session, copy=True), arguments))
                 return _score_output(session)
 
-            return scorer
-
-        with patch(
-            "src.models.tier3.tspulse.build_tspulse_official_scorer",
-            side_effect=build_scorer,
-        ):
-            result = execute_registered_model(
-                self.specs["TSPulse"], test_sessions=sessions, device="cpu",
-            )
-        self.assertEqual(len(prepared_calls), 1)
-        self.assertEqual(prepared_calls[0]["batch_size"], 32)
-        self.assertEqual(prepared_calls[0]["channel_count"], 2)
-        self.assertEqual(len(score_calls), 2)
-        self.assertEqual(len(result["test_outputs"]), 2)
-
-        injected_calls = []
-
-        def injected_entrypoint(session, **arguments):
-            injected_calls.append((numpy.array(session, copy=True), arguments))
-            return _score_output(session)
-
-        with patch(
-            "src.models.tier3.tspulse.build_tspulse_official_scorer",
-            side_effect=AssertionError("prepared builder must not load"),
-        ):
-            result = execute_registered_model(
-                self.specs["TSPulse"], test_sessions=sessions, device="cpu",
-                entrypoint=injected_entrypoint,
-            )
-        self.assertEqual(len(injected_calls), 2)
-        self.assertEqual(len(result["test_outputs"]), 2)
+            with self.subTest(model=model), patch(
+                "src.common.run_registered_model.load_target_free_setup_entrypoint",
+                side_effect=AssertionError("prepared builder must not load"),
+            ):
+                result = execute_registered_model(
+                    self.specs[model], test_sessions=sessions, device="cpu",
+                    entrypoint=injected_entrypoint,
+                )
+            self.assertEqual(len(injected_calls), 2)
+            self.assertEqual(len(result["test_outputs"]), 2)
 
     def test_rejects_forged_specs_before_seed_data_or_injected_code(self):
         base = self.specs["MWVAR"]
@@ -326,6 +374,64 @@ class TestRegisteredExecutor(unittest.TestCase):
                 )
                 self.assertEqual(result["training_log"]["optimizer_updates"], 1)
 
+    def test_tier2_runner_synchronizes_before_closing_each_cuda_phase(self):
+        class FakeModel:
+            def state_dict(self):
+                return {}
+
+        sessions = (numpy.zeros((4, 2), dtype=float),)
+        targets = (
+            (
+                "src.models.tier2.alora.adapter", "run_alora_sessions",
+                "score_alora_sessions",
+                {"window_size": 2, "device": "cpu", "epochs": 1},
+            ),
+            (
+                "src.models.tier2.gdn_official.adapter", "run_gdn_sessions",
+                "score_gdn_sessions",
+                {
+                    "embedding_dimension": 2, "hidden_dimension": 2,
+                    "rho": 0.5, "device": "cpu",
+                },
+            ),
+        )
+        for module_name, runner_name, scorer_name, arguments in targets:
+            module = real_import_module(module_name)
+            events = []
+
+            def trainer(*args, **kwargs):
+                events.append("training")
+                if runner_name == "run_alora_sessions":
+                    return FakeModel(), {}, {}
+                return FakeModel(), None, {"topk": 1}
+
+            def scorer(*args, **kwargs):
+                events.append("validation" if "validation" not in events else "test")
+                return ()
+
+            with self.subTest(runner=runner_name), patch.object(
+                module, scorer_name, side_effect=scorer,
+            ), patch.object(
+                module, "_synchronize_cuda",
+                side_effect=lambda device: events.append(("sync", device)),
+                create=True,
+            ), patch.object(
+                module.time, "perf_counter",
+                side_effect=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0),
+            ):
+                result = getattr(module, runner_name)(
+                    sessions, sessions, sessions, trainer=trainer, **arguments,
+                )
+
+            self.assertEqual(events, [
+                "training", ("sync", "cpu"),
+                "validation", ("sync", "cpu"),
+                "test", ("sync", "cpu"),
+            ])
+            self.assertEqual(result["timing"]["training_seconds"], 1.0)
+            self.assertEqual(result["timing"]["validation_inference_seconds"], 1.0)
+            self.assertEqual(result["timing"]["test_inference_seconds"], 1.0)
+
     def test_result_contains_complete_frozen_identity_and_timing(self):
         spec = self.specs["MWVAR"]
         result = execute_registered_model(
@@ -345,7 +451,7 @@ class TestRegisteredExecutor(unittest.TestCase):
         self.assertEqual(result["preprocess_recipe"], spec["preprocess_recipe"])
         self.assertEqual(result["common_recipe"], spec["common_recipe"])
         self.assertEqual(set(result["timing"]), {
-            "split_preprocess_seconds", "training_seconds",
+            "split_preprocess_seconds", "model_setup_seconds", "training_seconds",
             "validation_inference_seconds", "test_inference_seconds", "accelerator",
         })
 

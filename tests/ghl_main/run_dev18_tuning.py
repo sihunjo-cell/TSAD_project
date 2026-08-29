@@ -1124,7 +1124,7 @@ def _run_one_spec(
     }
     evidence = build_execution_evidence(
         split, result["timing"], spec=spec,
-        measurement_protocol_id="dev18_registered_runner.v1", retry_count=retry_count,
+        measurement_protocol_id="dev18_registered_runner.v2", retry_count=retry_count,
         training_session_durations=[dict(unavailable_duration) for _ in range(split_count)],
         test_input_sessions=inputs["test_sessions"],
         test_session_durations=[dict(unavailable_duration) for _ in inputs["test_sessions"]],

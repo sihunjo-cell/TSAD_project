@@ -3,7 +3,7 @@
 import importlib
 import math
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 
 import numpy
@@ -29,6 +29,10 @@ MODEL_ENTRYPOINTS = {
     "GDN": ("src.models.tier2.gdn_official.adapter", "run_gdn_sessions"),
     "TimeRCD": ("src.models.tier3.time_rcd", "score_time_rcd_official"),
     "TSPulse": ("src.models.tier3.tspulse", "score_tspulse_official"),
+}
+TARGET_FREE_SETUP_ENTRYPOINTS = {
+    "TimeRCD": ("src.models.tier3.time_rcd", "build_time_rcd_official_scorer"),
+    "TSPulse": ("src.models.tier3.tspulse", "build_tspulse_official_scorer"),
 }
 TSPULSE_INFERENCE_BATCH_SIZE = 32
 MODEL_PARAMETER_KEYS = {
@@ -119,6 +123,22 @@ def load_model_entrypoint(model: str):
     except KeyError as error:
         raise ValueError(f"활성 entrypoint가 없는 모델이다: {model}") from error
     return getattr(importlib.import_module(module_name), attribute)
+
+
+def load_target_free_setup_entrypoint(model: str) -> Callable | None:
+    """준비 단계를 제공하는 target-free scorer builder를 늦게 불러온다."""
+    target = TARGET_FREE_SETUP_ENTRYPOINTS.get(model)
+    if target is None:
+        return None
+    module_name, attribute = target
+    return getattr(importlib.import_module(module_name), attribute)
+
+
+def _synchronize_cuda(device: str) -> None:
+    if str(device).split(":", 1)[0] == "cuda":
+        import torch
+
+        torch.cuda.synchronize(device)
 
 
 def _require_fixed(parameters: dict, expected: dict) -> None:
@@ -304,6 +324,7 @@ def execute_registered_model(
     )
     timing = {
         "split_preprocess_seconds": 0.0,
+        "model_setup_seconds": 0.0,
         "training_seconds": 0.0,
         "validation_inference_seconds": 0.0,
         "test_inference_seconds": 0.0,
@@ -329,20 +350,27 @@ def execute_registered_model(
             raise ValueError("target-free 모델의 실행 ratio는 100이어야 한다")
         if normal_training is not None and normal_training_sessions is not None:
             raise ValueError("normal_training과 normal_training_sessions를 함께 줄 수 없다")
-        started = time.perf_counter()
-        if model == "TSPulse" and entrypoint is None:
-            from src.models.tier3.tspulse import build_tspulse_official_scorer
-
-            scorer = build_tspulse_official_scorer(
-                channel_count=tests[0].shape[1], **arguments,
-            )
-            result["test_outputs"] = tuple(scorer(values) for values in tests)
-        else:
-            entrypoint = entrypoint or load_model_entrypoint(model)
-            result["test_outputs"] = tuple(
-                entrypoint(values, **arguments) for values in tests
-            )
-        timing["test_inference_seconds"] = time.perf_counter() - started
+        scorer = entrypoint
+        score_arguments = arguments
+        if scorer is None:
+            setup_started = time.perf_counter()
+            setup_entrypoint = load_target_free_setup_entrypoint(model)
+            if setup_entrypoint is not None:
+                scorer = setup_entrypoint(
+                    channel_count=tests[0].shape[1], **arguments,
+                )
+                score_arguments = {}
+            else:
+                scorer = load_model_entrypoint(model)
+            _synchronize_cuda(device)
+            timing["model_setup_seconds"] = time.perf_counter() - setup_started
+        inference_started = time.perf_counter()
+        result["test_outputs"] = tuple(
+            scorer(values, **score_arguments)
+            for values in tests
+        )
+        _synchronize_cuda(device)
+        timing["test_inference_seconds"] = time.perf_counter() - inference_started
         return result
 
     started = time.perf_counter()
@@ -362,9 +390,13 @@ def execute_registered_model(
     splits = prepared["session_splits"]
     result["split"] = splits[0] if len(splits) == 1 else splits
     timing["split_preprocess_seconds"] = time.perf_counter() - started
-    entrypoint = entrypoint or load_model_entrypoint(model)
 
     if model in SESSION_RUNNERS:
+        if entrypoint is None:
+            setup_started = time.perf_counter()
+            entrypoint = load_model_entrypoint(model)
+            _synchronize_cuda(device)
+            timing["model_setup_seconds"] = time.perf_counter() - setup_started
         run_result = entrypoint(
             fit_sessions, validation_sessions, tests, **arguments,
         )
@@ -398,22 +430,29 @@ def execute_registered_model(
 
     fit_values = fit_sessions[0]
     validation_values = validation_sessions[0]
+    setup_started = time.perf_counter()
+    entrypoint = entrypoint or load_model_entrypoint(model)
     adapter = entrypoint(**arguments)
+    _synchronize_cuda(device)
+    timing["model_setup_seconds"] = time.perf_counter() - setup_started
     training_started = time.perf_counter()
     if model == "PCA_LEGACY":
         adapter.fit(fit_values)
     else:
         result["training_log"] = adapter.fit(fit_values)
+    _synchronize_cuda(device)
     timing["training_seconds"] = time.perf_counter() - training_started
     checkpoint = getattr(adapter, "checkpoint", None)
     result["checkpoint"] = checkpoint() if callable(checkpoint) else None
 
     validation_started = time.perf_counter()
     result["validation_outputs"] = (adapter.score(validation_values),)
+    _synchronize_cuda(device)
     timing["validation_inference_seconds"] = (
         time.perf_counter() - validation_started
     )
     test_started = time.perf_counter()
     result["test_outputs"] = tuple(adapter.score(values) for values in tests)
+    _synchronize_cuda(device)
     timing["test_inference_seconds"] = time.perf_counter() - test_started
     return result

@@ -74,6 +74,7 @@ def save_model_score(output, output_dir, **arguments):
         }],
         "timing": {
             "split_preprocess_seconds": 0.0,
+            "model_setup_seconds": 0.0,
             "training_seconds": 0.0,
             "validation_inference_seconds": 0.0,
             "test_inference_seconds": 0.0,
@@ -405,6 +406,7 @@ class TestSaveModelScore(unittest.TestCase):
             }],
             "timing": {
                 "split_preprocess_seconds": 0.0,
+                "model_setup_seconds": 0.0,
                 "training_seconds": 0.0,
                 "validation_inference_seconds": 0.0,
                 "test_inference_seconds": 0.0,
@@ -467,6 +469,7 @@ class TestSaveModelScore(unittest.TestCase):
             }],
             "timing": {
                 "split_preprocess_seconds": 0.0,
+                "model_setup_seconds": 0.0,
                 "training_seconds": 0.0,
                 "validation_inference_seconds": 0.0,
                 "test_inference_seconds": 0.0,
@@ -533,6 +536,7 @@ class TestSaveModelScore(unittest.TestCase):
             }],
             "timing": {
                 "split_preprocess_seconds": 0.0,
+                "model_setup_seconds": 0.0,
                 "training_seconds": 0.0,
                 "validation_inference_seconds": 0.0,
                 "test_inference_seconds": 0.0,

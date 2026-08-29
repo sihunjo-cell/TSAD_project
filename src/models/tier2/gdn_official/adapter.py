@@ -12,6 +12,12 @@ from src.common.validate_multivariate_session import as_finite_multivariate_sess
 
 from .official import GDN, SOURCE_COMMIT, build_fully_connected_edge_index
 
+
+def _synchronize_cuda(device: str) -> None:
+    if torch.device(device).type == "cuda":
+        torch.cuda.synchronize(device)
+
+
 def topk_from_rho(channel_count: int, rho: float) -> int:
     if channel_count < 2 or not math.isfinite(rho) or rho <= 0:
         raise ValueError("GDN needs at least two channels and positive finite rho")
@@ -242,6 +248,7 @@ def run_gdn_sessions(
         batch_size=batch_size,
         learning_rate=learning_rate,
     )
+    _synchronize_cuda(device)
     training_seconds = time.perf_counter() - training_started
     validation_started = time.perf_counter()
     validation_outputs = score_gdn_sessions(
@@ -252,6 +259,7 @@ def run_gdn_sessions(
         device=device,
         batch_size=batch_size,
     )
+    _synchronize_cuda(device)
     validation_seconds = time.perf_counter() - validation_started
     test_started = time.perf_counter()
     test_outputs = score_gdn_sessions(
@@ -262,6 +270,7 @@ def run_gdn_sessions(
         device=device,
         batch_size=batch_size,
     )
+    _synchronize_cuda(device)
     channel_count = as_finite_multivariate_session(
         fit_sessions[0], "fit_session",
     ).shape[1]

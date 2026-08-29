@@ -17,6 +17,11 @@ from .official import (
 )
 
 
+def _synchronize_cuda(device: str) -> None:
+    if torch.device(device).type == "cuda":
+        torch.cuda.synchronize(device)
+
+
 SOURCE_COMMIT = "97dcc4a337710e6dc72c1a67893717c9538bae1a"
 
 
@@ -278,6 +283,7 @@ def run_alora_sessions(
         encoder_layers=encoder_layers,
         patience=patience,
     )
+    _synchronize_cuda(device)
     training_seconds = time.perf_counter() - training_started
     validation_started = time.perf_counter()
     validation_outputs = score_alora_sessions(
@@ -287,6 +293,7 @@ def run_alora_sessions(
         device=device,
         batch_size=batch_size,
     )
+    _synchronize_cuda(device)
     validation_seconds = time.perf_counter() - validation_started
     test_started = time.perf_counter()
     test_outputs = score_alora_sessions(
@@ -296,6 +303,7 @@ def run_alora_sessions(
         device=device,
         batch_size=batch_size,
     )
+    _synchronize_cuda(device)
     return {
         "checkpoint": {
             "model_state_dict": model.state_dict(),

@@ -77,7 +77,8 @@ def save_model_score(output, output_directory, **arguments):
             "observed_duration_seconds": None, "duration_basis": "unavailable",
         }],
         "timing": {
-            "split_preprocess_seconds": 0.0, "training_seconds": 0.0,
+            "split_preprocess_seconds": 0.0, "model_setup_seconds": 0.0,
+            "training_seconds": 0.0,
             "validation_inference_seconds": 0.0, "test_inference_seconds": 0.0,
         },
         "runtime_seconds": 0.0, "peak_memory_mb": 0.0,
