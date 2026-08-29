@@ -103,6 +103,53 @@ class TestRegisteredExecutor(unittest.TestCase):
                 self.assertEqual(result["validation_outputs"], ())
                 self.assertEqual(result["calibration_scope"], "none")
 
+    def test_tspulse_prepares_once_and_honors_injected_entrypoint(self):
+        sessions = (
+            numpy.zeros((12, 2), dtype=float),
+            numpy.ones((12, 2), dtype=float),
+        )
+        prepared_calls = []
+        score_calls = []
+
+        def build_scorer(**arguments):
+            prepared_calls.append(arguments)
+
+            def scorer(session):
+                score_calls.append(numpy.array(session, copy=True))
+                return _score_output(session)
+
+            return scorer
+
+        with patch(
+            "src.models.tier3.tspulse.build_tspulse_official_scorer",
+            side_effect=build_scorer,
+        ):
+            result = execute_registered_model(
+                self.specs["TSPulse"], test_sessions=sessions, device="cpu",
+            )
+        self.assertEqual(len(prepared_calls), 1)
+        self.assertEqual(prepared_calls[0]["batch_size"], 32)
+        self.assertEqual(prepared_calls[0]["channel_count"], 2)
+        self.assertEqual(len(score_calls), 2)
+        self.assertEqual(len(result["test_outputs"]), 2)
+
+        injected_calls = []
+
+        def injected_entrypoint(session, **arguments):
+            injected_calls.append((numpy.array(session, copy=True), arguments))
+            return _score_output(session)
+
+        with patch(
+            "src.models.tier3.tspulse.build_tspulse_official_scorer",
+            side_effect=AssertionError("prepared builder must not load"),
+        ):
+            result = execute_registered_model(
+                self.specs["TSPulse"], test_sessions=sessions, device="cpu",
+                entrypoint=injected_entrypoint,
+            )
+        self.assertEqual(len(injected_calls), 2)
+        self.assertEqual(len(result["test_outputs"]), 2)
+
     def test_rejects_forged_specs_before_seed_data_or_injected_code(self):
         base = self.specs["MWVAR"]
         mutations = {

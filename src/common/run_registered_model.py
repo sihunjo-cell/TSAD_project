@@ -329,9 +329,8 @@ def execute_registered_model(
             raise ValueError("target-free 모델의 실행 ratio는 100이어야 한다")
         if normal_training is not None and normal_training_sessions is not None:
             raise ValueError("normal_training과 normal_training_sessions를 함께 줄 수 없다")
-        entrypoint = entrypoint or load_model_entrypoint(model)
         started = time.perf_counter()
-        if model == "TSPulse":
+        if model == "TSPulse" and entrypoint is None:
             from src.models.tier3.tspulse import build_tspulse_official_scorer
 
             scorer = build_tspulse_official_scorer(
@@ -339,6 +338,7 @@ def execute_registered_model(
             )
             result["test_outputs"] = tuple(scorer(values) for values in tests)
         else:
+            entrypoint = entrypoint or load_model_entrypoint(model)
             result["test_outputs"] = tuple(
                 entrypoint(values, **arguments) for values in tests
             )
