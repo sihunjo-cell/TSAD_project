@@ -15,6 +15,7 @@ RUN_PATHS = (
     Path(".runtime/.runtime.json.tmp"),
     Path(".runtime/dev18_resource_gate.json"),
     Path(".runtime/.dev18_resource_gate.json.tmp"),
+    Path(".runtime/dev18_checkpoint_smoke"),
     Path("experiments/01_ghl_main/scores/dev18"),
     Path("experiments/01_ghl_main/logs/dev18_score_manifest.csv"),
     Path("experiments/01_ghl_main/logs/.dev18_score_manifest.csv.tmp"),

@@ -91,6 +91,17 @@ class _FakeMinMaxScaler:
 
 
 class TestCheckpointSmoke(unittest.TestCase):
+    def test_dev18_smoke_default_output_is_git_ignored_runtime(self):
+        default_output = inspect.signature(
+            run_dev18_checkpoint_smoke,
+        ).parameters["output_root"].default
+        repository_root = Path(inspect.getfile(run_dev18_checkpoint_smoke)).parents[2]
+
+        self.assertEqual(
+            default_output,
+            repository_root / ".runtime" / "dev18_checkpoint_smoke",
+        )
+
     def test_tspulse_resource_equivalence_compares_every_score_head(self):
         from tests.checks.check_dev18_resources import summarize_tspulse_equivalence
 

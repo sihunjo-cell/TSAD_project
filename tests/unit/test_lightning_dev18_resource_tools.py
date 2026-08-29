@@ -312,6 +312,8 @@ class TestResetDev18Run(unittest.TestCase):
                 root / ".runtime" / ".runtime.json.tmp",
                 root / ".runtime" / "dev18_resource_gate.json",
                 root / ".runtime" / ".dev18_resource_gate.json.tmp",
+                root / ".runtime" / "dev18_checkpoint_smoke"
+                / "time_rcd" / "dev18_checkpoint_smoke.json",
                 root / "experiments" / "01_ghl_main" / "scores" / "dev18" / "score.npy",
                 root / "experiments" / "01_ghl_main" / "logs" / "dev18_score_manifest.csv",
                 root / "experiments" / "01_ghl_main" / "results" / "dev18_tuning" / "table.csv",

@@ -31,6 +31,7 @@ from tests.ghl_main.run_registered_models import build_specs, load_registered_in
 OUTPUT_ROOT = (
     REPOSITORY_ROOT / "experiments" / "checks" / "reference_code"
 )
+DEV18_OUTPUT_ROOT = REPOSITORY_ROOT / ".runtime" / "dev18_checkpoint_smoke"
 ENVIRONMENT_PATH = REPOSITORY_ROOT / "configs" / "environment.yaml"
 SYNTHETIC_SEED = 20260825
 CHANNEL_COUNTS = (19, 86)
@@ -613,7 +614,7 @@ def _download_from_local_cache(*, repo_id, filename, revision):
 
 
 def run_dev18_checkpoint_smoke(
-    *, data_root, output_root=OUTPUT_ROOT, budget_path=DEV18_BUDGET_PATH,
+    *, data_root, output_root=DEV18_OUTPUT_ROOT, budget_path=DEV18_BUDGET_PATH,
     input_loader=load_registered_inputs, probes=None,
     environment_collector=collect_environment_identity,
     seed_setter=set_reproducible_seed,

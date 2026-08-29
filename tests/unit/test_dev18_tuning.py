@@ -131,6 +131,22 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertEqual(selection["tier_fixed"][0]["selected_model"], "M1")
         self.assertIn("family-LOFO", selection["tier_fixed"][0]["selection_reason"])
 
+    def test_checkpoint_validation_reads_fresh_runtime_evidence(self):
+        with patch.object(
+            run_dev18_tuning,
+            "_read_json",
+            side_effect=RuntimeError("captured"),
+        ) as reader:
+            with self.assertRaisesRegex(RuntimeError, "captured"):
+                run_dev18_tuning._validate_checkpoint_report("TimeRCD", {}, {})
+
+        self.assertEqual(
+            reader.call_args.args[0],
+            run_dev18_tuning.REPOSITORY_ROOT
+            / ".runtime" / "dev18_checkpoint_smoke"
+            / "time_rcd" / "dev18_checkpoint_smoke.json",
+        )
+
     def test_execution_priority_puts_small_work_before_expensive_models(self):
         specs = [
             {"model": "TSPulse", "ratio": 100, "seed": 0,

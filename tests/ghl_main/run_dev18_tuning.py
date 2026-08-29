@@ -169,7 +169,7 @@ def _validate_ell_max(path, input_manifest_sha256: str) -> dict:
 def _validate_checkpoint_report(model_name: str, registry: dict, budget: dict) -> dict:
     directory = "time_rcd" if model_name == "TimeRCD" else "tspulse"
     path = (
-        REPOSITORY_ROOT / "experiments" / "checks" / "reference_code"
+        REPOSITORY_ROOT / ".runtime" / "dev18_checkpoint_smoke"
         / directory / "dev18_checkpoint_smoke.json"
     )
     report = _read_json(path)
