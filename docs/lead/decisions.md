@@ -76,6 +76,10 @@ primary HPO는 `equal_trial`이다. 정적 feasibility 뒤 Tier별 후보 수가
 시계열당 물리 실행 65건, primary logical score 89행이다.
 `runtime_matched`는 timing 근거가 모인 뒤의 선택적 민감도다.
 
+`budget_id=b5367ad431093`과 기존 `c...` config 행은 새 project commit에서 TimeRCD Dev18 checkpoint
+smoke, TSPulse batch 1 대 batch 32 동등성, non-interruptible L4 80% 자원 gate가 같은 실행 계약을
+확인할 때만 유지한다. adaptive 정책과 수동 모델 실행은 이 gate의 fallback이 아니다.
+
 Tier 대표 후보는 `q_floor` 이상 모든 주분석 비율과 GHL25·HAI 두 실행을 정적으로 지원해야 한다.
 후보가 없으면 Tier를 `unavailable`로 남기며 시작 비율을 올려 되살리지 않는다. 모델별 고정 곡선은
 각 모델의 실제 지원 범위에서 보존한다.
@@ -102,9 +106,11 @@ GDN score는 1-step forecast 오차다. test 길이가 `L`, window가 `W`면 sco
 `source_start=W`, label은 `labels[W:]`다. 활성 GDN 하나의 이 계약만 확인한다.
 
 각 실행은 config, 입력 SHA-256, package 버전, source commit, checkpoint SHA-256, seed와 split을
-snapshot에 남긴다. 학습·validation 추론·test 추론·전처리 시간, peak memory, artifact 크기,
-관측 수와 검증 가능한 지속시간 근거도 저장한다. 실패·timeout·unavailable은 성공 score로 만들지
-않고 manifest에 이유와 재시도 수를 적는다.
+snapshot에 남긴다. Dev18의 `dev18_registered_runner.v2`는 in-memory 등록 executor 안에서 잰
+`split_preprocess_seconds`, `model_setup_seconds`, 학습·validation 추론·test 추론 시간을 남긴다.
+다섯 값의 합은 `runtime_seconds`와 맞아야 한다. peak memory, artifact 크기, 관측 수와 검증 가능한
+지속시간 근거도 저장한다. 실패·timeout·unavailable은 성공 score로 만들지 않고 manifest에 이유와
+재시도 수를 적는다.
 
 ## 최종 평가와 비용
 
@@ -125,8 +131,9 @@ GHL25는 모든 활성 모델의 고정-recipe 곡선을 보존한다. Tier 대�
 
 - GHL25·HAI Role-A manifest의 최종 승인 상태
 - 비용 항목별 단가, 반복 횟수, latency·memory·최소 성능 제약
-- adaptive 정책 민감도를 실제로 추가할지 여부
+- adaptive 정책 민감도를 실제로 추가할지 여부. Dev18 gate가 막힌 동안 이를 fallback으로 실행하지 않음
 
-Dev18 입력, feasibility, exact budget, VUS-PR, 시계열별 `ℓ_max`, TimeRCD·TSPulse checkpoint와
-공통 Python 환경은 승인됐다. 현재 게이트는 TSB 비-GHL 18개 exact panel 실행 직전이며, 위의
-GHL25·HAI 항목은 이 튜닝을 막지 않는다.
+Dev18 입력, feasibility, VUS-PR, 시계열별 `ℓ_max`와 공통 Python 환경은 승인됐다. 과거
+TimeRCD·TSPulse checkpoint 증거는 현재 project commit의 실행 허가가 아니다. 현재 게이트는
+TSB 비-GHL 18개 exact panel 직전이며, 새 TimeRCD checkpoint smoke, TSPulse batch 32 동등성과 L4
+80% 자원 보고서가 통과할 때까지 실행은 blocked다. GHL25·HAI 항목은 이 튜닝을 막지 않는다.

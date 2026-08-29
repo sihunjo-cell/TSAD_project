@@ -14,11 +14,15 @@ GDN은 공식 `d-ailin/GDN` 적응 구현 하나만 활성 모델로 인정한�
 
 Dev18 Role-A 감사와 manifest 인수, label-blind 정적 feasibility, exact `equal_trial` panel과
 `budget_id=b5367ad431093`, VUS-PR evaluator와 시계열별 `ℓ_max`까지 닫았다. 현재 정지선은
-전체 exact panel을 실행하기 직전이다.
+2단계 exact panel 직전이다. 새 project commit에서 TimeRCD Dev18 checkpoint smoke, TSPulse의
+batch 1 대 등록 batch 32 실측 동등성, non-interruptible L4의 80% 자원 보고서를 다시 만들기 전에는
+panel을 실행하지 않는다.
 
 Dev18 18개 원본은 감사와 160×2 gate smoke에만 썼다. 전체 모델 점수와 HPO는 실행하지 않았다.
 라벨은 Role-A 오염·구간 감사와 evaluator 대조에만 썼고 feasibility, 예산, checkpoint forward와
-gate smoke에서는 읽지 않았다. TimeRCD와 TSPulse의 준비 상태는 `ready`다.
+gate smoke에서는 읽지 않았다. 과거 TimeRCD·TSPulse 준비 증거는 현재 commit의 실행 허가가 아니다.
+`c1c5aeea6f7d3`, `c12c5e6196ea5`를 포함한 기존 `c...` config 행과
+`budget_id=b5367ad431093`은 위 동등성 결과가 같을 때만 유지한다.
 
 ## 데이터 EDA 인수 조건
 
@@ -99,8 +103,9 @@ PaAno는 `q40` 이상, GDN은 `q10` 이상에서만 후보가 남는다.
 
 equal-trial config 수는 Tier 1·2·3 순서로 `1·2·1`이다. target-free 실행을 `r100` 한 벌로 접은
 exact panel은 물리 실행 65건, primary logical score 89행이다. TSPulse의 primary score variant는
-`raw_max` 하나로 고정했고 `time·fft·pred`는 진단용으로만 남겼다. 예산은 `sealed`, 실행 준비는
-`ready`다. 18개 전체 물리 실행은 1,170건이며 완성할 primary logical score 원표는 1,602행이다.
+`raw_max` 하나로 고정했고 `time·fft·pred`는 진단용으로만 남겼다. 예산은 조건부 `sealed`이며 실행은
+위 L4 gate가 닫힐 때까지 blocked다. 18개 전체 물리 실행은 1,170건이며 완성할 primary logical score
+원표는 1,602행이다.
 
 ## 활성 모델 실행 전 확인
 
@@ -131,7 +136,7 @@ GDN 검사는 한 구현의 충실도 검사다. 과거 구현과 수치 결과�
 - 최종 비용 목적함수에 필요한 시간·memory·artifact·관측량 원자료 범위
 - 공식 TSB-AD `opt` VUS-PR과 현재 evaluator의 고정 fixture 대조, 최대 절대 오차 0
 - Dev18 18개 시계열별 training-only `ℓ_max`와 evaluator·generator SHA-256
-- TimeRCD·TSPulse의 Dev18 1,536×2 checkpoint forward, finite·비상수·CPU 결정성
+- 과거 TimeRCD·TSPulse의 Dev18 1,536×2 checkpoint forward, finite·비상수·CPU 결정성
 - CPython 3.11.14 `tsad_models_311` 공통 환경과 `requirements.txt`·`pip freeze`
 - score manifest의 exact budget key, metadata·score·실행 증거 SHA와 최대 3회 시도
 - 실제 Dev18 160×2 MWVAR gate smoke, label 비사용, 4.3초 실행
@@ -142,10 +147,12 @@ GDN 검사는 한 구현의 충실도 검사다. 과거 구현과 수치 결과�
 
 ## 현재 남은 항목
 
-- Dev18: non-interruptible L4의 80% 자원 gate를 통과한 clean worktree에서 봉인된 단일 진입
-  파일로 exact panel 실행
+- Dev18: clean worktree의 새 project commit에서 TimeRCD·TSPulse Dev18 checkpoint smoke를 다시
+  만들고, TSPulse batch 1 대 batch 32 동등성과 non-interruptible L4의 80% 자원 gate를 통과한 뒤
+  봉인된 단일 진입 파일로 exact panel 실행
 - GHL25·HAI: 각 본실험을 열기 전 Role-A EDA·manifest 최종 승인
 - 최종 평가: GHL·HAI score가 생긴 뒤 threshold와 보조 F1 원표 연결
 
-GHL25·HAI 항목은 Dev18 튜닝을 막지 않는다. 다음 시작점은
-`tests/ghl_main/run_dev18_tuning.py`를 옵션 없이 실행하는 2단계 exact panel이다.
+GHL25·HAI 항목은 Dev18 튜닝을 막지 않는다. adaptive 정책이나 모델별 수동 실행은 이 gate의
+fallback이 아니다. 다음 시작점은 [Lightning AI 실행 절차](lightning_studio.md)의 순서대로 gate를
+닫은 뒤 `tests/checks/run_lightning_dev18.py`를 실행하는 일이다.

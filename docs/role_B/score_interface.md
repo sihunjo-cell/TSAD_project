@@ -88,9 +88,10 @@ training_sessions, test_sessions, timing, runtime_seconds,
 peak_memory_mb, model_artifact_bytes
 ```
 
-`timing`은 전처리, 학습, validation 추론, test 추론을 나눠 기록한다. 네 값의 합은
-`runtime_seconds`와 맞아야 한다. 세션에는 관측 수와 검증 가능한 지속시간·근거를 둔다. 지속시간을
-입증하지 못하면 값을 만들지 않고 `null`과 `duration_basis=unavailable`을 쓴다.
+Dev18의 `measurement_protocol_id`는 `dev18_registered_runner.v2`다. `timing`은 in-memory 등록 executor 안에서
+`split_preprocess_seconds`, `model_setup_seconds`, 학습, validation 추론, test 추론을 나눠 기록한다.
+다섯 값의 합은 `runtime_seconds`와 맞아야 한다. 세션에는 관측 수와 검증 가능한 지속시간·근거를 둔다.
+지속시간을 입증하지 못하면 값을 만들지 않고 `null`과 `duration_basis=unavailable`을 쓴다.
 
 ## TSB 튜닝 채점 원표
 
@@ -139,7 +140,8 @@ recipe 점수다. `evaluation_q_support`는 `ghl25_final`, `train1_to_test1`,
 `train1_train2_to_test2`를 구분한다.
 
 비율별 model-adaptive, tier-adaptive와 native-feasible 표는 선택적 민감도다. 이 표들을 필수
-bundle에 넣거나 주실험 runner의 시작 조건으로 삼지 않는다.
+bundle에 넣거나 주실험 runner의 시작 조건으로 삼지 않는다. Dev18 exact panel의 자원·동등성 gate가
+막혔을 때도 adaptive 표나 수동 모델 실행으로 대체하지 않는다.
 
 ## 최종 실행 요청
 

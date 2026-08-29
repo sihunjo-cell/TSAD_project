@@ -1,8 +1,8 @@
 # Lightning AI에서 Dev18 튜닝 실행
 
 이 절차는 [계획서 v5](plan_v5.md)의 2단계 Dev18 exact panel만 실행한다. 모델, config, seed,
-예산과 채점 규칙은 바꾸지 않는다. 같은 Studio와 GPU 종류를 끝까지 유지하며, 중단되면 같은 명령을
-다시 실행한다.
+예산과 채점 규칙은 바꾸지 않는다. 새 project commit에서 TimeRCD checkpoint smoke, TSPulse batch
+1 대 batch 32 동등성, L4 80% 자원 보고서를 모두 통과하기 전에는 panel을 시작하지 않는다.
 
 ## 준비할 파일
 
@@ -41,37 +41,34 @@ unzip .runtime/lightning_dev18_input.zip -d ../shared_data/TSAD_project
 
 압축을 쓰지 않으면 CSV 18개가 든 `tuning` 폴더를 위 경로에 그대로 올린다.
 
-## GPU에서 실행
+## L4 실행 순서
 
-설치와 업로드를 마친 뒤 Studio 장치를 `1×L4`, `Interruptible off`로 바꾼다. 이전 T4 실행이
-있다면 프로젝트 폴더에서 삭제 대상을 먼저 확인하고 Dev18 실행 결과와 T4 환경 봉인만 지운다.
-입력 ZIP, 설치한 package, checkpoint cache와 봉인된 Dev18 예산은 남는다.
+Studio 장치를 `1×L4`, `Interruptible off`로 바꾼 뒤 프로젝트 폴더에서 아래 순서를 한 번만 따른다.
+명령이 실패하면 다음 명령으로 넘어가지 않는다. reset은 이전 Dev18 실행 결과와 runtime 봉인만
+지우며 입력 ZIP, 설치한 package, checkpoint cache와 봉인된 Dev18 예산은 남긴다.
 
 ```bash
-python tests/checks/reset_lightning_dev18.py
+test -z "$(git status --porcelain)"
+git pull --ff-only
+test -z "$(git status --porcelain)"
 python tests/checks/reset_lightning_dev18.py --confirm DELETE_DEV18_RUN
+bash tests/checks/setup_lightning_studio.sh
+python tests/checks/run_checkpoint_smoke.py --dev18-data-root ../shared_data/TSAD_project
+python tests/checks/check_dev18_resources.py --data-root ../shared_data/TSAD_project --maximum-memory-percent 80
+python -m json.tool .runtime/dev18_resource_gate.json
+python tests/checks/run_lightning_dev18.py --data-root ../shared_data/TSAD_project
 ```
 
-본 튜닝보다 먼저 자원 gate를 실행한다. 18개 입력의 크기와 SHA-256, 저장 공간 25GB를 먼저
-확인한다. 경량 모델은 입력 크기로 RAM 상한을 계산하고 `PaAno·GDN·TimeRCD·TSPulse`는 exact
-panel의 config별 최대 배치만 별도 프로세스에서 실행한다. 학습형 모델은 한 update만 수행한다.
-GPU나 RAM 사용률이 80%에 닿으면 실패로 판정한다.
+checkpoint smoke는 현재 commit의 TimeRCD·TSPulse Dev18 1,536×2 증거를 새로 쓴다. 자원 gate는
+18개 입력의 크기·SHA-256와 저장 공간 25GB를 확인하고, `PaAno·GDN·TimeRCD·TSPulse`의 exact-panel
+최대 배치를 별도 프로세스에서 실행한다. TimeRCD는 attention query chunk `64`를 쓰며 TSPulse는
+등록 batch `32`와 batch `1`의 time·FFT·prediction·`raw_max` score를 대조한다. GPU나 RAM 사용률이
+80%에 닿거나 동등성이 깨지면 실패다.
 
-```bash
-python tests/checks/check_dev18_resources.py
-```
-
-마지막 JSON의 `status`가 `passed`일 때만 아래 명령으로 전체 panel을 시작한다. 점검 결과는
-`.runtime/dev18_resource_gate.json`에 저장된다. 본실험 진입 파일은 이 파일이 없거나 현재
-GPU·driver·VRAM·코드 commit·입력 manifest·예산과 다르면 실행을 거부한다.
-
-```bash
-python tests/checks/run_lightning_dev18.py
-```
-
-진입 파일은 Linux와 CUDA를 먼저 확인하고 현재 Python·package, GPU 종류, CUDA·driver를
-`.runtime/runtime.json`에 봉인한다. 이어서 기존 Dev18 준비 검사를 통과한 뒤 1,170건 panel을
-시작한다. 첫 봉인 뒤 package나 GPU 환경이 달라지면 재개하지 않는다.
+JSON에는 `status: "passed"`, 현재 `project_commit`, `budget_id=b5367ad431093`과 TSPulse
+equivalence가 있어야 한다. 그때만 마지막 명령을 실행한다. 진입 파일은 Linux·CUDA와 자원 보고서를
+먼저 확인하고 `.runtime/runtime.json`을 봉인한 뒤 1,170건 panel을 재개한다. config 변경, adaptive
+정책, 모델별 수동 실행은 허용하지 않는다.
 
 Studio가 멈추거나 credit을 다 쓰면 환경을 고치지 말고 같은 Studio에서 같은 non-interruptible L4를
 선택한 뒤 위 명령을 다시 실행한다. 완료된 score와 metadata의 SHA-256을

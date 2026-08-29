@@ -196,6 +196,9 @@ full-fidelity trial을 배정하고 exact config 목록과 순서를 budget mani
 시계열·일부 epoch로 예선하지 않는다. `runtime_matched`는 실제 timing 근거가 모인 뒤 필요한 경우에만
 민감도로 추가하며 primary 선택을 바꾸는 사후 장치로 쓰지 않는다.
 
+비율별 adaptive 정책은 이 panel의 실패나 지연을 대신할 fallback이 아니다. 새 config, 축소 배치,
+수동 모델 실행으로 exact panel을 우회하지 않는다.
+
 Tier 대표 후보는 해당 Tier의 `q_floor` 이상 모든 주분석 비율에서 공통 recipe가 있고 GHL25와
 HAI 두 실행을 정적으로 지원해야 한다. 조건을 만족하는 후보가 없으면 해당 Tier를
 `unavailable`로 보고하며 `q_floor`를 사후에 올리지 않는다. 모델별 고정 곡선은 각 모델이 실제로
@@ -255,6 +258,7 @@ source commit, source checkpoint, hyperparameters와 고정 전처리 recipe로 
 비용 원자료는 아래 항목을 분리한다.
 
 - `split_preprocess_seconds`
+- `model_setup_seconds`
 - `training_seconds`
 - `validation_inference_seconds`
 - `test_inference_seconds`
@@ -262,6 +266,10 @@ source commit, source checkpoint, hyperparameters와 고정 전처리 recipe로 
 - `model_artifact_bytes`
 - 세션별 `observation_count`, 검증 가능한 `observed_duration_seconds`, `duration_basis`
 - `status`, `retry_count`, 실패 이유
+
+Dev18 실행 증거의 `measurement_protocol_id`는 `dev18_registered_runner.v2`다. 이 값은 한
+in-memory 등록 executor 안에서 split·전처리, 모델 setup, 학습과 추론을 잰 범위를 뜻하며, 다섯 timing 값의
+합이 `runtime_seconds`와 같아야 한다.
 
 TSB 튜닝 HPO 비용과 현장 재학습 비용은 같은 숫자로 합치지 않는다. GHL은 timestamp 근거가
 없으면 관측 개수를 초 단위로 바꾸지 않는다. HAI도 timestamp 간격을 검증한 경우에만 관측 지속시간을
@@ -351,9 +359,12 @@ ledger가 SHA-256으로 참조한다.
 - 4단계: HAI 두 실행으로 외부 확인을 마친다.
 - 5단계: 성능·비용 원자료에 현장 가중치와 제약을 결합해 최종 도입안을 고른다.
 
-0단계의 강혁 Dev18 인수와 1단계의 모델·실행 증거를 닫았다. 다음 작업은 봉인된 단일 진입 파일로
-2단계 exact panel을 실행하는 일이다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로
-닫으며 Dev18 튜닝의 선행 조건으로 되돌리지 않는다.
+0단계의 강혁 Dev18 인수와 1단계의 정적 증거를 닫았다. 현재 게이트는 2단계 exact panel 직전이다.
+다만 새 project commit에서 TimeRCD Dev18 checkpoint smoke, TSPulse batch 1 대 등록 batch 32의
+실측 동등성, non-interruptible L4의 80% 자원 보고서를 모두 다시 통과하기 전에는 panel을 시작하지
+않는다. 이 동등성이 확인될 때에만 기존 `c...` config 행과 `budget_id=b5367ad431093`을 그대로
+유지한다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로 닫으며 Dev18 튜닝의 선행 조건으로
+되돌리지 않는다.
 
 ## 15. 중단과 완료 규칙
 
