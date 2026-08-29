@@ -91,6 +91,45 @@ class _FakeMinMaxScaler:
 
 
 class TestCheckpointSmoke(unittest.TestCase):
+    def test_tspulse_resource_equivalence_compares_every_score_head(self):
+        from tests.checks.check_dev18_resources import summarize_tspulse_equivalence
+
+        reference = {
+            head: {"scores": output[0]}
+            for head, output in _score_pairs(
+                ("time", "fft", "pred", "raw_max"), 4,
+            ).items()
+        }
+        candidate = {
+            head: {"scores": output[0].copy()}
+            for head, output in _score_pairs(
+                ("time", "fft", "pred", "raw_max"), 4,
+            ).items()
+        }
+
+        summary = summarize_tspulse_equivalence(
+            reference, candidate, registered_batch_size=32,
+        )
+
+        self.assertEqual(summary["status"], "passed")
+        self.assertEqual(summary["reference_batch_size"], 1)
+        self.assertEqual(summary["registered_batch_size"], 32)
+        self.assertEqual(summary["rtol"], 1e-6)
+        self.assertEqual(summary["atol"], 1e-8)
+        self.assertEqual(
+            summary["head_maximum_absolute_differences"],
+            {"time": 0.0, "fft": 0.0, "pred": 0.0, "raw_max": 0.0},
+        )
+
+        candidate["pred"]["scores"][2] += 1e-3
+        failed = summarize_tspulse_equivalence(
+            reference, candidate, registered_batch_size=32,
+        )
+        self.assertEqual(failed["status"], "failed")
+        self.assertGreater(
+            failed["head_maximum_absolute_differences"]["pred"], 1e-4,
+        )
+
     def test_dev18_quick_smoke_uses_the_sealed_two_channel_prefix_and_budget_configs(self):
         observed = []
 

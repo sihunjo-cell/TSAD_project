@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import json
 import math
@@ -10,7 +11,10 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+import numpy
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -89,8 +93,13 @@ def _risk_value(spec: dict, entry: dict) -> int:
         context = min(test_count, parameters["context_length"])
         return context * context * channels
     if model == "TSPulse":
+        from src.common.run_registered_model import build_entrypoint_arguments
+
         context = parameters["context_length"]
-        batch = min(128, max(0, test_count - context))
+        registered = build_entrypoint_arguments(
+            spec, device="cuda", channel_count=channels,
+        )
+        batch = min(registered["batch_size"], max(0, test_count - context))
         return batch * context * channels
     raise ValueError(f"GPU probe 대상이 아니다: {model}")
 
@@ -170,6 +179,34 @@ def _find_case(model: str, config_id: str, series: str):
     return spec, case
 
 
+def summarize_tspulse_equivalence(
+    reference_outputs: dict, registered_outputs: dict, *, registered_batch_size: int,
+) -> dict:
+    """배치 1과 등록 배치의 실제 checkpoint 점수를 head별로 대조한다."""
+    heads = ("time", "fft", "pred", "raw_max")
+    if set(reference_outputs) != set(heads) or set(registered_outputs) != set(heads):
+        raise ValueError("TSPulse equivalence score heads가 다르다")
+    maximum_differences = {}
+    equivalent = True
+    for head in heads:
+        reference = numpy.asarray(reference_outputs[head]["scores"])
+        registered = numpy.asarray(registered_outputs[head]["scores"])
+        if reference.shape != registered.shape or not (
+            numpy.isfinite(reference).all() and numpy.isfinite(registered).all()
+        ):
+            raise ValueError(f"TSPulse {head} equivalence score가 유효하지 않다")
+        maximum_differences[head] = float(numpy.max(numpy.abs(reference - registered)))
+        equivalent &= numpy.allclose(reference, registered, rtol=1e-6, atol=1e-8)
+    return {
+        "status": "passed" if equivalent else "failed",
+        "reference_batch_size": 1,
+        "registered_batch_size": registered_batch_size,
+        "rtol": 1e-6,
+        "atol": 1e-8,
+        "head_maximum_absolute_differences": maximum_differences,
+    }
+
+
 def _run_model_probe(spec: dict, inputs: dict, *, device: str):
     from src.common.run_registered_model import (
         build_entrypoint_arguments,
@@ -182,7 +219,8 @@ def _run_model_probe(spec: dict, inputs: dict, *, device: str):
     arguments = build_entrypoint_arguments(
         spec, device=device, channel_count=test.shape[1],
     )
-    entrypoint = load_model_entrypoint(model)
+    if model != "TSPulse":
+        entrypoint = load_model_entrypoint(model)
     if model in {"PaAno", "GDN"}:
         prepared = prepare_session_inputs(
             normal_training=inputs["normal_training"],
@@ -204,12 +242,81 @@ def _run_model_probe(spec: dict, inputs: dict, *, device: str):
             **arguments,
         )
     elif model == "TimeRCD":
+        import torch
+
+        from src.models.tier3.time_rcd import TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
+
+        arguments["query_chunk_size"] = TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
+        started = time.perf_counter()
         entrypoint(test[:arguments["context_length"]], **arguments)
+        torch.cuda.synchronize(device)
+        return {
+            "wall_time_seconds": time.perf_counter() - started,
+            "execution_policy": {
+                "status": "passed",
+                "context_length": arguments["context_length"],
+                "attention_query_chunk_size": arguments["query_chunk_size"],
+            },
+        }
     elif model == "TSPulse":
-        length = arguments["context_length"] + 128
-        entrypoint(test[:length], **arguments)
+        import torch
+
+        from src.models.tier3.tspulse import (
+            build_tspulse_raw_head_function,
+            load_tspulse_components,
+            score_tspulse,
+        )
+
+        context = arguments["context_length"]
+        aggregation_window = arguments["aggregation_window"]
+        batch_size = arguments["batch_size"]
+        length = context + max(batch_size + 1, aggregation_window // 2 + 1)
+        session = test[:length]
+        model_instance, utility = load_tspulse_components(
+            aggregation_window=aggregation_window,
+            channel_count=test.shape[1], device=device,
+        )
+
+        def score_with_batch(current_batch_size):
+            raw_head_function = build_tspulse_raw_head_function(
+                utility, aggregation_window=aggregation_window,
+                context_length=context, batch_size=current_batch_size, device=device,
+            )
+            return score_tspulse(
+                session, raw_head_function=raw_head_function,
+                aggregation_window=aggregation_window, context_length=context,
+            )
+
+        reference_outputs = score_with_batch(1)
+        registered_outputs = score_with_batch(batch_size)
+        equivalence = summarize_tspulse_equivalence(
+            reference_outputs, registered_outputs,
+            registered_batch_size=batch_size,
+        )
+        torch.cuda.synchronize(device)
+        del reference_outputs, registered_outputs
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
+        started = time.perf_counter()
+        measured_outputs = score_with_batch(batch_size)
+        torch.cuda.synchronize(device)
+        wall_time_seconds = time.perf_counter() - started
+        del measured_outputs, model_instance, utility
+        return {
+            "wall_time_seconds": wall_time_seconds,
+            "execution_policy": {
+                "status": "passed",
+                "batch_size": batch_size,
+                "context_length": context,
+                "aggregation_window": aggregation_window,
+            },
+            "equivalence": equivalence,
+        }
     else:
         raise ValueError(f"GPU probe 대상이 아니다: {model}")
+    return {}
 
 
 def run_child_probe(
@@ -230,8 +337,10 @@ def run_child_probe(
     torch.cuda.reset_peak_memory_stats("cuda")
     free_before, total_gpu = torch.cuda.mem_get_info("cuda")
     try:
-        _run_model_probe(spec, inputs, device="cuda")
+        started = time.perf_counter()
+        evidence = _run_model_probe(spec, inputs, device="cuda")
         torch.cuda.synchronize()
+        evidence.setdefault("wall_time_seconds", time.perf_counter() - started)
         peak_reserved = torch.cuda.max_memory_reserved("cuda")
         peak_gpu = total_gpu - free_before + peak_reserved
         peak_ram = _maximum_rss_bytes()
@@ -241,9 +350,19 @@ def run_child_probe(
         ram_status = capacity_status(
             peak_ram, _system_memory_bytes(), maximum_memory_percent,
         )
-        status = "passed" if gpu_status == ram_status == "passed" else "failed"
-        error = "" if status == "passed" else "자원 사용률이 합격선을 넘었다"
+        evidence_passed = all(
+            value.get("status") == "passed"
+            for key, value in evidence.items()
+            if key in {"execution_policy", "equivalence"}
+        )
+        status = (
+            "passed"
+            if gpu_status == ram_status == "passed" and evidence_passed
+            else "failed"
+        )
+        error = "" if status == "passed" else "실행 정책 또는 자원 합격선을 통과하지 못했다"
     except (MemoryError, RuntimeError) as exception:
+        evidence = {}
         peak_reserved = torch.cuda.max_memory_reserved("cuda")
         peak_gpu = min(total_gpu, total_gpu - free_before + peak_reserved)
         peak_ram = _maximum_rss_bytes()
@@ -251,6 +370,7 @@ def run_child_probe(
         error = f"{type(exception).__name__}: {exception}"
     return {
         **case,
+        **evidence,
         "status": status,
         "error": error,
         "gpu_peak_bytes": peak_gpu,
@@ -301,6 +421,52 @@ def _write_resource_report(report: dict, path=DEFAULT_REPORT_PATH) -> None:
     temporary.replace(path)
 
 
+def _has_required_tier3_evidence(result_rows: list[dict], expected_models: set) -> bool:
+    from src.common.run_registered_model import TSPULSE_INFERENCE_BATCH_SIZE
+    from src.models.tier3.time_rcd import TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
+
+    rows = {row.get("model"): row for row in result_rows if row.get("model")}
+    for model in expected_models & {"TimeRCD", "TSPulse"}:
+        row = rows.get(model, {})
+        if not (
+            isinstance(row.get("wall_time_seconds"), (int, float))
+            and row["wall_time_seconds"] > 0
+            and row.get("gpu_peak_bytes", 0) > 0
+            and row.get("ram_peak_bytes", 0) > 0
+            and row.get("execution_policy", {}).get("status") == "passed"
+        ):
+            return False
+    if "TimeRCD" in expected_models:
+        policy = rows["TimeRCD"]["execution_policy"]
+        if (
+            policy.get("attention_query_chunk_size")
+            != TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
+            or policy.get("context_length", 0) < 1
+        ):
+            return False
+    if "TSPulse" in expected_models:
+        policy = rows["TSPulse"]["execution_policy"]
+        equivalence = rows["TSPulse"].get("equivalence", {})
+        differences = equivalence.get("head_maximum_absolute_differences", {})
+        if not (
+            policy.get("batch_size") == TSPULSE_INFERENCE_BATCH_SIZE
+            and policy.get("context_length", 0) > 0
+            and policy.get("aggregation_window", 0) > 0
+            and equivalence.get("status") == "passed"
+            and equivalence.get("reference_batch_size") == 1
+            and equivalence.get("registered_batch_size") == TSPULSE_INFERENCE_BATCH_SIZE
+            and equivalence.get("rtol") == 1e-6
+            and equivalence.get("atol") == 1e-8
+            and set(differences) == {"time", "fft", "pred", "raw_max"}
+            and all(
+                isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
+                for value in differences.values()
+            )
+        ):
+            return False
+    return True
+
+
 def validate_resource_report(
     path=DEFAULT_REPORT_PATH, *, project_commit=None, gate_code_sha256=None,
     input_manifest_sha256=None, budget_id=None, cuda_device=None,
@@ -344,6 +510,7 @@ def validate_resource_report(
         and isinstance(result_rows, list)
         and bool(result_rows)
         and all(row.get("status") == "passed" for row in result_rows)
+        and _has_required_tier3_evidence(result_rows, set(expected_models))
     )
     if not valid:
         raise ValueError("Dev18 자원 gate 결과가 현재 코드·입력·예산과 다르다")
@@ -412,6 +579,10 @@ def run_resource_check(
         else:
             results.append(json.loads(line.removeprefix(RESULT_PREFIX)))
     failed = [result for result in results if result["status"] != "passed"]
+    failed_policies = ", ".join(
+        result.get("model", result.get("resource", "unknown"))
+        for result in failed
+    )
     budget = _read_json(DEFAULT_BUDGET_PATH)
     report = {
         "status": "passed" if not failed else "failed",
@@ -429,7 +600,11 @@ def run_resource_check(
         "results": results,
         "next_command": (
             "python tests/checks/run_lightning_dev18.py"
-            if not failed else "본 튜닝을 시작하지 말고 더 큰 non-interruptible GPU를 선택하세요."
+            if not failed
+            else (
+                f"본 튜닝을 시작하지 말고 실패한 정책({failed_policies})의 "
+                "실행 근거와 자원 사용량을 확인하세요."
+            )
         ),
     }
     _write_resource_report(report, output_path)

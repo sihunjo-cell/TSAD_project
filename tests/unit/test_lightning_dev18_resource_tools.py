@@ -29,15 +29,22 @@ class TestDev18ResourceCheck(unittest.TestCase):
         ] + [{
             "model": "TimeRCD", "config_id": "time", "ratio": 100,
             "seed": 0, "hyperparameters": {"context_length": 5000},
+        }, {
+            "model": "TSPulse", "config_id": "tspulse", "ratio": 100,
+            "seed": 0, "hyperparameters": {
+                "context_length": 512, "patch_size": 8,
+                "heads": ["time", "fft", "pred", "raw_max"],
+                "aggregation_window": 64,
+            },
         }]
         entries = [
             {
-                "series": "01", "row_count": 6000,
-                "training_boundary": 1000, "feature_count": 2,
+                "series": "01", "row_count": 1552,
+                "training_boundary": 1000, "feature_count": 20,
             },
             {
                 "series": "02", "row_count": 9000,
-                "training_boundary": 3000, "feature_count": 20,
+                "training_boundary": 3000, "feature_count": 19,
             },
         ]
 
@@ -46,7 +53,11 @@ class TestDev18ResourceCheck(unittest.TestCase):
         self.assertEqual(
             [(case["model"], case["ratio"], case["seed"], case["series"])
              for case in cases],
-            [("GDN", 100, 0, "02"), ("TimeRCD", 100, 0, "02")],
+            [
+                ("GDN", 100, 0, "01"),
+                ("TimeRCD", 100, 0, "02"),
+                ("TSPulse", 100, 0, "01"),
+            ],
         )
 
     def test_capacity_requires_configured_headroom(self):
@@ -117,6 +128,75 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     cuda_device=report["cuda_device"],
                     expected_models={"GDN", "MWVAR"},
                 )
+
+    def test_resource_report_rejects_missing_or_failed_tier3_evidence(self):
+        time_rcd = {
+            "model": "TimeRCD", "status": "passed", "wall_time_seconds": 1.0,
+            "gpu_peak_bytes": 10, "ram_peak_bytes": 20,
+            "execution_policy": {
+                "status": "passed", "context_length": 5000,
+                "attention_query_chunk_size": 64,
+            },
+        }
+        tspulse = {
+            "model": "TSPulse", "status": "passed", "wall_time_seconds": 1.0,
+            "gpu_peak_bytes": 10, "ram_peak_bytes": 20,
+            "execution_policy": {
+                "status": "passed", "batch_size": 32,
+                "context_length": 512, "aggregation_window": 64,
+            },
+            "equivalence": {
+                "status": "passed", "reference_batch_size": 1,
+                "registered_batch_size": 32,
+                "rtol": 1e-6, "atol": 1e-8,
+                "head_maximum_absolute_differences": {
+                    "time": 0.0, "fft": 0.0, "pred": 0.0, "raw_max": 0.0,
+                },
+            },
+        }
+        report = {
+            "status": "passed", "project_commit": "a" * 40,
+            "gate_code_sha256": "b" * 64, "input_manifest_sha256": "c" * 64,
+            "budget_id": "b123456789abc", "maximum_memory_percent": 80,
+            "cuda_device": {"name": "NVIDIA L4", "total_memory_bytes": 24},
+            "checked_models": ["TimeRCD", "TSPulse"],
+            "results": [time_rcd, tspulse],
+        }
+        validation_arguments = {
+            "project_commit": "a" * 40,
+            "gate_code_sha256": "b" * 64,
+            "input_manifest_sha256": "c" * 64,
+            "budget_id": "b123456789abc",
+            "cuda_device": report["cuda_device"],
+            "expected_models": {"TimeRCD", "TSPulse"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "resource_gate.json"
+            for broken_tspulse in (
+                {key: value for key, value in tspulse.items() if key != "equivalence"},
+                {**tspulse, "equivalence": {**tspulse["equivalence"], "status": "failed"}},
+            ):
+                path.write_text(
+                    json.dumps({**report, "results": [time_rcd, broken_tspulse]}),
+                    encoding="utf-8",
+                )
+                with self.subTest(equivalence=broken_tspulse.get("equivalence")):
+                    with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
+                        validate_resource_report(path, **validation_arguments)
+
+            path.write_text(
+                json.dumps({
+                    **report,
+                    "results": [
+                        {key: value for key, value in time_rcd.items()
+                         if key != "execution_policy"},
+                        tspulse,
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
+                validate_resource_report(path, **validation_arguments)
             path.write_text(json.dumps(report), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "GPU"):
                 validate_resource_report(
