@@ -68,7 +68,7 @@ def save_model_score(output, output_directory, **arguments):
                 "duration_basis": "unavailable",
             })
     arguments.setdefault("execution_evidence", {
-        "measurement_protocol_id": "registered_runner_unit_v1",
+        "measurement_protocol_id": "dev18_registered_runner.v2",
         "execution_phase": "development_hpo",
         "status": "complete", "retry_count": 0,
         "training_sessions": training_sessions,
@@ -102,6 +102,7 @@ class TestSessionRunnerTiming(unittest.TestCase):
         normal = numpy.arange(500 * 2, dtype=float).reshape(500, 2)
         test = numpy.arange(40, dtype=float).reshape(20, 2)
         complete_timing = {
+            "model_setup_seconds": 0.4,
             "training_seconds": 0.1,
             "validation_inference_seconds": 0.2,
             "test_inference_seconds": 0.3,
@@ -467,6 +468,39 @@ class TestRegisteredSpecs(unittest.TestCase):
 
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["score_file_count"], 2)
+
+    def test_dev18_output_checker_rejects_wrong_measurement_protocol_id(self):
+        spec = next(spec for spec in build_specs("development") if spec["model"] == "MWVAR")
+        with TemporaryDirectory() as directory:
+            output_directory = Path(directory)
+            saved = save_model_score(
+                {
+                    "scores": numpy.arange(8, dtype=float),
+                    "source_start": 0,
+                    "source_end_exclusive": 8,
+                    "alignment": "same_timestep",
+                    "primitive": "sample_variance",
+                    "calibration_mode": "none",
+                    "evaluation_mode": "offline_noncausal",
+                    "lookahead": 47,
+                    "maximum_effective_lookahead": 95,
+                    "normalization_scope": "none",
+                },
+                output_directory,
+                series=1,
+                model=spec["model"], target_use=spec["target_use"],
+                tier=spec["tier"], ratio=spec["ratio"], seed=spec["seed"],
+                config_id=spec["config_id"], common_recipe=spec["common_recipe"],
+                common_recipe_id=spec["common_recipe_id"],
+                normalization_scope="none", execution_identity=execution_identity(spec),
+            )
+            metadata_path = Path(saved["metadata_path"])
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["execution_evidence"]["measurement_protocol_id"] = "wrong.v2"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "measurement_protocol_id"):
+                check_registered_output(output_directory, spec, series=1)
 
     def test_output_checker_cross_checks_evidence_count_and_calibration_mode(self):
         spec = next(spec for spec in build_specs("development") if spec["model"] == "MWVAR")

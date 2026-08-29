@@ -221,6 +221,25 @@ def build_entrypoint_arguments(spec: dict, *, device: str, channel_count: int) -
     raise ValueError(f"활성 registry에 없는 모델이다: {model}")
 
 
+def build_registered_execution_policy(spec: dict) -> dict:
+    """config ID 밖에서 고정한 등록 실행 일정을 산출물에 묶는다."""
+    parameters = spec.get("hyperparameters", {})
+    if spec.get("model") == "TimeRCD":
+        from src.models.tier3.time_rcd import TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
+
+        return {
+            "context_length": parameters["context_length"],
+            "attention_query_chunk_size": TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE,
+        }
+    if spec.get("model") == "TSPulse":
+        return {
+            "context_length": parameters["context_length"],
+            "aggregation_window": parameters["aggregation_window"],
+            "batch_size": TSPULSE_INFERENCE_BATCH_SIZE,
+        }
+    return {}
+
+
 def _as_sessions(name: str, input_sessions) -> tuple[numpy.ndarray, ...]:
     sessions = tuple(numpy.asarray(values) for values in input_sessions)
     if not sessions:
@@ -405,7 +424,8 @@ def execute_registered_model(
         ):
             result[field] = run_result.get(field)
         required_timing = (
-            "training_seconds", "validation_inference_seconds", "test_inference_seconds",
+            "model_setup_seconds", "training_seconds",
+            "validation_inference_seconds", "test_inference_seconds",
         )
         runner_timing = run_result.get("timing")
         if not isinstance(runner_timing, Mapping):
@@ -425,7 +445,10 @@ def execute_registered_model(
                 ) from error
             if not math.isfinite(normalized) or normalized < 0:
                 raise ValueError(f"session runner timing.{field}은 유한한 0 이상의 수여야 한다")
-            timing[field] = normalized
+            if field == "model_setup_seconds":
+                timing[field] += normalized
+            else:
+                timing[field] = normalized
         return result
 
     fit_values = fit_sessions[0]
@@ -433,6 +456,9 @@ def execute_registered_model(
     setup_started = time.perf_counter()
     entrypoint = entrypoint or load_model_entrypoint(model)
     adapter = entrypoint(**arguments)
+    prepare_model = getattr(adapter, "prepare_model", None)
+    if callable(prepare_model):
+        prepare_model(fit_values.shape[1])
     _synchronize_cuda(device)
     timing["model_setup_seconds"] = time.perf_counter() - setup_started
     training_started = time.perf_counter()

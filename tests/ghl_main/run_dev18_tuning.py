@@ -867,12 +867,15 @@ def _json_default(value):
 
 
 def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, environment: dict) -> Path:
+    from src.common.run_registered_model import build_registered_execution_policy
+
     output_directory.mkdir(parents=True, exist_ok=True)
     path = output_directory / "run_snapshot.json"
     path.write_text(json.dumps({
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "project_commit": _git_head(),
         "spec": spec,
+        "execution_policy": build_registered_execution_policy(spec),
         "input_identity": inputs["input_identity"],
         "source_ranges": inputs["source_ranges"],
         "environment": environment,
@@ -945,7 +948,7 @@ def _record_seed_state(snapshot_path: Path, result: dict) -> None:
 
 def _validate_bound_run_files(
     metadata: dict, *, expected_project_commit: str | None = None,
-    expected_environment: dict | None = None,
+    expected_environment: dict | None = None, expected_spec: dict | None = None,
 ) -> None:
     references = [metadata.get("run_snapshot")]
     references.extend((metadata.get("training_files") or {}).values())
@@ -961,11 +964,11 @@ def _validate_bound_run_files(
             raise ValueError("Dev18 실행 증거 SHA-256이 실제 파일과 다르다")
         if "bytes" in reference and path.stat().st_size != reference["bytes"]:
             raise ValueError("Dev18 checkpoint byte 수가 실제 파일과 다르다")
+    snapshot_path = (
+        REPOSITORY_ROOT / metadata["run_snapshot"]["file"]
+    ).resolve()
+    snapshot = _read_json(snapshot_path)
     if expected_project_commit is not None or expected_environment is not None:
-        snapshot_path = (
-            REPOSITORY_ROOT / metadata["run_snapshot"]["file"]
-        ).resolve()
-        snapshot = _read_json(snapshot_path)
         if (
             expected_project_commit is not None
             and snapshot.get("project_commit") != expected_project_commit
@@ -976,6 +979,16 @@ def _validate_bound_run_files(
             and snapshot.get("environment") != expected_environment
         ):
             raise ValueError("Dev18 재개 snapshot의 실행 환경이 현재 봉인과 다르다")
+    from src.common.run_registered_model import build_registered_execution_policy
+
+    snapshot_spec = snapshot.get("spec")
+    if (
+        not isinstance(snapshot_spec, dict)
+        or (expected_spec is not None and snapshot_spec != expected_spec)
+        or snapshot.get("execution_policy")
+        != build_registered_execution_policy(expected_spec or snapshot_spec)
+    ):
+        raise ValueError("Dev18 run snapshot의 execution policy가 현재 등록 일정과 다르다")
 
 
 def _save_training_files(output_directory: Path, result: dict) -> tuple[int, dict]:
@@ -1071,6 +1084,7 @@ def _completed_run(
             _read_json(metadata_path),
             expected_project_commit=expected_project_commit,
             expected_environment=expected_environment,
+            expected_spec=spec,
         )
     return True
 
@@ -1080,7 +1094,10 @@ def _run_one_spec(
     device: str, environment: dict, input_manifest_path, retry_count: int,
     budget_id: str,
 ) -> list[dict]:
-    from src.common.execution_evidence import build_execution_evidence
+    from src.common.execution_evidence import (
+        DEV18_MEASUREMENT_PROTOCOL_ID,
+        build_execution_evidence,
+    )
     from src.common.execution_identity import EXECUTION_IDENTITY_FIELDS
     from src.common.run_registered_model import execute_registered_model
     from src.common.save_model_artifacts import save_model_score
@@ -1124,7 +1141,7 @@ def _run_one_spec(
     }
     evidence = build_execution_evidence(
         split, result["timing"], spec=spec,
-        measurement_protocol_id="dev18_registered_runner.v2", retry_count=retry_count,
+        measurement_protocol_id=DEV18_MEASUREMENT_PROTOCOL_ID, retry_count=retry_count,
         training_session_durations=[dict(unavailable_duration) for _ in range(split_count)],
         test_input_sessions=inputs["test_sessions"],
         test_session_durations=[dict(unavailable_duration) for _ in inputs["test_sessions"]],
@@ -1178,7 +1195,7 @@ def _run_one_spec(
         metadata_path.write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
         )
-        _validate_bound_run_files(metadata)
+        _validate_bound_run_files(metadata, expected_spec=spec)
         check_registered_output(
             output_directory, spec, dataset="DEV18", series=series,
             input_manifest_path=input_manifest_path,

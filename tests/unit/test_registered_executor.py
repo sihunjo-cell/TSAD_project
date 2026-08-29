@@ -354,6 +354,7 @@ class TestRegisteredExecutor(unittest.TestCase):
                     "test_outputs": tuple(_score_output(values) for values in test_sessions),
                     "training_log": {"optimizer_updates": 1},
                     "timing": {
+                        "model_setup_seconds": 0.4,
                         "training_seconds": 0.1,
                         "validation_inference_seconds": 0.1,
                         "test_inference_seconds": 0.1,
@@ -373,6 +374,7 @@ class TestRegisteredExecutor(unittest.TestCase):
                     calls[0][2][0], (test - numpy.array([0.0, 1.0])) / 38.0,
                 )
                 self.assertEqual(result["training_log"]["optimizer_updates"], 1)
+                self.assertEqual(result["timing"]["model_setup_seconds"], 0.4)
 
     def test_tier2_runner_synchronizes_before_closing_each_cuda_phase(self):
         class FakeModel:
@@ -431,6 +433,96 @@ class TestRegisteredExecutor(unittest.TestCase):
             self.assertEqual(result["timing"]["training_seconds"], 1.0)
             self.assertEqual(result["timing"]["validation_inference_seconds"], 1.0)
             self.assertEqual(result["timing"]["test_inference_seconds"], 1.0)
+
+    def test_tier2_runners_time_model_construction_as_setup(self):
+        class FakeModel:
+            def state_dict(self):
+                return {}
+
+        sessions = (numpy.zeros((4, 2), dtype=float),)
+        targets = (
+            (
+                "src.models.tier2.alora.adapter", "run_alora_sessions",
+                "build_alora_model", "train_alora", "score_alora_sessions",
+                {"window_size": 2, "device": "cpu", "epochs": 1},
+            ),
+            (
+                "src.models.tier2.gdn_official.adapter", "run_gdn_sessions",
+                "build_gdn_model", "train_gdn", "score_gdn_sessions",
+                {
+                    "embedding_dimension": 2, "hidden_dimension": 2,
+                    "rho": 0.5, "device": "cpu",
+                },
+            ),
+        )
+        for module_name, runner_name, builder_name, trainer_name, scorer_name, arguments in targets:
+            module = real_import_module(module_name)
+            events = []
+
+            def builder(*args, **kwargs):
+                events.append("construction")
+                if runner_name == "run_alora_sessions":
+                    return FakeModel(), {"prepared": True}
+                return FakeModel(), "edge", 1
+
+            def trainer(*args, **kwargs):
+                events.append("optimization")
+                self.assertIsInstance(kwargs["model"], FakeModel)
+                if runner_name == "run_alora_sessions":
+                    return kwargs["model"], kwargs["recipe"], {}
+                return kwargs["model"], kwargs["edge_index"], {"topk": kwargs["topk"]}
+
+            with self.subTest(runner=runner_name), patch.object(
+                module, builder_name, side_effect=builder,
+            ), patch.object(
+                module, trainer_name, side_effect=trainer,
+            ), patch.object(
+                module, scorer_name, return_value=(),
+            ), patch.object(
+                module, "_synchronize_cuda",
+                side_effect=lambda device: events.append(("sync", device)),
+            ), patch.object(
+                module.time, "perf_counter",
+                side_effect=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
+            ):
+                result = getattr(module, runner_name)(
+                    sessions, sessions, sessions, trainer=None, **arguments,
+                )
+
+            self.assertEqual(events[:4], [
+                "construction", ("sync", "cpu"),
+                "optimization", ("sync", "cpu"),
+            ])
+            self.assertEqual(result["timing"]["model_setup_seconds"], 1.0)
+            self.assertEqual(result["timing"]["training_seconds"], 1.0)
+
+    def test_adapter_prepare_hook_runs_inside_model_setup_phase(self):
+        events = []
+
+        class PreparedAdapter(_RecordingAdapter):
+            def prepare_model(self, channel_count):
+                events.append(("construction", channel_count))
+
+            def fit(self, *values):
+                events.append("optimization")
+                return super().fit(*values)
+
+        adapter = PreparedAdapter()
+        normal = numpy.arange(500 * 2, dtype=float).reshape(500, 2)
+        test = numpy.arange(40, dtype=float).reshape(20, 2)
+        with patch(
+            "src.common.run_registered_model.time.perf_counter",
+            side_effect=map(float, range(10)),
+        ):
+            result = execute_registered_model(
+                self.specs["PaAno"], normal_training=normal,
+                test_sessions=(test,), device="cpu",
+                entrypoint=lambda **arguments: adapter,
+            )
+
+        self.assertEqual(events[:2], [("construction", 2), "optimization"])
+        self.assertEqual(result["timing"]["model_setup_seconds"], 1.0)
+        self.assertEqual(result["timing"]["training_seconds"], 1.0)
 
     def test_result_contains_complete_frozen_identity_and_timing(self):
         spec = self.specs["MWVAR"]

@@ -12,6 +12,7 @@ EXECUTION_PHASES = {
 }
 TARGET_USES = {"fit_validation", "training_free", "strict_zero_shot"}
 TARGET_FREE_USES = {"training_free", "strict_zero_shot"}
+DEV18_MEASUREMENT_PROTOCOL_ID = "dev18_registered_runner.v2"
 TIMING_FIELDS = (
     "split_preprocess_seconds",
     "model_setup_seconds",

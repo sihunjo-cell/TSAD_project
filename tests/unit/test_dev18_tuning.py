@@ -17,6 +17,7 @@ from tests.ghl_main.run_dev18_tuning import (
     _load_score_manifest,
     _replace_manifest_rows,
     _write_completion_receipt,
+    _write_run_snapshot,
     _validate_bound_run_files,
     _validate_primary_manifest_rows,
     build_final_membership_rows,
@@ -317,6 +318,8 @@ class TestDev18Tuning(unittest.TestCase):
             snapshot.write_text(
                 json.dumps({
                     "project_commit": "a" * 40,
+                    "spec": {"model": "MWVAR"},
+                    "execution_policy": {},
                     "environment": {"runtime_snapshot": {"sha256": "c" * 64}},
                 }), encoding="utf-8",
             )
@@ -344,6 +347,58 @@ class TestDev18Tuning(unittest.TestCase):
                             "runtime_snapshot": {"sha256": "d" * 64},
                         },
                     )
+
+    def test_run_snapshot_records_and_recovery_checks_fixed_execution_policy(self):
+        spec = {
+            "model": "TimeRCD",
+            "hyperparameters": {"context_length": 5000},
+        }
+        inputs = {
+            "input_identity": {"sha256": "b" * 64},
+            "source_ranges": {"test_sessions": ((1, 2),)},
+        }
+        expected_policy = {
+            "context_length": 5000,
+            "attention_query_chunk_size": 64,
+        }
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tests.ghl_main.run_dev18_tuning._git_head", return_value="a" * 40,
+        ):
+            root = Path(directory)
+            snapshot_path = _write_run_snapshot(root, spec, inputs, {"device": "cuda"})
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            self.assertEqual(snapshot["execution_policy"], expected_policy)
+
+            tspulse_path = _write_run_snapshot(
+                root / "tspulse",
+                {
+                    "model": "TSPulse",
+                    "hyperparameters": {
+                        "context_length": 512, "aggregation_window": 64,
+                    },
+                },
+                inputs,
+                {"device": "cuda"},
+            )
+            tspulse_snapshot = json.loads(tspulse_path.read_text(encoding="utf-8"))
+            self.assertEqual(tspulse_snapshot["execution_policy"], {
+                "context_length": 512,
+                "aggregation_window": 64,
+                "batch_size": 32,
+            })
+
+            snapshot["execution_policy"]["attention_query_chunk_size"] = 32
+            snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+            metadata = {
+                "run_snapshot": {
+                    "file": snapshot_path.name,
+                    "sha256": hashlib.sha256(snapshot_path.read_bytes()).hexdigest(),
+                },
+                "training_files": {},
+            }
+            with patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root):
+                with self.assertRaisesRegex(ValueError, "execution policy"):
+                    _validate_bound_run_files(metadata)
 
     def test_primary_manifest_must_match_exact_budget_keys(self):
         budget = {

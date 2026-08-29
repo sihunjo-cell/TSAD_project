@@ -41,11 +41,12 @@ unzip .runtime/lightning_dev18_input.zip -d ../shared_data/TSAD_project
 
 압축을 쓰지 않으면 CSV 18개가 든 `tuning` 폴더를 위 경로에 그대로 올린다.
 
-## L4 실행 순서
+## 새 commit에서 한 번만 초기화하고 시작
 
 Studio 장치를 `1×L4`, `Interruptible off`로 바꾼 뒤 프로젝트 폴더에서 아래 순서를 한 번만 따른다.
-명령이 실패하면 다음 명령으로 넘어가지 않는다. reset은 이전 Dev18 실행 결과와 runtime 봉인만
-지우며 입력 ZIP, 설치한 package, checkpoint cache와 봉인된 Dev18 예산은 남긴다.
+각 명령이 성공해야 다음 명령을 실행한다. 하나라도 실패하면 그 자리에서 멈춘다. reset은 새
+project commit으로 실행을 옮길 때 한 번만 사용한다. 이전 Dev18 실행 결과와 runtime 봉인만
+지우고 입력 ZIP, 설치한 package, checkpoint cache와 봉인된 Dev18 예산은 남긴다.
 
 ```bash
 test -z "$(git status --porcelain)"
@@ -70,13 +71,27 @@ equivalence가 있어야 한다. 그때만 마지막 명령을 실행한다. 진
 먼저 확인하고 `.runtime/runtime.json`을 봉인한 뒤 1,170건 panel을 재개한다. config 변경, adaptive
 정책, 모델별 수동 실행은 허용하지 않는다.
 
-Studio가 멈추거나 credit을 다 쓰면 환경을 고치지 말고 같은 Studio에서 같은 non-interruptible L4를
-선택한 뒤 위 명령을 다시 실행한다. 완료된 score와 metadata의 SHA-256을
-확인해 건너뛴다. 점수 저장 직후 진행 원표를 쓰기 전에 끊겨도 완료 영수증으로 복구하므로 끝난
-trial을 다시 계산하지 않는다. 실행 중이던 trial에서 끊기면 그 trial 하나만 처음부터 다시 시작한다.
-CUDA 실행에 `--remote-execution`을 붙이지 않는다. 이 panel은 실측
-timing이 아직 없어서 보유 credit 안에 전부 끝난다고 단정하지 않는다. 남은 실행 수와 누적 시간을
-확인한 뒤에만 추가 credit을 산다.
+## 같은 commit에서 중단 후 재개
+
+Studio가 멈추거나 credit을 다 쓰면 환경을 고치지 않는다. 같은 Studio에서 이전과 같은 `1×L4`,
+`Interruptible off`를 다시 선택한다. 이 재개 절차에서는 `reset_lightning_dev18.py`를 실행하지
+않는다. setup, checkpoint smoke와 자원 측정도 되풀이하지 않는다. 아래 명령은 작업 트리가 깨끗하고
+현재 HEAD가 기존 자원 보고서의 project commit과 같은지 확인한 뒤, 보고서와 runtime 봉인을
+검증하는 단일 runner를 다시 시작한다. 앞 명령이 실패하면 즉시 멈추고 다음 명령으로 넘어가지 않는다.
+
+```bash
+test -z "$(git status --porcelain)"
+test "$(git rev-parse HEAD)" = "$(python -c 'import json; print(json.load(open(".runtime/dev18_resource_gate.json"))["project_commit"])')"
+python -m json.tool .runtime/dev18_resource_gate.json
+python tests/checks/run_lightning_dev18.py --data-root ../shared_data/TSAD_project
+```
+
+runner는 현재 commit·GPU·입력·예산과 자원 보고서를 다시 대조하고 기존 runtime seal도 확인한다.
+완료된 score와 metadata의 SHA-256이 맞으면 건너뛴다. 점수 저장 직후 진행 원표를 쓰기 전에 끊겨도
+완료 영수증으로 복구하므로 끝난 trial을 다시 계산하지 않는다. 실행 중이던 trial에서 끊기면 그
+trial 하나만 처음부터 다시 시작한다. CUDA 실행에 `--remote-execution`을 붙이지 않는다. 이 panel은
+실측 timing이 아직 없어서 보유 credit 안에 전부 끝난다고 단정하지 않는다. 남은 실행 수와 누적
+시간을 확인한 뒤에만 추가 credit을 산다.
 
 진행 원표는 `experiments/01_ghl_main/logs/dev18_score_manifest.csv`, 최종 선택 결과는
 `experiments/01_ghl_main/results/dev18_tuning/`에 생긴다. 전체 score까지 포함하면 저장 공간이
@@ -87,6 +102,6 @@ timing이 아직 없어서 보유 credit 안에 전부 끝난다고 단정하지
 
 - `git status --short`가 비어 있지 않으면 실행하지 않는다.
 - GPU 종류, Python, package 또는 source commit이 바뀌면 기존 panel과 섞지 않는다. GPU를 바꿀
-  때는 위 초기화 명령으로 기존 Dev18 실행과 runtime 봉인을 함께 지운다.
+  때는 새 commit 시작 절차의 초기화 명령으로 기존 Dev18 실행과 runtime 봉인을 함께 지운다.
 - `.runtime/runtime.json` 불일치는 환경을 자동으로 덮어쓰지 않는다.
 - 데이터 SHA-256이나 길이가 manifest와 다르면 원본을 다시 올리고 임의 수정본은 쓰지 않는다.

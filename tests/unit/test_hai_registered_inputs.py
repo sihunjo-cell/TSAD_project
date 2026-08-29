@@ -289,6 +289,7 @@ class TestRegisteredSessionWiring(unittest.TestCase):
                 "test_outputs": (),
                 "training_log": None,
                 "timing": {
+                    "model_setup_seconds": 0.0,
                     "training_seconds": 0.0,
                     "validation_inference_seconds": 0.0,
                     "test_inference_seconds": 0.0,

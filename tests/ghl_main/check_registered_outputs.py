@@ -13,6 +13,7 @@ from src.common.execution_identity import (
     validate_input_manifest_role,
 )
 from src.common.execution_evidence import (
+    DEV18_MEASUREMENT_PROTOCOL_ID,
     TARGET_FREE_USES,
     validate_execution_evidence_for_run,
     validate_training_evidence_bindings,
@@ -194,6 +195,13 @@ def check_registered_output(
         metadata.get("execution_evidence"),
         dataset_role=identity["dataset_role"], target_use=target_use,
     )
+    if (
+        identity["dataset_role"] == "development"
+        and evidence["measurement_protocol_id"] != DEV18_MEASUREMENT_PROTOCOL_ID
+    ):
+        raise ValueError(
+            "Dev18 measurement_protocol_id가 dev18_registered_runner.v2가 아니다"
+        )
     expected_calibration_mode = (
         "none" if target_use in TARGET_FREE_USES else "validation_median_iqr"
     )

@@ -430,6 +430,33 @@ def _is_finite_number(value, *, positive=False) -> bool:
     )
 
 
+def _has_consistent_capacity_evidence(
+    result_rows: list[dict], expected_models: set, maximum_memory_percent: float,
+) -> bool:
+    measured_models = expected_models & set(GPU_PROBE_MODELS)
+    measured_rows = [
+        row for row in result_rows if row.get("model") in measured_models
+    ]
+    if {row.get("model") for row in measured_rows} != measured_models:
+        return False
+    for row in measured_rows:
+        if row.get("maximum_memory_percent") != maximum_memory_percent:
+            return False
+        for resource_name in ("gpu", "ram"):
+            peak = row.get(f"{resource_name}_peak_bytes")
+            total = row.get(f"{resource_name}_total_bytes")
+            percent = row.get(f"{resource_name}_peak_percent")
+            if not (
+                _is_finite_number(peak)
+                and _is_finite_number(total, positive=True)
+                and _is_finite_number(percent)
+                and percent == round(peak * 100 / total, 2)
+                and capacity_status(peak, total, maximum_memory_percent) == "passed"
+            ):
+                return False
+    return True
+
+
 def _has_required_tier3_evidence(result_rows: list[dict], expected_models: set) -> bool:
     from src.common.run_registered_model import (
         TSPULSE_INFERENCE_BATCH_SIZE,
@@ -545,17 +572,22 @@ def validate_resource_report(
     if report.get("cuda_device") != cuda_device:
         raise ValueError("자원 gate를 통과한 GPU와 현재 GPU가 다르다")
     result_rows = report.get("results")
+    maximum_memory_percent = report.get("maximum_memory_percent")
     valid = (
         report.get("status") == "passed"
         and report.get("project_commit") == project_commit
         and report.get("gate_code_sha256") == gate_code_sha256
         and report.get("input_manifest_sha256") == input_manifest_sha256
         and report.get("budget_id") == budget_id
-        and 0 < report.get("maximum_memory_percent", 101) <= 80
+        and _is_finite_number(maximum_memory_percent, positive=True)
+        and maximum_memory_percent <= 80
         and set(report.get("checked_models", ())) == set(expected_models)
         and isinstance(result_rows, list)
         and bool(result_rows)
         and all(row.get("status") == "passed" for row in result_rows)
+        and _has_consistent_capacity_evidence(
+            result_rows, set(expected_models), maximum_memory_percent,
+        )
         and _has_required_tier3_evidence(result_rows, set(expected_models))
     )
     if not valid:

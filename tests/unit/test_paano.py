@@ -2,6 +2,7 @@
 
 import inspect
 import unittest
+from unittest.mock import patch
 
 import numpy
 import torch
@@ -193,6 +194,29 @@ class TestPaAnoAdapter(unittest.TestCase):
         )
 
         self.assertEqual(training_log["training_examples_seen"], 60)
+
+    def test_prepared_model_is_not_reconstructed_during_fit(self):
+        constructions = []
+
+        def build_encoder(channel_count):
+            constructions.append(channel_count)
+            return MeanEncoder()
+
+        adapter = PaAnoAdapter(
+            patch_size=2, learning_rate=1e-4, device="cpu",
+            encoder_factory=build_encoder, trainer=RecordingTrainer(),
+        )
+        adapter.prepare_model(2)
+        with patch(
+            "src.models.tier2.paano.adapter.encode_patches",
+            return_value=torch.zeros((30, 2)),
+        ), patch(
+            "src.models.tier2.paano.adapter.select_memory_bank",
+            return_value=torch.zeros((3, 2)),
+        ):
+            adapter.fit(numpy.arange(62, dtype=numpy.float32).reshape(31, 2))
+
+        self.assertEqual(constructions, [2])
 
     def test_checkpoint_restores_encoder_memory_and_recipe(self):
         adapter = PaAnoAdapter(

@@ -71,12 +71,21 @@ class PaAnoAdapter:
         self.memory_bank = None
         self.channel_count = None
 
+    def prepare_model(self, channel_count: int) -> None:
+        if type(channel_count) is not int or channel_count < 1:
+            raise ValueError("PaAno channel_count는 양의 정수여야 한다")
+        if self.model is not None:
+            if self.channel_count != channel_count:
+                raise ValueError("PaAno 준비 모델과 fit 채널 수가 다르다")
+            return
+        self.channel_count = channel_count
+        self.model = self.encoder_factory(channel_count).to(self.device)
+
     def fit(self, fit_values):
         fit_patches = make_patch_tensor(fit_values, self.patch_size)
         if len(fit_patches) <= self.patch_size:
             raise ValueError("PaAno fit patch가 pretext 간격보다 길어야 한다")
-        self.channel_count = fit_patches.shape[1]
-        self.model = self.encoder_factory(fit_patches.shape[1]).to(self.device)
+        self.prepare_model(fit_patches.shape[1])
         training_log = self.trainer(
             self.model,
             fit_patches,
@@ -145,8 +154,7 @@ class PaAnoAdapter:
             trainer=trainer,
             **config,
         )
-        adapter.channel_count = channel_count
-        adapter.model = adapter.encoder_factory(channel_count).to(device)
+        adapter.prepare_model(channel_count)
         adapter.model.load_state_dict(checkpoint["model_state_dict"])
         adapter.memory_bank = torch.as_tensor(
             checkpoint["memory_bank"], dtype=torch.float32,

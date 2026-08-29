@@ -101,7 +101,14 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "cuda_device": {"name": "NVIDIA L4", "total_memory_bytes": 24},
             "checked_models": ["GDN", "MWVAR"],
             "results": [
-                {"model": "GDN", "status": "passed"},
+                {
+                    "model": "GDN", "status": "passed",
+                    "gpu_peak_bytes": 10, "gpu_total_bytes": 1000,
+                    "gpu_peak_percent": 1.0,
+                    "ram_peak_bytes": 20, "ram_total_bytes": 1000,
+                    "ram_peak_percent": 2.0,
+                    "maximum_memory_percent": 80,
+                },
                 {"model": "MWVAR", "status": "passed"},
             ],
         }
@@ -135,8 +142,10 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "model": "TimeRCD", "config_id": "c1c5aeea6f7d3",
             "ratio": 100, "seed": 0, "series": "13",
             "status": "passed", "wall_time_seconds": 1.0,
-            "gpu_peak_bytes": 10, "gpu_peak_percent": 1.0,
-            "ram_peak_bytes": 20, "ram_peak_percent": 2.0,
+            "gpu_peak_bytes": 10, "gpu_total_bytes": 1000,
+            "gpu_peak_percent": 1.0,
+            "ram_peak_bytes": 20, "ram_total_bytes": 1000,
+            "ram_peak_percent": 2.0, "maximum_memory_percent": 80,
             "execution_policy": {
                 "status": "passed", "context_length": 5000,
                 "attention_query_chunk_size": 64,
@@ -146,8 +155,10 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "model": "TSPulse", "config_id": "c12c5e6196ea5",
             "ratio": 100, "seed": 0, "series": "13",
             "status": "passed", "wall_time_seconds": 1.0,
-            "gpu_peak_bytes": 10, "gpu_peak_percent": 1.0,
-            "ram_peak_bytes": 20, "ram_peak_percent": 2.0,
+            "gpu_peak_bytes": 10, "gpu_total_bytes": 1000,
+            "gpu_peak_percent": 1.0,
+            "ram_peak_bytes": 20, "ram_total_bytes": 1000,
+            "ram_peak_percent": 2.0, "maximum_memory_percent": 80,
             "execution_policy": {
                 "status": "passed", "batch_size": 32,
                 "context_length": 512, "aggregation_window": 64,
@@ -243,6 +254,30 @@ class TestDev18ResourceCheck(unittest.TestCase):
                 (
                     "boolean_peak",
                     lambda rows: rows[1].update(gpu_peak_bytes=True),
+                ),
+                (
+                    "zero_gpu_total",
+                    lambda rows: rows[0].update(gpu_total_bytes=0),
+                ),
+                (
+                    "row_threshold_mismatch",
+                    lambda rows: rows[1].update(maximum_memory_percent=79),
+                ),
+                (
+                    "gpu_percent_mismatch",
+                    lambda rows: rows[0].update(gpu_peak_percent=2.0),
+                ),
+                (
+                    "passed_at_eighty_percent",
+                    lambda rows: rows[0].update(
+                        gpu_peak_bytes=800, gpu_peak_percent=80.0,
+                    ),
+                ),
+                (
+                    "passed_at_ninety_nine_percent",
+                    lambda rows: rows[1].update(
+                        ram_peak_bytes=990, ram_peak_percent=99.0,
+                    ),
                 ),
             ):
                 broken = copy.deepcopy(report)

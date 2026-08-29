@@ -131,6 +131,9 @@ def train_gdn(
     patience: int = 15,
     batch_size: int = 128,
     learning_rate: float = 1e-3,
+    model=None,
+    edge_index=None,
+    topk=None,
 ):
     """Train on fit windows and select a checkpoint on separate normal validation."""
     if epochs < 1 or patience < 1 or batch_size < 1:
@@ -148,14 +151,20 @@ def train_gdn(
     channel_count = fit_sessions[0].shape[1]
     if any(session.shape[1] != channel_count for session in fit_sessions + validation_sessions):
         raise ValueError("GDN sessions have different channel counts")
-    model, edge_index, topk = build_gdn_model(
-        channel_count,
-        embedding_dimension=embedding_dimension,
-        hidden_dimension=hidden_dimension,
-        rho=rho,
-        window_size=window_size,
-        device=device,
-    )
+    prepared = (model, edge_index, topk)
+    if any(value is None for value in prepared) and not all(
+        value is None for value in prepared
+    ):
+        raise ValueError("GDN 준비 모델, edge_index와 topk를 함께 넘겨야 한다")
+    if model is None:
+        model, edge_index, topk = build_gdn_model(
+            channel_count,
+            embedding_dimension=embedding_dimension,
+            hidden_dimension=hidden_dimension,
+            rho=rho,
+            window_size=window_size,
+            device=device,
+        )
     fit_loader = DataLoader(
         _make_dataset(fit_sessions, window_size),
         batch_size=batch_size,
@@ -232,21 +241,44 @@ def run_gdn_sessions(
     patience: int = 15,
     batch_size: int = 128,
     learning_rate: float = 1e-3,
-    trainer=train_gdn,
+    trainer=None,
 ):
+    default_trainer = trainer is None
+    trainer = trainer or train_gdn
+    model_setup_seconds = 0.0
+    if default_trainer:
+        channel_count = as_finite_multivariate_session(
+            fit_sessions[0], "fit_session",
+        ).shape[1]
+        setup_started = time.perf_counter()
+        model, edge_index, topk = build_gdn_model(
+            channel_count,
+            embedding_dimension=embedding_dimension,
+            hidden_dimension=hidden_dimension,
+            rho=rho,
+            window_size=window_size,
+            device=device,
+        )
+        _synchronize_cuda(device)
+        model_setup_seconds = time.perf_counter() - setup_started
     training_started = time.perf_counter()
+    training_arguments = {
+        "embedding_dimension": embedding_dimension,
+        "hidden_dimension": hidden_dimension,
+        "rho": rho,
+        "device": device,
+        "window_size": window_size,
+        "epochs": epochs,
+        "patience": patience,
+        "batch_size": batch_size,
+        "learning_rate": learning_rate,
+    }
+    if default_trainer:
+        training_arguments.update(
+            model=model, edge_index=edge_index, topk=topk,
+        )
     model, edge_index, training_log = trainer(
-        fit_sessions,
-        validation_sessions,
-        embedding_dimension=embedding_dimension,
-        hidden_dimension=hidden_dimension,
-        rho=rho,
-        device=device,
-        window_size=window_size,
-        epochs=epochs,
-        patience=patience,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
+        fit_sessions, validation_sessions, **training_arguments,
     )
     _synchronize_cuda(device)
     training_seconds = time.perf_counter() - training_started
@@ -291,6 +323,7 @@ def run_gdn_sessions(
         "test_outputs": test_outputs,
         "training_log": training_log,
         "timing": {
+            "model_setup_seconds": model_setup_seconds,
             "training_seconds": training_seconds,
             "validation_inference_seconds": validation_seconds,
             "test_inference_seconds": time.perf_counter() - test_started,

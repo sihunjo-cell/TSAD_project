@@ -13,7 +13,7 @@ primary logical score 원표는 1,602행이 완성돼야 선택 단계로 넘어
 
 ## 다음에 할 일 하나
 
-Lightning AI의 non-interruptible L4에서 [실행 순서](lightning_studio.md#l4-실행-순서)를 처음부터
+Lightning AI의 non-interruptible L4에서 [새 commit 시작 절차](lightning_studio.md#새-commit에서-한-번만-초기화하고-시작)를 처음부터
 수행한다. fresh checkpoint smoke, TSPulse batch 1 대 batch 32 동등성, 80% 자원 JSON이 모두
 `passed`가 되기 전에는 `run_lightning_dev18.py`를 실행하지 않는다. adaptive 정책과 모델별 수동
 실행은 이 gate의 fallback이 아니다.

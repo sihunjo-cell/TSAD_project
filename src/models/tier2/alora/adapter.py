@@ -176,18 +176,23 @@ def train_alora(
     attention_heads: int = 8,
     encoder_layers: int = 3,
     patience: int = 3,
+    model=None,
+    recipe=None,
 ):
     """Train without labels and select the checkpoint on normal validation MSE."""
     if epochs < 1 or patience < 1:
         raise ValueError("ALoRa epochs and patience must be positive")
-    model, recipe = build_alora_model(
-        fit_sessions,
-        window_size=window_size,
-        device=device,
-        pair_embedding_dimension=pair_embedding_dimension,
-        attention_heads=attention_heads,
-        encoder_layers=encoder_layers,
-    )
+    if (model is None) != (recipe is None):
+        raise ValueError("ALoRa 준비 모델과 recipe를 함께 넘겨야 한다")
+    if model is None:
+        model, recipe = build_alora_model(
+            fit_sessions,
+            window_size=window_size,
+            device=device,
+            pair_embedding_dimension=pair_embedding_dimension,
+            attention_heads=attention_heads,
+            encoder_layers=encoder_layers,
+        )
     fit_windows = numpy.concatenate([
         _make_windows(session, window_size) for session in fit_sessions
     ])
@@ -266,22 +271,40 @@ def run_alora_sessions(
     attention_heads: int = 8,
     encoder_layers: int = 3,
     patience: int = 3,
-    trainer=train_alora,
+    trainer=None,
 ):
+    default_trainer = trainer is None
+    trainer = trainer or train_alora
+    model_setup_seconds = 0.0
+    if default_trainer:
+        setup_started = time.perf_counter()
+        model, recipe = build_alora_model(
+            fit_sessions,
+            window_size=window_size,
+            device=device,
+            pair_embedding_dimension=pair_embedding_dimension,
+            attention_heads=attention_heads,
+            encoder_layers=encoder_layers,
+        )
+        _synchronize_cuda(device)
+        model_setup_seconds = time.perf_counter() - setup_started
     training_started = time.perf_counter()
+    training_arguments = {
+        "window_size": window_size,
+        "device": device,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "learning_rate": learning_rate,
+        "low_rank_weight": low_rank_weight,
+        "pair_embedding_dimension": pair_embedding_dimension,
+        "attention_heads": attention_heads,
+        "encoder_layers": encoder_layers,
+        "patience": patience,
+    }
+    if default_trainer:
+        training_arguments.update(model=model, recipe=recipe)
     model, recipe, training_log = trainer(
-        fit_sessions,
-        validation_sessions,
-        window_size=window_size,
-        device=device,
-        epochs=epochs,
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        low_rank_weight=low_rank_weight,
-        pair_embedding_dimension=pair_embedding_dimension,
-        attention_heads=attention_heads,
-        encoder_layers=encoder_layers,
-        patience=patience,
+        fit_sessions, validation_sessions, **training_arguments,
     )
     _synchronize_cuda(device)
     training_seconds = time.perf_counter() - training_started
@@ -314,6 +337,7 @@ def run_alora_sessions(
         "test_outputs": test_outputs,
         "training_log": training_log,
         "timing": {
+            "model_setup_seconds": model_setup_seconds,
             "training_seconds": training_seconds,
             "validation_inference_seconds": validation_seconds,
             "test_inference_seconds": time.perf_counter() - test_started,
