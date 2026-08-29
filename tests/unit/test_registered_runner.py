@@ -372,6 +372,7 @@ class TestRegisteredSpecs(unittest.TestCase):
             tspulse, device="cpu", channel_count=19,
         )
         self.assertEqual(tspulse_arguments["device"], "cpu")
+        self.assertEqual(tspulse_arguments["batch_size"], 32)
         self.assertEqual(
             load_model_entrypoint("TimeRCD").__name__, "score_time_rcd_official",
         )

@@ -298,15 +298,32 @@ def score_tspulse_official(
 ):
     """고정 source의 raw utility를 strict 전처리 경로에 연결한다."""
     values = _validate_session(session)
-    _, utility = component_loader(
+    scorer = build_tspulse_official_scorer(
         aggregation_window=aggregation_window, channel_count=values.shape[1],
+        context_length=context_length, batch_size=batch_size, device=device,
+        component_loader=component_loader,
+    )
+    return scorer(values)
+
+
+def build_tspulse_official_scorer(
+    *, aggregation_window, channel_count, context_length=TSPULSE_CONTEXT_LENGTH,
+    batch_size=128, device="cpu", component_loader=load_tspulse_components,
+):
+    """Load the official utility once and return a scorer for matching sessions."""
+    _, utility = component_loader(
+        aggregation_window=aggregation_window, channel_count=channel_count,
         device=device,
     )
     raw_head_function = build_tspulse_raw_head_function(
         utility, aggregation_window=aggregation_window,
         context_length=context_length, batch_size=batch_size, device=device,
     )
-    return score_tspulse(
-        values, raw_head_function=raw_head_function,
-        aggregation_window=aggregation_window, context_length=context_length,
-    )
+
+    def scorer(session):
+        return score_tspulse(
+            session, raw_head_function=raw_head_function,
+            aggregation_window=aggregation_window, context_length=context_length,
+        )
+
+    return scorer

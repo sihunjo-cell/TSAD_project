@@ -30,6 +30,7 @@ MODEL_ENTRYPOINTS = {
     "TimeRCD": ("src.models.tier3.time_rcd", "score_time_rcd_official"),
     "TSPulse": ("src.models.tier3.tspulse", "score_tspulse_official"),
 }
+TSPULSE_INFERENCE_BATCH_SIZE = 32
 MODEL_PARAMETER_KEYS = {
     "MWVAR": {"window", "centered", "ddof"},
     "SQDIFF_LAST3": {"lag", "window", "correction"},
@@ -194,7 +195,8 @@ def build_entrypoint_arguments(spec: dict, *, device: str, channel_count: int) -
         })
         return {
             "aggregation_window": parameters["aggregation_window"],
-            "context_length": parameters["context_length"], "device": device,
+            "context_length": parameters["context_length"],
+            "batch_size": TSPULSE_INFERENCE_BATCH_SIZE, "device": device,
         }
     raise ValueError(f"활성 registry에 없는 모델이다: {model}")
 
@@ -329,9 +331,17 @@ def execute_registered_model(
             raise ValueError("normal_training과 normal_training_sessions를 함께 줄 수 없다")
         entrypoint = entrypoint or load_model_entrypoint(model)
         started = time.perf_counter()
-        result["test_outputs"] = tuple(
-            entrypoint(values, **arguments) for values in tests
-        )
+        if model == "TSPulse":
+            from src.models.tier3.tspulse import build_tspulse_official_scorer
+
+            scorer = build_tspulse_official_scorer(
+                channel_count=tests[0].shape[1], **arguments,
+            )
+            result["test_outputs"] = tuple(scorer(values) for values in tests)
+        else:
+            result["test_outputs"] = tuple(
+                entrypoint(values, **arguments) for values in tests
+            )
         timing["test_inference_seconds"] = time.perf_counter() - started
         return result
 

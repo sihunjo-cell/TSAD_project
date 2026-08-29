@@ -15,6 +15,7 @@ from src.models.tier3.tspulse import (
     TSPULSE_CHECKPOINT_SHA256,
     TSPULSE_SOURCE_COMMIT,
     align_tspulse_scores,
+    build_tspulse_official_scorer,
     build_tspulse_raw_head_function,
     load_tspulse_components,
     score_tspulse_official,
@@ -317,6 +318,41 @@ class TestTSPulse(unittest.TestCase):
         torch.testing.assert_close(
             first_payload["future_values"][0, 0], torch.from_numpy(values[8]),
         )
+
+    def test_raw_head_scores_are_batch_partition_invariant(self):
+        values = numpy.arange(1090, dtype=numpy.float32).reshape(545, 2)
+        outputs = []
+        for batch_size in (1, 32):
+            utility = RawScoreUtility()
+            raw_head_function = build_tspulse_raw_head_function(
+                utility, aggregation_window=4, context_length=8,
+                batch_size=batch_size, device="cpu",
+            )
+            outputs.append(score_tspulse(
+                values, raw_head_function=raw_head_function,
+                aggregation_window=4, context_length=8,
+            ))
+        for head in ("time", "fft", "pred", "raw_max"):
+            numpy.testing.assert_array_equal(
+                outputs[0][head]["scores"], outputs[1][head]["scores"],
+            )
+
+    def test_prepared_scorer_loads_components_once(self):
+        utility = RawScoreUtility()
+        loader_calls = []
+
+        def component_loader(**arguments):
+            loader_calls.append(arguments)
+            return object(), utility
+
+        scorer = build_tspulse_official_scorer(
+            aggregation_window=4, channel_count=2, context_length=8,
+            batch_size=3, device="cpu", component_loader=component_loader,
+        )
+        for _ in range(2):
+            result = scorer(numpy.arange(24, dtype=numpy.float32).reshape(12, 2))
+            self.assertEqual(set(result), {"time", "fft", "pred", "raw_max"})
+        self.assertEqual(len(loader_calls), 1)
 
     def test_official_entrypoint_connects_loader_raw_utility_and_alignment(self):
         utility = RawScoreUtility()
