@@ -1,5 +1,6 @@
 """Lightning Dev18 자원 점검과 이전 실행 초기화 계약."""
 
+import copy
 import json
 import tempfile
 import unittest
@@ -131,16 +132,22 @@ class TestDev18ResourceCheck(unittest.TestCase):
 
     def test_resource_report_rejects_missing_or_failed_tier3_evidence(self):
         time_rcd = {
-            "model": "TimeRCD", "status": "passed", "wall_time_seconds": 1.0,
-            "gpu_peak_bytes": 10, "ram_peak_bytes": 20,
+            "model": "TimeRCD", "config_id": "c1c5aeea6f7d3",
+            "ratio": 100, "seed": 0, "series": "13",
+            "status": "passed", "wall_time_seconds": 1.0,
+            "gpu_peak_bytes": 10, "gpu_peak_percent": 1.0,
+            "ram_peak_bytes": 20, "ram_peak_percent": 2.0,
             "execution_policy": {
                 "status": "passed", "context_length": 5000,
                 "attention_query_chunk_size": 64,
             },
         }
         tspulse = {
-            "model": "TSPulse", "status": "passed", "wall_time_seconds": 1.0,
-            "gpu_peak_bytes": 10, "ram_peak_bytes": 20,
+            "model": "TSPulse", "config_id": "c12c5e6196ea5",
+            "ratio": 100, "seed": 0, "series": "13",
+            "status": "passed", "wall_time_seconds": 1.0,
+            "gpu_peak_bytes": 10, "gpu_peak_percent": 1.0,
+            "ram_peak_bytes": 20, "ram_peak_percent": 2.0,
             "execution_policy": {
                 "status": "passed", "batch_size": 32,
                 "context_length": 512, "aggregation_window": 64,
@@ -197,7 +204,58 @@ class TestDev18ResourceCheck(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
                 validate_resource_report(path, **validation_arguments)
+
+            for name, mutate in (
+                (
+                    "short_time_rcd_context",
+                    lambda rows: rows[0]["execution_policy"].update(context_length=1),
+                ),
+                (
+                    "wrong_tspulse_context",
+                    lambda rows: rows[1]["execution_policy"].update(context_length=513),
+                ),
+                (
+                    "wrong_tspulse_aggregation",
+                    lambda rows: rows[1]["execution_policy"].update(
+                        aggregation_window=96,
+                    ),
+                ),
+                (
+                    "wrong_config_id",
+                    lambda rows: rows[0].update(config_id="c000000000000"),
+                ),
+                (
+                    "infinite_wall_time",
+                    lambda rows: rows[0].update(wall_time_seconds=float("inf")),
+                ),
+                (
+                    "infinite_peak",
+                    lambda rows: rows[1].update(gpu_peak_bytes=float("inf")),
+                ),
+                (
+                    "nan_peak",
+                    lambda rows: rows[0].update(ram_peak_bytes=float("nan")),
+                ),
+                (
+                    "boolean_wall_time",
+                    lambda rows: rows[0].update(wall_time_seconds=True),
+                ),
+                (
+                    "boolean_peak",
+                    lambda rows: rows[1].update(gpu_peak_bytes=True),
+                ),
+            ):
+                broken = copy.deepcopy(report)
+                mutate(broken["results"])
+                path.write_text(json.dumps(broken), encoding="utf-8")
+                with self.subTest(invalid_evidence=name):
+                    with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
+                        validate_resource_report(path, **validation_arguments)
             path.write_text(json.dumps(report), encoding="utf-8")
+            self.assertEqual(
+                validate_resource_report(path, **validation_arguments),
+                report,
+            )
             with self.assertRaisesRegex(ValueError, "GPU"):
                 validate_resource_report(
                     path,

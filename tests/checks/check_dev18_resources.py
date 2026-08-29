@@ -421,49 +421,95 @@ def _write_resource_report(report: dict, path=DEFAULT_REPORT_PATH) -> None:
     temporary.replace(path)
 
 
+def _is_finite_number(value, *, positive=False) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and (value > 0 if positive else value >= 0)
+    )
+
+
 def _has_required_tier3_evidence(result_rows: list[dict], expected_models: set) -> bool:
-    from src.common.run_registered_model import TSPULSE_INFERENCE_BATCH_SIZE
+    from src.common.run_registered_model import (
+        TSPULSE_INFERENCE_BATCH_SIZE,
+        build_entrypoint_arguments,
+    )
     from src.models.tier3.time_rcd import TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
 
-    rows = {row.get("model"): row for row in result_rows if row.get("model")}
-    for model in expected_models & {"TimeRCD", "TSPulse"}:
-        row = rows.get(model, {})
-        if not (
-            isinstance(row.get("wall_time_seconds"), (int, float))
-            and row["wall_time_seconds"] > 0
-            and row.get("gpu_peak_bytes", 0) > 0
-            and row.get("ram_peak_bytes", 0) > 0
-            and row.get("execution_policy", {}).get("status") == "passed"
-        ):
-            return False
-    if "TimeRCD" in expected_models:
-        policy = rows["TimeRCD"]["execution_policy"]
+    tier3_models = expected_models & {"TimeRCD", "TSPulse"}
+    if not tier3_models:
+        return True
+    specs, entries = _load_plan()
+    cases = [
+        case for case in select_probe_cases(specs, entries)
+        if case["model"] in tier3_models
+    ]
+    expected = {}
+    for case in cases:
+        spec = next(
+            value for value in specs
+            if all(
+                value[name] == case[name]
+                for name in ("model", "config_id", "ratio", "seed")
+            )
+        )
+        entry = next(value for value in entries if value["series"] == case["series"])
+        arguments = build_entrypoint_arguments(
+            spec, device="cuda", channel_count=entry["feature_count"],
+        )
+        if case["model"] == "TimeRCD":
+            policy = {
+                "status": "passed",
+                "context_length": arguments["context_length"],
+                "attention_query_chunk_size": TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE,
+            }
+        else:
+            if arguments["batch_size"] != TSPULSE_INFERENCE_BATCH_SIZE:
+                return False
+            policy = {
+                "status": "passed",
+                "batch_size": arguments["batch_size"],
+                "context_length": arguments["context_length"],
+                "aggregation_window": arguments["aggregation_window"],
+            }
+        expected[(case["model"], case["config_id"])] = (case, policy)
+
+    tier3_rows = [row for row in result_rows if row.get("model") in tier3_models]
+    rows = {
+        (row.get("model"), row.get("config_id")): row
+        for row in tier3_rows
+    }
+    if len(rows) != len(tier3_rows) or rows.keys() != expected.keys():
+        return False
+    for key, (case, policy) in expected.items():
+        row = rows[key]
         if (
-            policy.get("attention_query_chunk_size")
-            != TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE
-            or policy.get("context_length", 0) < 1
-        ):
-            return False
-    if "TSPulse" in expected_models:
-        policy = rows["TSPulse"]["execution_policy"]
-        equivalence = rows["TSPulse"].get("equivalence", {})
-        differences = equivalence.get("head_maximum_absolute_differences", {})
-        if not (
-            policy.get("batch_size") == TSPULSE_INFERENCE_BATCH_SIZE
-            and policy.get("context_length", 0) > 0
-            and policy.get("aggregation_window", 0) > 0
-            and equivalence.get("status") == "passed"
-            and equivalence.get("reference_batch_size") == 1
-            and equivalence.get("registered_batch_size") == TSPULSE_INFERENCE_BATCH_SIZE
-            and equivalence.get("rtol") == 1e-6
-            and equivalence.get("atol") == 1e-8
-            and set(differences) == {"time", "fft", "pred", "raw_max"}
-            and all(
-                isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
-                for value in differences.values()
+            any(row.get(name) != case[name] for name in ("ratio", "seed", "series"))
+            or row.get("execution_policy") != policy
+            or not _is_finite_number(row.get("wall_time_seconds"), positive=True)
+            or any(
+                not _is_finite_number(row.get(name))
+                for name in (
+                    "gpu_peak_bytes", "gpu_peak_percent",
+                    "ram_peak_bytes", "ram_peak_percent",
+                )
             )
         ):
             return False
+        if key[0] == "TSPulse":
+            equivalence = row.get("equivalence", {})
+            differences = equivalence.get("head_maximum_absolute_differences", {})
+            if not (
+                equivalence.get("status") == "passed"
+                and equivalence.get("reference_batch_size") == 1
+                and equivalence.get("registered_batch_size") == policy["batch_size"]
+                and equivalence.get("rtol") == 1e-6
+                and equivalence.get("atol") == 1e-8
+                and set(differences) == {"time", "fft", "pred", "raw_max"}
+                and all(_is_finite_number(value) for value in differences.values())
+            ):
+                return False
     return True
 
 
