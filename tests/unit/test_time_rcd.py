@@ -1,20 +1,25 @@
 """Strict TimeRCD adapter contract tests."""
 
 import math
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 import numpy
 import torch
 
 from src.models.tier3.time_rcd import (
+    TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE,
     TIME_RCD_CONFIG_FILE,
     TIME_RCD_CONFIG_SHA256,
     TIME_RCD_CHECKPOINT_SHA256,
+    build_time_rcd_official_scorer,
     build_time_rcd_config,
     get_time_rcd_status,
+    install_time_rcd_chunked_attention,
     load_time_rcd_components,
     load_time_rcd_model,
     score_time_rcd_official,
@@ -69,7 +74,176 @@ class UnequalChannelLogitModel(ConstantProbabilityModel):
         return logits
 
 
+class FixtureBinaryAttentionBias(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.emd = torch.nn.Embedding(2, 2)
+        with torch.no_grad():
+            self.emd.weight.copy_(torch.tensor([[-0.25, 0.5], [0.75, -0.5]]))
+
+    def forward(self, query_id, kv_id):
+        same_channel = query_id.unsqueeze(-1).eq(kv_id.unsqueeze(-2)).unsqueeze(1)
+        weights = self.emd.weight[:, :, None, None]
+        return torch.where(same_channel, weights[1], weights[0])
+
+
+class FixtureAttention(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embed_dim = 4
+        self.num_heads = 2
+        self.head_dim = 2
+        self.q_proj = torch.nn.Linear(4, 4, bias=False)
+        self.k_proj = torch.nn.Linear(4, 4, bias=False)
+        self.v_proj = torch.nn.Linear(4, 4, bias=False)
+        self.out_proj = torch.nn.Linear(4, 4, bias=False)
+        self.binary_attention_bias = FixtureBinaryAttentionBias()
+
+        with torch.no_grad():
+            for index, projection in enumerate((
+                self.q_proj, self.k_proj, self.v_proj, self.out_proj,
+            )):
+                projection.weight.copy_(
+                    torch.eye(4) + 0.1 * (index + 1) * torch.ones((4, 4)),
+                )
+
+    def apply_rope(self, values, freqs):
+        batch_size, token_count, embedding_size = values.shape
+        pairs = values.view(batch_size, token_count, embedding_size // 2, 2)
+        cosine = freqs.cos().unsqueeze(0)
+        sine = freqs.sin().unsqueeze(0)
+        return torch.stack((
+            pairs[..., 0] * cosine - pairs[..., 1] * sine,
+            pairs[..., 0] * sine + pairs[..., 1] * cosine,
+        ), dim=-1).view_as(values)
+
+    def forward(self, query, key, value, freqs, query_id=None, kv_id=None, attn_mask=None):
+        raise AssertionError("the chunked forward should replace this fixture method")
+
+
+class FixtureAttentionModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.attention = FixtureAttention()
+
+
+class OfficialScoringFixtureModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.attention = FixtureAttention()
+        self.calls = []
+
+    def forward(self, *, time_series, mask):
+        self.calls.append((time_series.detach().cpu(), mask.detach().cpu()))
+        batch_size, time_count, channel_count = time_series.shape
+        logits = torch.zeros(
+            batch_size, time_count, channel_count, 2,
+            dtype=time_series.dtype, device=time_series.device,
+        )
+        logits[..., 1] = math.log(3.0)
+        return logits
+
+
+def dense_attention_reference(attention, query, key, value, freqs, query_id, kv_id, attn_mask):
+    batch_size, token_count, embedding_size = query.shape
+    query_rotated = attention.apply_rope(attention.q_proj(query), freqs)
+    key_rotated = attention.apply_rope(attention.k_proj(key), freqs)
+    query_rotated = query_rotated.view(
+        batch_size, token_count, attention.num_heads, attention.head_dim,
+    ).transpose(1, 2)
+    key_rotated = key_rotated.view(
+        batch_size, token_count, attention.num_heads, attention.head_dim,
+    ).transpose(1, 2)
+    values = attention.v_proj(value).view(
+        batch_size, token_count, attention.num_heads, attention.head_dim,
+    ).transpose(1, 2)
+    same_channel = query_id.unsqueeze(-1).eq(kv_id.unsqueeze(-2)).unsqueeze(1)
+    bias_weights = attention.binary_attention_bias.emd.weight[:, :, None, None]
+    bias = torch.where(same_channel, bias_weights[1], bias_weights[0])
+    scores = query_rotated @ key_rotated.transpose(-2, -1) / math.sqrt(attention.head_dim)
+    scores = scores + bias
+    scores = scores.masked_fill(~attn_mask[:, None, None, :], float("-inf"))
+    attended = torch.softmax(scores, dim=-1) @ values
+    return attention.out_proj(
+        attended.transpose(1, 2).contiguous().view(batch_size, token_count, embedding_size),
+    )
+
+
+def install_fixture_attention_import():
+    package = ModuleType("time_rcd")
+    package.__path__ = []
+    core = ModuleType("time_rcd._core")
+    core.__path__ = []
+    encoder = ModuleType("time_rcd._core.ts_encoder_bi_bias")
+    encoder.MultiheadAttentionWithRoPE = FixtureAttention
+    return patch.dict(sys.modules, {
+        "time_rcd": package,
+        "time_rcd._core": core,
+        "time_rcd._core.ts_encoder_bi_bias": encoder,
+    })
+
+
 class TestTimeRCD(unittest.TestCase):
+    def test_chunked_attention_matches_dense_global_attention(self):
+        model = FixtureAttentionModel()
+        attention = model.attention
+        query = torch.tensor([[
+            [0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8],
+            [0.9, 1.0, 1.1, 1.2], [1.3, 1.4, 1.5, 1.6],
+            [1.7, 1.8, 1.9, 2.0],
+        ]])
+        freqs = torch.tensor([
+            [0.0, 0.1], [0.2, 0.3], [0.4, 0.5], [0.6, 0.7], [0.8, 0.9],
+        ])
+        query_id = torch.tensor([[0, 1, 0, 1, 0]])
+        kv_id = torch.tensor([[1, 0, 1, 0, 1]])
+        attn_mask = torch.tensor([[True, True, True, False, True]])
+        dense = dense_attention_reference(
+            attention, query, query, query, freqs, query_id, kv_id, attn_mask,
+        )
+
+        self.assertEqual(
+            install_time_rcd_chunked_attention(
+                model, query_chunk_size=2, attention_class=FixtureAttention,
+            ),
+            1,
+        )
+        chunked = attention(query, query, query, freqs, query_id, kv_id, attn_mask)
+
+        torch.testing.assert_close(chunked, dense, rtol=1e-6, atol=1e-7)
+        with self.assertRaisesRegex(ValueError, "no MultiheadAttentionWithRoPE"):
+            install_time_rcd_chunked_attention(
+                torch.nn.Identity(), attention_class=FixtureAttention,
+            )
+
+    def test_chunked_attention_keeps_official_no_id_attention_path(self):
+        model = FixtureAttentionModel()
+        attention = model.attention
+        query = torch.arange(20, dtype=torch.float32).reshape(1, 5, 4) / 10
+        freqs = torch.tensor([
+            [0.0, 0.1], [0.2, 0.3], [0.4, 0.5], [0.6, 0.7], [0.8, 0.9],
+        ])
+        attn_mask = torch.tensor([[True, True, True, False, True]])
+        query_rotated = attention.apply_rope(attention.q_proj(query), freqs)
+        key_rotated = attention.apply_rope(attention.k_proj(query), freqs)
+        query_rotated = query_rotated.view(1, 5, 2, 2).transpose(1, 2)
+        key_rotated = key_rotated.view(1, 5, 2, 2).transpose(1, 2)
+        values = attention.v_proj(query).view(1, 5, 2, 2).transpose(1, 2)
+        dense = torch.nn.functional.scaled_dot_product_attention(
+            query_rotated, key_rotated, values, attn_mask=attn_mask[:, None, None, :],
+            is_causal=False,
+        )
+        dense = attention.out_proj(dense.transpose(1, 2).contiguous().view(1, 5, 4))
+
+        install_time_rcd_chunked_attention(
+            model, query_chunk_size=2, attention_class=FixtureAttention,
+        )
+
+        torch.testing.assert_close(
+            attention(query, query, query, freqs, attn_mask=attn_mask),
+            dense, rtol=1e-6, atol=1e-7,
+        )
+
     def test_builds_official_multi_config_without_mutating_default(self):
         default = SimpleNamespace(
             win_size=12,
@@ -208,18 +382,38 @@ class TestTimeRCD(unittest.TestCase):
         self.assertEqual(model.device, torch.device("cpu"))
         self.assertTrue(model.eval_called)
 
-    def test_official_entrypoint_connects_loader_and_score(self):
+    def test_build_official_scorer_connects_loader_and_score(self):
         session = numpy.arange(6, dtype=numpy.float32).reshape(3, 2)
-        model = ConstantProbabilityModel()
+        model = OfficialScoringFixtureModel()
 
         def component_loader(**arguments):
             self.assertEqual(arguments, {"channel_count": 2, "device": "cpu"})
             return object(), model
 
-        result = score_time_rcd_official(
-            session, context_length=4, device="cpu",
-            component_loader=component_loader,
-        )
+        with install_fixture_attention_import():
+            scorer = build_time_rcd_official_scorer(
+                channel_count=2, context_length=4, device="cpu",
+                component_loader=component_loader,
+            )
+            result = scorer(session)
+
+        self.assertEqual(result["scores"].shape, (3,))
+        self.assertEqual(model.calls[0][0].shape, (1, 3, 2))
+        self.assertEqual(model.attention._time_rcd_query_chunk_size, TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE)
+
+    def test_official_entrypoint_uses_prepared_scorer_contract(self):
+        session = numpy.arange(6, dtype=numpy.float32).reshape(3, 2)
+        model = OfficialScoringFixtureModel()
+
+        def component_loader(**arguments):
+            self.assertEqual(arguments, {"channel_count": 2, "device": "cpu"})
+            return object(), model
+
+        with install_fixture_attention_import():
+            result = score_time_rcd_official(
+                session, context_length=4, device="cpu",
+                component_loader=component_loader,
+            )
 
         self.assertEqual(result["scores"].shape, (3,))
         self.assertEqual(model.calls[0][0].shape, (1, 3, 2))
