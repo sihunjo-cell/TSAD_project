@@ -14,12 +14,18 @@ import sys
 import time
 from pathlib import Path
 
-import numpy
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
+from tests.checks.run_lightning_dev18 import (
+    PYTORCH_ALLOC_CONF_VALUE,
+    configure_cuda_environment,
+)
+
+configure_cuda_environment()
+
+import numpy
 
 GPU_PROBE_MODELS = ("PaAno", "GDN", "TimeRCD", "TSPulse")
 RESULT_PREFIX = "DEV18_RESOURCE_RESULT="
@@ -236,13 +242,13 @@ def _run_model_probe(spec: dict, inputs: dict, *, device: str):
         adapter.score(validation[:length])
     elif model == "GDN":
         arguments.update({"epochs": 1, "patience": 1})
-        length = arguments["window_size"] + 2 * arguments["batch_size"]
+        length = arguments["window_size"] + 8 * arguments["batch_size"]
         entrypoint(
             (fit[:length],), (validation[:length],), (test[:length],),
             **arguments,
         )
         return {
-            "probe_scope": "exact maximum batch; two consecutive training updates",
+            "probe_scope": "exact maximum batch; eight consecutive training updates",
         }
     elif model == "TimeRCD":
         import torch
@@ -585,6 +591,7 @@ def validate_resource_report(
         and report.get("gate_code_sha256") == gate_code_sha256
         and report.get("input_manifest_sha256") == input_manifest_sha256
         and report.get("budget_id") == budget_id
+        and report.get("pytorch_alloc_conf") == PYTORCH_ALLOC_CONF_VALUE
         and _is_finite_number(maximum_memory_percent, positive=True)
         and maximum_memory_percent <= 80
         and set(report.get("checked_models", ())) == set(expected_models)
@@ -676,6 +683,7 @@ def run_resource_check(
             REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
         ),
         "budget_id": budget["budget_id"],
+        "pytorch_alloc_conf": os.environ["PYTORCH_ALLOC_CONF"],
         "cuda_device": collect_cuda_device_identity(),
         "maximum_memory_percent": maximum_memory_percent,
         "checked_models": sorted(

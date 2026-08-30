@@ -21,8 +21,8 @@ from tests.checks.reset_lightning_dev18 import reset_previous_run
 
 
 class TestDev18ResourceCheck(unittest.TestCase):
-    def test_gdn_probe_runs_two_consecutive_training_batches(self):
-        fit = numpy.zeros((30, 3), dtype=numpy.float32)
+    def test_gdn_probe_runs_eight_consecutive_training_batches(self):
+        fit = numpy.zeros((50, 3), dtype=numpy.float32)
         captured = {}
 
         def entrypoint(fit_sessions, validation_sessions, test_sessions, **arguments):
@@ -50,13 +50,13 @@ class TestDev18ResourceCheck(unittest.TestCase):
                 device="cuda",
             )
 
-        self.assertEqual(captured["fit_length"], 13)
-        self.assertEqual(captured["validation_length"], 13)
-        self.assertEqual(captured["test_length"], 13)
+        self.assertEqual(captured["fit_length"], 37)
+        self.assertEqual(captured["validation_length"], 37)
+        self.assertEqual(captured["test_length"], 37)
         self.assertEqual(captured["arguments"]["epochs"], 1)
         self.assertEqual(
             result.get("probe_scope"),
-            "exact maximum batch; two consecutive training updates",
+            "exact maximum batch; eight consecutive training updates",
         )
 
     def test_selects_highest_ratio_and_largest_model_specific_case(self):
@@ -139,6 +139,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "gate_code_sha256": "b" * 64,
             "input_manifest_sha256": "c" * 64,
             "budget_id": "b123456789abc",
+            "pytorch_alloc_conf": "expandable_segments:True",
             "maximum_memory_percent": 80,
             "cuda_device": {"name": "NVIDIA L4", "total_memory_bytes": 24},
             "checked_models": ["GDN", "MWVAR"],
@@ -167,6 +168,19 @@ class TestDev18ResourceCheck(unittest.TestCase):
                 expected_models={"GDN", "MWVAR"},
             )
             self.assertEqual(validated, report)
+            path.write_text(json.dumps({
+                **report, "pytorch_alloc_conf": "max_split_size_mb:64",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
+                validate_resource_report(
+                    path,
+                    project_commit="a" * 40,
+                    gate_code_sha256="b" * 64,
+                    input_manifest_sha256="c" * 64,
+                    budget_id="b123456789abc",
+                    cuda_device=report["cuda_device"],
+                    expected_models={"GDN", "MWVAR"},
+                )
             path.write_text(json.dumps({**report, "results": []}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
                 validate_resource_report(
@@ -217,7 +231,9 @@ class TestDev18ResourceCheck(unittest.TestCase):
         report = {
             "status": "passed", "project_commit": "a" * 40,
             "gate_code_sha256": "b" * 64, "input_manifest_sha256": "c" * 64,
-            "budget_id": "b123456789abc", "maximum_memory_percent": 80,
+            "budget_id": "b123456789abc",
+            "pytorch_alloc_conf": "expandable_segments:True",
+            "maximum_memory_percent": 80,
             "cuda_device": {"name": "NVIDIA L4", "total_memory_bytes": 24},
             "checked_models": ["TimeRCD", "TSPulse"],
             "results": [time_rcd, tspulse],
@@ -359,6 +375,7 @@ class TestResetDev18Run(unittest.TestCase):
                 root / "experiments" / "01_ghl_main" / "scores" / "dev18" / "score.npy",
                 root / "experiments" / "01_ghl_main" / "logs" / "dev18_score_manifest.csv",
                 root / "experiments" / "01_ghl_main" / "logs" / "dev18_oom_recovery.json",
+                root / "experiments" / "01_ghl_main" / "logs" / "dev18_allocator_recovery.json",
                 root / "experiments" / "01_ghl_main" / "results" / "dev18_tuning" / "table.csv",
             )
             preserved = (

@@ -4,7 +4,8 @@
 
 [계획서 v5](plan_v5.md)의 0·1단계를 마쳤고 2단계 TSB 비-GHL 18개 튜닝을 실행 중이다.
 primary 물리 실행 1,170건 중 1,136건을 마쳤다. series 13 GDN `c1168c94d4dfc`, q10, seed 0은
-CUDA OOM으로 세 번 실패했다. 남은 primary 실행은 34건이며 채점과 선택은 아직 시작하지 않았다.
+CUDA OOM으로 네 번 실패했다. 첫 복구 gate는 통과했지만 장시간 학습 중 CUDA 예약 메모리가
+조각났다. 남은 primary 실행은 34건이며 채점과 선택은 아직 시작하지 않았다.
 
 Dev18 입력 감사, 3,276행 정적 feasibility, 시계열별 `ℓ_max`, VUS-PR evaluator와 단일 실행
 진입점은 봉인했다. 완료한 1,136건은 지우거나 다시 계산하지 않는다. primary logical score 원표
@@ -13,9 +14,10 @@ Dev18 입력 감사, 3,276행 정적 feasibility, 시계열별 `ℓ_max`, VUS-PR
 ## 다음에 할 일 하나
 
 Lightning AI의 non-interruptible L4에서 [series 13 GDN OOM 복구](lightning_studio.md#series-13-gdn-oom-복구)를
-수행한다. `reset_lightning_dev18.py`는 실행하지 않는다. 현재 복구 commit의 80% 자원 JSON이
-`passed`가 된 뒤 단일 runner로 남은 34건을 재개한다. adaptive 정책과 모델별 수동 실행은 이
-gate의 fallback이 아니다.
+수행한다. `reset_lightning_dev18.py`는 실행하지 않는다. 두 번째 직계 복구 commit이
+`expandable_segments:True`와 연속 여덟 GDN training batch를 기록한 80% 자원 JSON을 만든 뒤
+단일 runner로 마지막 복구 시도와 남은 34건을 재개한다. adaptive 정책과 모델별 수동 실행은
+이 gate의 fallback이 아니다.
 
 기본 device는 CUDA다. CUDA가 활성화되지 않은 로컬 노트북에서는 CPU로 되돌리지 않고 즉시
 중단한다. 원격 CPU에서 실행할 때만 `--remote-execution --device cpu`를 명시한다. 실행 전 조건만
@@ -27,7 +29,7 @@ gate의 fallback이 아니다.
 - Dev18 감사: `approved_with_disclosed_source_training_contamination`
 - feasibility: 3,276행 중 feasible 2,592행, structurally infeasible 684행
 - equal-trial config 수: Tier 1·2·3 순서로 `1·2·1`
-- budget: `b5367ad431093` 유지, 복구 commit의 새 L4 자원 gate 전까지 실행 `blocked`
+- budget: `b5367ad431093` 유지, 두 번째 직계 복구 commit의 새 L4 자원 gate 전까지 실행 `blocked`
 - VUS-PR: 공식 TSB-AD `opt` 구현과 대조 통과, 최대 절대 오차 0
 - `ℓ_max`: 18개 시계열별 training-only snapshot 봉인
 - checkpoint: TimeRCD·TSPulse Dev18 1,536×2 forward와 TSPulse batch 동등성 통과

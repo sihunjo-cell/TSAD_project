@@ -29,12 +29,17 @@ class TestLightningDev18(unittest.TestCase):
             require_lightning_cuda(system_name="Linux", cuda_available=True),
         )
 
-    def test_configures_cublas_before_accepting_cuda_runtime(self):
+    def test_configures_cuda_environment_before_accepting_runtime(self):
         require_lightning_cuda = self._require_lightning_cuda()
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(
+            os.environ, {"PYTORCH_ALLOC_CONF": "max_split_size_mb:64"}, clear=True,
+        ):
             require_lightning_cuda(system_name="Linux", cuda_available=True)
             self.assertEqual(
                 os.environ["CUBLAS_WORKSPACE_CONFIG"], ":4096:8",
+            )
+            self.assertEqual(
+                os.environ["PYTORCH_ALLOC_CONF"], "expandable_segments:True",
             )
 
     def test_determinism_is_set_before_runtime_identity_is_sealed(self):

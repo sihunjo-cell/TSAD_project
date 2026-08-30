@@ -65,8 +65,9 @@ checkpoint smoke는 현재 commit의 TimeRCD·TSPulse Dev18 1,536×2 증거를 �
 18개 입력의 크기·SHA-256와 저장 공간 25GB를 확인하고, `PaAno·GDN·TimeRCD·TSPulse`의 exact-panel
 최대 배치를 별도 프로세스에서 실행한다. TimeRCD는 attention query chunk `64`를 쓰며 TSPulse는
 등록 batch `32`와 batch `1`의 time·FFT·prediction·`raw_max` score를 대조한다. GPU나 RAM 사용률이
-80%에 닿거나 동등성이 깨지면 실패다. GDN은 연속 두 개의 최대 training batch를 실행해 배치 사이
-autograd graph가 GPU에 남지 않는지도 함께 확인한다.
+80%에 닿거나 동등성이 깨지면 실패다. GDN은 연속 여덟 개의 최대 training batch를 실행해 배치
+사이 autograd graph가 GPU에 남지 않는지도 함께 확인한다. 자원 보고서에는
+`pytorch_alloc_conf: "expandable_segments:True"`도 기록한다.
 
 JSON에는 `status: "passed"`, 현재 `project_commit`, `budget_id=b5367ad431093`과 TSPulse
 equivalence가 있어야 한다. 그때만 마지막 명령을 실행한다. 진입 파일은 Linux·CUDA와 자원 보고서를
@@ -76,9 +77,10 @@ equivalence가 있어야 한다. 그때만 마지막 명령을 실행한다. 진
 ## series 13 GDN OOM 복구
 
 이 절차는 project commit `501cb23cf0c02b9ebc9d94ca396d09e7049093d7`에서 primary 1,136건을
-완료한 실행에만 쓴다. series 13 GDN `c1168c94d4dfc`, q10, seed 0의 세 번째 CUDA OOM 기록을
-보존하고 같은 trial에 복구 시도 한 번을 추가한다. 새 commit은 기존 산출물의 SHA-256, 실행 환경,
-spec과 execution policy를 모두 다시 검증한다. 다른 commit이나 실패에는 이 예외를 적용하지 않는다.
+완료하고 첫 복구 commit `6d5bcafda7a10fa6247f9cc32fe35d5061a286fa`에서 네 번째 CUDA OOM이
+난 실행에만 쓴다. series 13 GDN `c1168c94d4dfc`, q10, seed 0의 실패 기록을 모두 보존하고 같은
+trial에 마지막 복구 시도 한 번을 추가한다. 새 commit은 기존 산출물의 SHA-256, 실행 환경, spec과
+execution policy를 모두 다시 검증한다. 다른 commit이나 실패에는 이 예외를 적용하지 않는다.
 
 Studio를 같은 `1×L4`, `Interruptible off`로 연다. `reset_lightning_dev18.py`, setup과 checkpoint
 smoke는 실행하지 않는다. 아래 순서에서 기존 primary 완료 수가 1,136보다 작거나 새 자원 gate가
@@ -91,13 +93,13 @@ git pull --ff-only origin codex/lightning-dev18
 test -z "$(git status --porcelain)"
 /home/zeus/miniconda3/bin/python -c 'import csv; rows=list(csv.DictReader(open("experiments/01_ghl_main/logs/dev18_score_manifest.csv"))); count=sum(row["status"]=="complete" and row["primary_score"]=="true" for row in rows); assert count >= 1136, count; print("preserved primary:", count)'
 /home/zeus/miniconda3/bin/python tests/checks/check_dev18_resources.py --data-root ../shared_data/TSAD_project --maximum-memory-percent 80
-/home/zeus/miniconda3/bin/python -c 'import json, subprocess; report=json.load(open(".runtime/dev18_resource_gate.json")); head=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(); assert report["status"]=="passed" and report["project_commit"]==head, report; print("RESOURCE GATE PASSED")'
+/home/zeus/miniconda3/bin/python -c 'import json, subprocess; report=json.load(open(".runtime/dev18_resource_gate.json")); head=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(); assert report["status"]=="passed" and report["project_commit"]==head and report["pytorch_alloc_conf"]=="expandable_segments:True", report; print("RESOURCE GATE PASSED")'
 /home/zeus/miniconda3/bin/python tests/checks/run_lightning_dev18.py --data-root ../shared_data/TSAD_project
 ```
 
 복구 진입점은 검증을 통과한 기존 1,136건을 건너뛰고 남은 primary 34건만 실행한다. 실행 중 Studio가
 끊기면 같은 commit 재개 절차를 따른다. OOM 복구 trial도 외부 중단이면 처음부터 다시 시작하지만,
-네 번째 모델 실패가 기록되면 추가 시도 없이 멈춘다. 최종 성공값은 manifest 1,224행, primary
+다섯 번째 모델 실패가 기록되면 추가 시도 없이 멈춘다. 최종 성공값은 manifest 1,224행, primary
 1,170행, logical score 원표 1,602행이다.
 
 ## 같은 commit에서 중단 후 재개

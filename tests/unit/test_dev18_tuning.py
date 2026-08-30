@@ -383,12 +383,28 @@ class TestDev18Tuning(unittest.TestCase):
     def test_resume_source_is_limited_to_the_direct_recovery_commit(self):
         self.assertTrue(hasattr(run_dev18_tuning, "_compatible_resume_source"))
         source_commit = run_dev18_tuning.DEV18_RECOVERY_SOURCE_COMMIT
-        changed_files = "\n".join(sorted(
-            run_dev18_tuning.DEV18_RECOVERY_CHANGED_PATHS,
-        )) + "\n"
+        parent_commit = getattr(
+            run_dev18_tuning, "DEV18_RECOVERY_PARENT_COMMIT", None,
+        )
+        self.assertEqual(
+            parent_commit, "6d5bcafda7a10fa6247f9cc32fe35d5061a286fa",
+        )
+        changed_files = "\n".join(sorted({
+            "docs/lead/lightning_studio.md",
+            "docs/lead/next_session.md",
+            "docs/lead/plan_v5.md",
+            "docs/lead/process_0_preverify.md",
+            "tests/checks/check_dev18_resources.py",
+            "tests/checks/reset_lightning_dev18.py",
+            "tests/checks/run_lightning_dev18.py",
+            "tests/ghl_main/run_dev18_tuning.py",
+            "tests/unit/test_dev18_tuning.py",
+            "tests/unit/test_lightning_dev18.py",
+            "tests/unit/test_lightning_dev18_resource_tools.py",
+        })) + "\n"
         with patch(
             "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
-            side_effect=[source_commit + "\n", changed_files],
+            side_effect=[parent_commit + "\n", changed_files],
         ):
             self.assertEqual(
                 run_dev18_tuning._compatible_resume_source(), source_commit,
@@ -400,7 +416,7 @@ class TestDev18Tuning(unittest.TestCase):
             self.assertIsNone(run_dev18_tuning._compatible_resume_source())
         with patch(
             "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
-            side_effect=[source_commit + "\n", changed_files + "unexpected.py\n"],
+            side_effect=[parent_commit + "\n", changed_files + "unexpected.py\n"],
         ):
             self.assertIsNone(run_dev18_tuning._compatible_resume_source())
 
@@ -411,7 +427,7 @@ class TestDev18Tuning(unittest.TestCase):
             "physical_ratio": "10", "seed": "0", "score_variant": "",
             "status": "failed",
             "status_reason": "OutOfMemoryError: CUDA out of memory. Tried to allocate 3.82 GiB",
-            "budget_id": "b5367ad431093", "retry_count": "2",
+            "budget_id": "b5367ad431093", "retry_count": "3",
         }
         authorized = run_dev18_tuning._authorized_oom_recovery_row(
             [row],
@@ -423,7 +439,7 @@ class TestDev18Tuning(unittest.TestCase):
             {**row, "series": "12"},
             {**row, "config_id": "cf1a967db6cfe"},
             {**row, "status_reason": "RuntimeError: unrelated"},
-            {**row, "retry_count": "3"},
+            {**row, "retry_count": "4"},
         ):
             with self.subTest(changed=changed):
                 self.assertIsNone(run_dev18_tuning._authorized_oom_recovery_row(
@@ -443,7 +459,7 @@ class TestDev18Tuning(unittest.TestCase):
             "series": "13", "model": "GDN", "config_id": "c1168c94d4dfc",
             "physical_ratio": "10", "seed": "0", "score_variant": "",
             "status": "failed", "status_reason": "OutOfMemoryError: CUDA out of memory.",
-            "budget_id": "b5367ad431093", "retry_count": "2",
+            "budget_id": "b5367ad431093", "retry_count": "3",
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "recovery.json"
@@ -457,12 +473,26 @@ class TestDev18Tuning(unittest.TestCase):
             second = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(first, second)
             self.assertEqual(first["original_failure"], row)
-            self.assertEqual(first["authorized_retry_count"], 3)
+            self.assertEqual(
+                first.get("failed_project_commit"),
+                "6d5bcafda7a10fa6247f9cc32fe35d5061a286fa",
+            )
+            self.assertEqual(first["authorized_retry_count"], 4)
             with self.assertRaisesRegex(ValueError, "복구 영수증"):
                 run_dev18_tuning._write_oom_recovery_receipt(
                     path, {**row, "seed": "1"},
                     recovery_project_commit="b" * 40,
                 )
+
+    def test_allocator_recovery_allows_exactly_retry_four(self):
+        attempt_limit = getattr(
+            run_dev18_tuning, "_authorized_attempt_limit", None,
+        )
+        self.assertIsNotNone(attempt_limit)
+        if attempt_limit is None:
+            return
+        self.assertEqual(attempt_limit(3, recovery_row=None), 3)
+        self.assertEqual(attempt_limit(3, recovery_row={"retry_count": "3"}), 5)
 
     def test_run_snapshot_records_and_recovery_checks_fixed_execution_policy(self):
         spec = {

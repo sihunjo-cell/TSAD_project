@@ -21,8 +21,9 @@
 
 0·1단계는 끝났다. 현재는 2단계 TSB 튜닝의 exact panel을 실행 중이다. 후보, 예산, VUS-PR,
 시계열별 `ℓ_max`, checkpoint와 실행 환경은 봉인했다. primary 물리 실행 1,170건 중 1,136건을
-마쳤고 series 13 GDN 한 건이 CUDA OOM으로 세 번 실패해 중단됐다. 완료 산출물은 보존하고
-GDN 메모리 보유 문제와 자원 gate를 고친 단일 복구 commit에서 남은 34건만 재개한다.
+마쳤고 series 13 GDN 한 건이 CUDA OOM으로 네 번 실패해 중단됐다. 첫 복구에서 attention graph
+보유는 없앴으나 장시간 학습 중 CUDA 예약 메모리가 조각났다. 완료 산출물은 보존하고
+`expandable_segments`와 더 긴 GDN 자원 gate를 적용한 직계 복구 commit에서 남은 34건만 재개한다.
 
 ## 1. 최종 연구 질문
 

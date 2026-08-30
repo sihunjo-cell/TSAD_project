@@ -13,11 +13,20 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
+PYTORCH_ALLOC_CONF_VALUE = "expandable_segments:True"
+
+
+def configure_cuda_environment() -> None:
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    os.environ["PYTORCH_ALLOC_CONF"] = PYTORCH_ALLOC_CONF_VALUE
+
+
+configure_cuda_environment()
 
 
 def require_lightning_cuda(*, system_name=None, cuda_available=None) -> None:
     """Windows 봉인 혼입과 무료 CPU Studio의 실험 실행을 차단한다."""
-    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    configure_cuda_environment()
     system_name = system_name or platform.system()
     if system_name != "Linux":
         raise RuntimeError("Lightning 진입점은 Linux Studio에서만 실행한다")
