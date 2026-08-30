@@ -1,6 +1,8 @@
 """Lightning Dev18 진입점의 가속기 차단 계약을 검증한다."""
 
+import os
 import unittest
+from unittest.mock import patch
 
 
 class TestLightningDev18(unittest.TestCase):
@@ -26,6 +28,14 @@ class TestLightningDev18(unittest.TestCase):
         self.assertIsNone(
             require_lightning_cuda(system_name="Linux", cuda_available=True),
         )
+
+    def test_configures_cublas_before_accepting_cuda_runtime(self):
+        require_lightning_cuda = self._require_lightning_cuda()
+        with patch.dict(os.environ, {}, clear=True):
+            require_lightning_cuda(system_name="Linux", cuda_available=True)
+            self.assertEqual(
+                os.environ["CUBLAS_WORKSPACE_CONFIG"], ":4096:8",
+            )
 
     def test_determinism_is_set_before_runtime_identity_is_sealed(self):
         try:

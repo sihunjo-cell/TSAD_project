@@ -984,7 +984,10 @@ def _validate_bound_run_files(
     snapshot_spec = snapshot.get("spec")
     if (
         not isinstance(snapshot_spec, dict)
-        or (expected_spec is not None and snapshot_spec != expected_spec)
+        or (
+            expected_spec is not None
+            and _json(snapshot_spec) != _json(expected_spec)
+        )
         or snapshot.get("execution_policy")
         != build_registered_execution_policy(expected_spec or snapshot_spec)
     ):

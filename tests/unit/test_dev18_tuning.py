@@ -416,6 +416,33 @@ class TestDev18Tuning(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "execution policy"):
                     _validate_bound_run_files(metadata)
 
+    def test_run_snapshot_accepts_json_equivalent_registered_spec(self):
+        spec = {
+            "model": "MWVAR",
+            "hyperparameters": {},
+            "score_variants": ("",),
+        }
+        inputs = {
+            "input_identity": {"sha256": "b" * 64},
+            "source_ranges": {"test_sessions": ((1, 2),)},
+        }
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tests.ghl_main.run_dev18_tuning._git_head", return_value="a" * 40,
+        ):
+            root = Path(directory)
+            snapshot_path = _write_run_snapshot(
+                root, spec, inputs, {"device": "cuda"},
+            )
+            metadata = {
+                "run_snapshot": {
+                    "file": snapshot_path.name,
+                    "sha256": hashlib.sha256(snapshot_path.read_bytes()).hexdigest(),
+                },
+                "training_files": {},
+            }
+            with patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root):
+                _validate_bound_run_files(metadata, expected_spec=spec)
+
     def test_primary_manifest_must_match_exact_budget_keys(self):
         budget = {
             "budget_id": "b123456789abc",

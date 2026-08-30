@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 def require_lightning_cuda(*, system_name=None, cuda_available=None) -> None:
     """Windows 봉인 혼입과 무료 CPU Studio의 실험 실행을 차단한다."""
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     system_name = system_name or platform.system()
     if system_name != "Linux":
         raise RuntimeError("Lightning 진입점은 Linux Studio에서만 실행한다")
