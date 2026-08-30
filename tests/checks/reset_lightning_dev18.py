@@ -19,6 +19,8 @@ RUN_PATHS = (
     Path("experiments/01_ghl_main/scores/dev18"),
     Path("experiments/01_ghl_main/logs/dev18_score_manifest.csv"),
     Path("experiments/01_ghl_main/logs/.dev18_score_manifest.csv.tmp"),
+    Path("experiments/01_ghl_main/logs/dev18_oom_recovery.json"),
+    Path("experiments/01_ghl_main/logs/.dev18_oom_recovery.json.tmp"),
     Path("experiments/01_ghl_main/results/dev18_tuning"),
 )
 

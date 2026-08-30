@@ -5,8 +5,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+import numpy
 
 from tests.checks.check_dev18_resources import (
+    _run_model_probe,
     capacity_status,
     disk_status,
     select_probe_cases,
@@ -17,6 +21,44 @@ from tests.checks.reset_lightning_dev18 import reset_previous_run
 
 
 class TestDev18ResourceCheck(unittest.TestCase):
+    def test_gdn_probe_runs_two_consecutive_training_batches(self):
+        fit = numpy.zeros((30, 3), dtype=numpy.float32)
+        captured = {}
+
+        def entrypoint(fit_sessions, validation_sessions, test_sessions, **arguments):
+            captured["fit_length"] = len(fit_sessions[0])
+            captured["validation_length"] = len(validation_sessions[0])
+            captured["test_length"] = len(test_sessions[0])
+            captured["arguments"] = arguments
+
+        with patch(
+            "src.common.run_registered_model.build_entrypoint_arguments",
+            return_value={"window_size": 5, "batch_size": 4},
+        ), patch(
+            "src.common.run_registered_model.load_model_entrypoint",
+            return_value=entrypoint,
+        ), patch(
+            "src.common.run_registered_model.prepare_session_inputs",
+            return_value={
+                "fit_sessions": (fit,),
+                "validation_sessions": (fit,),
+            },
+        ):
+            result = _run_model_probe(
+                {"model": "GDN", "ratio": 100},
+                {"normal_training": fit, "test_sessions": (fit,)},
+                device="cuda",
+            )
+
+        self.assertEqual(captured["fit_length"], 13)
+        self.assertEqual(captured["validation_length"], 13)
+        self.assertEqual(captured["test_length"], 13)
+        self.assertEqual(captured["arguments"]["epochs"], 1)
+        self.assertEqual(
+            result.get("probe_scope"),
+            "exact maximum batch; two consecutive training updates",
+        )
+
     def test_selects_highest_ratio_and_largest_model_specific_case(self):
         specs = [
             {
@@ -316,6 +358,7 @@ class TestResetDev18Run(unittest.TestCase):
                 / "time_rcd" / "dev18_checkpoint_smoke.json",
                 root / "experiments" / "01_ghl_main" / "scores" / "dev18" / "score.npy",
                 root / "experiments" / "01_ghl_main" / "logs" / "dev18_score_manifest.csv",
+                root / "experiments" / "01_ghl_main" / "logs" / "dev18_oom_recovery.json",
                 root / "experiments" / "01_ghl_main" / "results" / "dev18_tuning" / "table.csv",
             )
             preserved = (

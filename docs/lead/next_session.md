@@ -2,21 +2,20 @@
 
 ## 현재 게이트
 
-[계획서 v5](plan_v5.md)의 0·1단계를 마쳤다. 지금은 2단계 TSB 비-GHL 18개 튜닝을 실행하기
-직전이다. 전체 HPO와 채점은 아직 시작하지 않았다. 다만 현재 project commit에서 새 gate 증거가
-없어 exact panel은 blocked다.
+[계획서 v5](plan_v5.md)의 0·1단계를 마쳤고 2단계 TSB 비-GHL 18개 튜닝을 실행 중이다.
+primary 물리 실행 1,170건 중 1,136건을 마쳤다. series 13 GDN `c1168c94d4dfc`, q10, seed 0은
+CUDA OOM으로 세 번 실패했다. 남은 primary 실행은 34건이며 채점과 선택은 아직 시작하지 않았다.
 
 Dev18 입력 감사, 3,276행 정적 feasibility, 시계열별 `ℓ_max`, VUS-PR evaluator와 단일 실행
-진입점은 봉인했다. exact panel은 시계열마다 물리 실행 65건이고 18개 전체로는 1,170건이다.
-primary logical score 원표는 1,602행이 완성돼야 선택 단계로 넘어간다. 기존 `c...` config 행과
-`budget_id=b5367ad431093`은 새 TimeRCD smoke와 TSPulse 동등성이 같을 때만 유지한다.
+진입점은 봉인했다. 완료한 1,136건은 지우거나 다시 계산하지 않는다. primary logical score 원표
+1,602행이 완성돼야 선택 단계로 넘어간다.
 
 ## 다음에 할 일 하나
 
-Lightning AI의 non-interruptible L4에서 [새 commit 시작 절차](lightning_studio.md#새-commit에서-한-번만-초기화하고-시작)를 처음부터
-수행한다. fresh checkpoint smoke, TSPulse batch 1 대 batch 32 동등성, 80% 자원 JSON이 모두
-`passed`가 되기 전에는 `run_lightning_dev18.py`를 실행하지 않는다. adaptive 정책과 모델별 수동
-실행은 이 gate의 fallback이 아니다.
+Lightning AI의 non-interruptible L4에서 [series 13 GDN OOM 복구](lightning_studio.md#series-13-gdn-oom-복구)를
+수행한다. `reset_lightning_dev18.py`는 실행하지 않는다. 현재 복구 commit의 80% 자원 JSON이
+`passed`가 된 뒤 단일 runner로 남은 34건을 재개한다. adaptive 정책과 모델별 수동 실행은 이
+gate의 fallback이 아니다.
 
 기본 device는 CUDA다. CUDA가 활성화되지 않은 로컬 노트북에서는 CPU로 되돌리지 않고 즉시
 중단한다. 원격 CPU에서 실행할 때만 `--remote-execution --device cpu`를 명시한다. 실행 전 조건만
@@ -28,10 +27,10 @@ Lightning AI의 non-interruptible L4에서 [새 commit 시작 절차](lightning_
 - Dev18 감사: `approved_with_disclosed_source_training_contamination`
 - feasibility: 3,276행 중 feasible 2,592행, structurally infeasible 684행
 - equal-trial config 수: Tier 1·2·3 순서로 `1·2·1`
-- budget: 새 gate 동등성 전까지 조건부 `sealed`, 실행 `blocked`
+- budget: `b5367ad431093` 유지, 복구 commit의 새 L4 자원 gate 전까지 실행 `blocked`
 - VUS-PR: 공식 TSB-AD `opt` 구현과 대조 통과, 최대 절대 오차 0
 - `ℓ_max`: 18개 시계열별 training-only snapshot 봉인
-- checkpoint: 과거 TimeRCD·TSPulse Dev18 1,536×2 forward는 현재 commit에서 재실행 필요
+- checkpoint: TimeRCD·TSPulse Dev18 1,536×2 forward와 TSPulse batch 동등성 통과
 - Python: `tsad_models_311`, CPython 3.11.14
 - 실데이터 gate: MWVAR 160×2 smoke 통과
 

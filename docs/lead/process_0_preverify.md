@@ -13,16 +13,16 @@ GDN은 공식 `d-ailin/GDN` 적응 구현 하나만 활성 모델로 인정한�
 동등성을 증명하는 작업은 필요하지 않다.
 
 Dev18 Role-A 감사와 manifest 인수, label-blind 정적 feasibility, exact `equal_trial` panel과
-`budget_id=b5367ad431093`, VUS-PR evaluator와 시계열별 `ℓ_max`까지 닫았다. 현재 정지선은
-2단계 exact panel 직전이다. 새 project commit에서 TimeRCD Dev18 checkpoint smoke, TSPulse의
-batch 1 대 등록 batch 32 실측 동등성, non-interruptible L4의 80% 자원 보고서를 다시 만들기 전에는
-panel을 실행하지 않는다.
+`budget_id=b5367ad431093`, VUS-PR evaluator와 시계열별 `ℓ_max`까지 닫았다. non-interruptible L4의
+checkpoint smoke와 80% 자원 gate를 통과해 2단계 exact panel을 실행했고, primary 물리 실행
+1,170건 중 1,136건을 마쳤다. series 13 GDN `c1168c94d4dfc`, q10, seed 0은 연속 배치 사이에
+attention autograd graph가 남아 CUDA OOM으로 세 번 실패했다.
 
-Dev18 18개 원본은 감사와 160×2 gate smoke에만 썼다. 전체 모델 점수와 HPO는 실행하지 않았다.
-라벨은 Role-A 오염·구간 감사와 evaluator 대조에만 썼고 feasibility, 예산, checkpoint forward와
-gate smoke에서는 읽지 않았다. 과거 TimeRCD·TSPulse 준비 증거는 현재 commit의 실행 허가가 아니다.
-`c1c5aeea6f7d3`, `c12c5e6196ea5`를 포함한 기존 `c...` config 행과
-`budget_id=b5367ad431093`은 위 동등성 결과가 같을 때만 유지한다.
+완료한 1,136건은 score·metadata·training file SHA-256, 입력, 환경, spec, execution policy를
+그대로 검증해 보존한다. GDN attention 보관과 이를 놓친 한 배치 자원 probe만 고친 직계 복구
+commit에서 새 L4 자원 gate를 통과한 뒤 남은 34건을 재개한다. 모델 config, batch, epoch, seed,
+예산과 점수 계산은 바꾸지 않는다. 라벨은 Role-A 오염·구간 감사와 evaluator 대조에만 썼으며
+feasibility, 예산, checkpoint forward와 gate smoke에서는 읽지 않았다.
 
 ## 데이터 EDA 인수 조건
 
@@ -147,12 +147,11 @@ GDN 검사는 한 구현의 충실도 검사다. 과거 구현과 수치 결과�
 
 ## 현재 남은 항목
 
-- Dev18: clean worktree의 새 project commit에서 TimeRCD·TSPulse Dev18 checkpoint smoke를 다시
-  만들고, TSPulse batch 1 대 batch 32 동등성과 non-interruptible L4의 80% 자원 gate를 통과한 뒤
-  봉인된 단일 진입 파일로 exact panel 실행
+- Dev18: 기존 1,136건을 지우지 않고 단일 복구 commit의 non-interruptible L4 80% 자원 gate를
+  통과한 뒤 남은 34건 재개. 전체 primary 1,170건과 logical score 원표 1,602행 완성
 - GHL25·HAI: 각 본실험을 열기 전 Role-A EDA·manifest 최종 승인
 - 최종 평가: GHL·HAI score가 생긴 뒤 threshold와 보조 F1 원표 연결
 
 GHL25·HAI 항목은 Dev18 튜닝을 막지 않는다. adaptive 정책이나 모델별 수동 실행은 이 gate의
-fallback이 아니다. 다음 시작점은 [Lightning AI 실행 절차](lightning_studio.md)의 순서대로 gate를
-닫은 뒤 `tests/checks/run_lightning_dev18.py`를 실행하는 일이다.
+fallback이 아니다. 다음 시작점은 [Lightning AI 실행 절차](lightning_studio.md)의 OOM 복구
+순서대로 새 자원 gate를 닫고 `tests/checks/run_lightning_dev18.py`를 재개하는 일이다.

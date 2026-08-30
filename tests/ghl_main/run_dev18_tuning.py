@@ -64,11 +64,33 @@ DEFAULT_SCORE_MANIFEST_PATH = (
     REPOSITORY_ROOT / "experiments" / "01_ghl_main" / "logs"
     / "dev18_score_manifest.csv"
 )
+DEFAULT_OOM_RECOVERY_PATH = (
+    REPOSITORY_ROOT / "experiments" / "01_ghl_main" / "logs"
+    / "dev18_oom_recovery.json"
+)
 DEFAULT_REAL_GATE_REPORT_PATH = (
     REPOSITORY_ROOT / "experiments" / "checks" / "reference_code"
     / "active_models" / "dev18_real_gate_smoke.json"
 )
 OFFICIAL_TSB_AD_COMMIT = "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48"
+DEV18_RECOVERY_SOURCE_COMMIT = "501cb23cf0c02b9ebc9d94ca396d09e7049093d7"
+DEV18_RECOVERY_BUDGET_ID = "b5367ad431093"
+DEV18_RECOVERY_TRIAL_KEY = (
+    "13", "GDN", "c1168c94d4dfc", "10", "0", "",
+)
+DEV18_RECOVERY_CHANGED_PATHS = frozenset({
+    "docs/lead/lightning_studio.md",
+    "docs/lead/next_session.md",
+    "docs/lead/plan_v5.md",
+    "docs/lead/process_0_preverify.md",
+    "src/models/tier2/gdn_official/official.py",
+    "tests/checks/check_dev18_resources.py",
+    "tests/checks/reset_lightning_dev18.py",
+    "tests/ghl_main/run_dev18_tuning.py",
+    "tests/unit/test_dev18_tuning.py",
+    "tests/unit/test_gdn_official.py",
+    "tests/unit/test_lightning_dev18_resource_tools.py",
+})
 FINAL_SPLIT_ROLES = (
     "ghl25_final", "train1_to_test1", "train1_train2_to_test2",
 )
@@ -852,6 +874,23 @@ def _git_head() -> str:
     ).strip()
 
 
+def _compatible_resume_source() -> str | None:
+    parent = subprocess.check_output(
+        ["git", "rev-parse", "HEAD^"], cwd=REPOSITORY_ROOT, text=True,
+    ).strip()
+    if parent != DEV18_RECOVERY_SOURCE_COMMIT:
+        return None
+    changed_paths = set(subprocess.check_output(
+        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+        cwd=REPOSITORY_ROOT, text=True,
+    ).splitlines())
+    return (
+        DEV18_RECOVERY_SOURCE_COMMIT
+        if changed_paths == DEV18_RECOVERY_CHANGED_PATHS
+        else None
+    )
+
+
 def _require_same_worktree(expected_head: str) -> None:
     _require_clean_worktree()
     if _git_head() != expected_head:
@@ -948,6 +987,7 @@ def _record_seed_state(snapshot_path: Path, result: dict) -> None:
 
 def _validate_bound_run_files(
     metadata: dict, *, expected_project_commit: str | None = None,
+    compatible_project_commit: str | None = None,
     expected_environment: dict | None = None, expected_spec: dict | None = None,
 ) -> None:
     references = [metadata.get("run_snapshot")]
@@ -969,10 +1009,8 @@ def _validate_bound_run_files(
     ).resolve()
     snapshot = _read_json(snapshot_path)
     if expected_project_commit is not None or expected_environment is not None:
-        if (
-            expected_project_commit is not None
-            and snapshot.get("project_commit") != expected_project_commit
-        ):
+        accepted_commits = {expected_project_commit, compatible_project_commit} - {None}
+        if accepted_commits and snapshot.get("project_commit") not in accepted_commits:
             raise ValueError("Dev18 재개 snapshot의 project commit이 현재 HEAD와 다르다")
         if (
             expected_environment is not None
@@ -1052,6 +1090,7 @@ def _expected_variants(panel_row: dict) -> tuple[str, ...]:
 def _completed_run(
     manifest_rows, *, spec: dict, panel_row: dict, series: int,
     input_manifest_path, expected_project_commit: str,
+    compatible_project_commit: str | None,
     expected_environment: dict,
 ) -> bool:
     from tests.ghl_main.check_registered_outputs import check_registered_output
@@ -1086,10 +1125,60 @@ def _completed_run(
         _validate_bound_run_files(
             _read_json(metadata_path),
             expected_project_commit=expected_project_commit,
+            compatible_project_commit=compatible_project_commit,
             expected_environment=expected_environment,
             expected_spec=spec,
         )
     return True
+
+
+def _authorized_oom_recovery_row(
+    prior_rows, *, budget_id: str, compatible_project_commit: str | None,
+) -> dict | None:
+    if (
+        compatible_project_commit != DEV18_RECOVERY_SOURCE_COMMIT
+        or budget_id != DEV18_RECOVERY_BUDGET_ID
+        or len(prior_rows) != 1
+    ):
+        return None
+    row = prior_rows[0]
+    if (
+        _manifest_key(row) == DEV18_RECOVERY_TRIAL_KEY
+        and row.get("status") == "failed"
+        and row.get("budget_id") == DEV18_RECOVERY_BUDGET_ID
+        and str(row.get("retry_count")) == "2"
+        and str(row.get("status_reason", "")).startswith(
+            "OutOfMemoryError: CUDA out of memory."
+        )
+    ):
+        return row
+    return None
+
+
+def _write_oom_recovery_receipt(
+    path: Path, original_failure: dict, *, recovery_project_commit: str,
+) -> None:
+    path = Path(path)
+    payload = {
+        "schema_version": 1,
+        "source_project_commit": DEV18_RECOVERY_SOURCE_COMMIT,
+        "recovery_project_commit": recovery_project_commit,
+        "budget_id": DEV18_RECOVERY_BUDGET_ID,
+        "trial_key": list(DEV18_RECOVERY_TRIAL_KEY),
+        "authorized_retry_count": 3,
+        "original_failure": dict(original_failure),
+    }
+    if path.is_file():
+        if _read_json(path) != payload:
+            raise ValueError("Dev18 OOM 복구 영수증이 현재 실패 기록과 다르다")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.tmp")
+    temporary_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
 
 
 def _run_one_spec(
@@ -1263,6 +1352,7 @@ def execute_panel(
     )
     environment = readiness["environment"]
     project_commit = _git_head()
+    compatible_project_commit = _compatible_resume_source()
     from tests.ghl_main.run_registered_models import load_registered_inputs
 
     for entry in series_entries:
@@ -1278,6 +1368,7 @@ def execute_panel(
                 manifest_rows, spec=spec, panel_row=panel_row, series=series,
                 input_manifest_path=input_manifest_path,
                 expected_project_commit=project_commit,
+                compatible_project_commit=compatible_project_commit,
                 expected_environment=environment,
             ):
                 continue
@@ -1292,6 +1383,7 @@ def execute_panel(
                     candidate_rows, spec=spec, panel_row=panel_row, series=series,
                     input_manifest_path=input_manifest_path,
                     expected_project_commit=project_commit,
+                    compatible_project_commit=compatible_project_commit,
                     expected_environment=environment,
                 ):
                     raise ValueError("Dev18 완료 영수증 산출물을 복구하지 못했다")
@@ -1311,6 +1403,18 @@ def execute_panel(
                 default=0,
             )
             maximum_attempts = budget["failure_rules"]["maximum_total_attempts"]
+            recovery_row = _authorized_oom_recovery_row(
+                prior_rows,
+                budget_id=budget["budget_id"],
+                compatible_project_commit=compatible_project_commit,
+            )
+            if recovery_row is not None:
+                maximum_attempts += 1
+                _write_oom_recovery_receipt(
+                    DEFAULT_OOM_RECOVERY_PATH,
+                    recovery_row,
+                    recovery_project_commit=project_commit,
+                )
             if attempts_used >= maximum_attempts:
                 raise RuntimeError("Dev18 trial이 봉인된 최대 시도 횟수에 도달했다")
             for attempt in range(attempts_used, maximum_attempts):

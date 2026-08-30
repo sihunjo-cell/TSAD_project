@@ -2,6 +2,7 @@
 
 import csv
 import hashlib
+import inspect
 import json
 import subprocess
 import sys
@@ -328,6 +329,10 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_resume_snapshot_must_match_current_project_commit(self):
+        self.assertIn(
+            "compatible_project_commit",
+            inspect.signature(_validate_bound_run_files).parameters,
+        )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             snapshot = root / "run_snapshot.json"
@@ -355,6 +360,17 @@ class TestDev18Tuning(unittest.TestCase):
                     _validate_bound_run_files(
                         metadata, expected_project_commit="b" * 40,
                     )
+                _validate_bound_run_files(
+                    metadata,
+                    expected_project_commit="b" * 40,
+                    compatible_project_commit="a" * 40,
+                )
+                with self.assertRaisesRegex(ValueError, "commit"):
+                    _validate_bound_run_files(
+                        metadata,
+                        expected_project_commit="b" * 40,
+                        compatible_project_commit="c" * 40,
+                    )
                 with self.assertRaisesRegex(ValueError, "환경"):
                     _validate_bound_run_files(
                         metadata,
@@ -363,6 +379,90 @@ class TestDev18Tuning(unittest.TestCase):
                             "runtime_snapshot": {"sha256": "d" * 64},
                         },
                     )
+
+    def test_resume_source_is_limited_to_the_direct_recovery_commit(self):
+        self.assertTrue(hasattr(run_dev18_tuning, "_compatible_resume_source"))
+        source_commit = run_dev18_tuning.DEV18_RECOVERY_SOURCE_COMMIT
+        changed_files = "\n".join(sorted(
+            run_dev18_tuning.DEV18_RECOVERY_CHANGED_PATHS,
+        )) + "\n"
+        with patch(
+            "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
+            side_effect=[source_commit + "\n", changed_files],
+        ):
+            self.assertEqual(
+                run_dev18_tuning._compatible_resume_source(), source_commit,
+            )
+        with patch(
+            "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
+            return_value="f" * 40 + "\n",
+        ):
+            self.assertIsNone(run_dev18_tuning._compatible_resume_source())
+        with patch(
+            "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
+            side_effect=[source_commit + "\n", changed_files + "unexpected.py\n"],
+        ):
+            self.assertIsNone(run_dev18_tuning._compatible_resume_source())
+
+    def test_only_exact_series13_gdn_oom_gets_one_recovery_attempt(self):
+        self.assertTrue(hasattr(run_dev18_tuning, "_authorized_oom_recovery_row"))
+        row = {
+            "series": "13", "model": "GDN", "config_id": "c1168c94d4dfc",
+            "physical_ratio": "10", "seed": "0", "score_variant": "",
+            "status": "failed",
+            "status_reason": "OutOfMemoryError: CUDA out of memory. Tried to allocate 3.82 GiB",
+            "budget_id": "b5367ad431093", "retry_count": "2",
+        }
+        authorized = run_dev18_tuning._authorized_oom_recovery_row(
+            [row],
+            budget_id="b5367ad431093",
+            compatible_project_commit=run_dev18_tuning.DEV18_RECOVERY_SOURCE_COMMIT,
+        )
+        self.assertEqual(authorized, row)
+        for changed in (
+            {**row, "series": "12"},
+            {**row, "config_id": "cf1a967db6cfe"},
+            {**row, "status_reason": "RuntimeError: unrelated"},
+            {**row, "retry_count": "3"},
+        ):
+            with self.subTest(changed=changed):
+                self.assertIsNone(run_dev18_tuning._authorized_oom_recovery_row(
+                    [changed],
+                    budget_id="b5367ad431093",
+                    compatible_project_commit=run_dev18_tuning.DEV18_RECOVERY_SOURCE_COMMIT,
+                ))
+        self.assertIsNone(run_dev18_tuning._authorized_oom_recovery_row(
+            [row],
+            budget_id="b5367ad431093",
+            compatible_project_commit=None,
+        ))
+
+    def test_oom_recovery_receipt_preserves_original_failure_idempotently(self):
+        self.assertTrue(hasattr(run_dev18_tuning, "_write_oom_recovery_receipt"))
+        row = {
+            "series": "13", "model": "GDN", "config_id": "c1168c94d4dfc",
+            "physical_ratio": "10", "seed": "0", "score_variant": "",
+            "status": "failed", "status_reason": "OutOfMemoryError: CUDA out of memory.",
+            "budget_id": "b5367ad431093", "retry_count": "2",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "recovery.json"
+            run_dev18_tuning._write_oom_recovery_receipt(
+                path, row, recovery_project_commit="b" * 40,
+            )
+            first = json.loads(path.read_text(encoding="utf-8"))
+            run_dev18_tuning._write_oom_recovery_receipt(
+                path, row, recovery_project_commit="b" * 40,
+            )
+            second = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(first, second)
+            self.assertEqual(first["original_failure"], row)
+            self.assertEqual(first["authorized_retry_count"], 3)
+            with self.assertRaisesRegex(ValueError, "복구 영수증"):
+                run_dev18_tuning._write_oom_recovery_receipt(
+                    path, {**row, "seed": "1"},
+                    recovery_project_commit="b" * 40,
+                )
 
     def test_run_snapshot_records_and_recovery_checks_fixed_execution_policy(self):
         spec = {

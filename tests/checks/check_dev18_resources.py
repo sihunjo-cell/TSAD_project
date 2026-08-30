@@ -236,11 +236,14 @@ def _run_model_probe(spec: dict, inputs: dict, *, device: str):
         adapter.score(validation[:length])
     elif model == "GDN":
         arguments.update({"epochs": 1, "patience": 1})
-        length = arguments["window_size"] + arguments["batch_size"]
+        length = arguments["window_size"] + 2 * arguments["batch_size"]
         entrypoint(
             (fit[:length],), (validation[:length],), (test[:length],),
             **arguments,
         )
+        return {
+            "probe_scope": "exact maximum batch; two consecutive training updates",
+        }
     elif model == "TimeRCD":
         import torch
 
@@ -380,7 +383,10 @@ def run_child_probe(
         "ram_total_bytes": _system_memory_bytes(),
         "ram_peak_percent": round(peak_ram * 100 / _system_memory_bytes(), 2),
         "maximum_memory_percent": maximum_memory_percent,
-        "probe_scope": "exact maximum batch; one training update for learned models",
+        "probe_scope": evidence.get(
+            "probe_scope",
+            "exact maximum batch; one training update for learned models",
+        ),
     }
 
 

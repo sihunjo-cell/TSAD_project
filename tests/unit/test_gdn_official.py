@@ -16,6 +16,7 @@ from src.models.tier2.gdn_official.adapter import (
 )
 from src.models.tier2.gdn_official.official import (
     GDN,
+    GNNLayer,
     build_fully_connected_edge_index,
 )
 
@@ -30,6 +31,10 @@ class ZeroPredictor(torch.nn.Module):
 
 
 class TestGdnRecipe(unittest.TestCase):
+    def test_inspection_attention_does_not_retain_autograd_graph(self):
+        source = inspect.getsource(GNNLayer.forward)
+        self.assertIn("self.attention_weights = attention.detach()", source)
+
     def test_topk_formula(self):
         self.assertEqual(topk_from_rho(19, 0.30), 5)
         self.assertEqual(topk_from_rho(86, 0.25), 21)
