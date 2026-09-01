@@ -856,13 +856,19 @@ def build_final_membership_rows(
     selection: dict, registry: dict, *, ratios=SUPPORTED_RATIO_PERCENTS,
     split_roles=FINAL_SPLIT_ROLES,
 ) -> list[dict]:
-    """두 고정 정책을 final runner가 소비하는 한 CSV 행으로 펼친다."""
+    """고정·비율별 정책을 final runner가 소비하는 한 CSV 행으로 펼친다."""
     rows = []
     target_free = {"training_free", "strict_zero_shot"}
 
-    def append(kind, split_role, policy, model_name, evaluation_ratio):
+    def append(
+        kind, split_role, policy, model_name, evaluation_ratio, *,
+        supported=None, unavailable_reason=None,
+    ):
         model = registry["models"][model_name]
-        supported = evaluation_ratio in policy.get("q_support", policy.get("selection_q_common", []))
+        if supported is None:
+            supported = evaluation_ratio in policy.get(
+                "q_support", policy.get("selection_q_common", []),
+            )
         selected = policy.get("selection_status") == "selected" and supported
         rows.append({
             "analysis_kind": kind, "split_role": split_role, "tier": model["tier"],
@@ -874,9 +880,16 @@ def build_final_membership_rows(
             "config_id": policy.get("config_id") or model["candidates"][0]["config_id"],
             "score_variant": policy.get("score_variant", ""),
             "status": "runnable" if selected else "unavailable",
-            "status_reason": "" if selected else "Dev18 고정 정책에서 지원하지 않는 비율",
+            "status_reason": "" if selected else (
+                unavailable_reason or "Dev18 고정 정책에서 지원하지 않는 비율"
+            ),
         })
 
+    fixed_by_tier = {policy["tier"]: policy for policy in selection["tier_fixed"]}
+    adaptive_by_key = {
+        (policy["tier"], policy["ratio"]): policy
+        for policy in selection["tier_adaptive"]
+    }
     for split_role in split_roles:
         for policy in selection["model_fixed"]:
             for ratio in ratios:
@@ -884,6 +897,21 @@ def build_final_membership_rows(
         for policy in selection["tier_fixed"]:
             for ratio in ratios:
                 append("tier_fixed", split_role, policy, policy["selected_model"], ratio)
+        for tier, fixed in fixed_by_tier.items():
+            for ratio in ratios:
+                policy = adaptive_by_key[(tier, ratio)]
+                selected = policy["selection_status"] == "selected"
+                model_name = policy["selected_model"] if selected else fixed["selected_model"]
+                membership_policy = policy if selected else {
+                    **policy,
+                    "config_id": fixed["config_id"],
+                    "score_variant": fixed.get("score_variant", ""),
+                }
+                append(
+                    "tier_adaptive", split_role, membership_policy, model_name, ratio,
+                    supported=selected,
+                    unavailable_reason=policy["selection_reason"],
+                )
     return rows
 
 
@@ -897,7 +925,9 @@ def _serializable_rows(rows):
     ]
 
 
-def write_selection_reports(rows, selection: dict, output_directory) -> None:
+def write_selection_reports(
+    rows, selection: dict, output_directory, *, write_plots=True,
+) -> None:
     """모델별·Tier별 CSV와 PNG를 같은 폴더에 단순한 이름으로 저장한다."""
     output_directory = Path(output_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -944,6 +974,8 @@ def write_selection_reports(rows, selection: dict, output_directory) -> None:
             }]
         model_tables[model_name] = model_rows
         _write_csv(output_directory / f"{model_name}.csv", _serializable_rows(model_rows))
+        if not write_plots:
+            continue
         figure, axis = pyplot.subplots(figsize=(7, 4))
         if fixed[model_name]["selection_status"] == "unavailable":
             axis.axis("off")
@@ -1002,6 +1034,8 @@ def write_selection_reports(rows, selection: dict, output_directory) -> None:
             output_directory / f"Tier{tier_number}.csv",
             _serializable_rows(tier_rows),
         )
+        if not write_plots:
+            continue
         figure, axis = pyplot.subplots(figsize=(7, 4))
         for tier_row in tier_rows:
             curve = [
@@ -1033,6 +1067,20 @@ def write_selection_reports(rows, selection: dict, output_directory) -> None:
     _write_csv(output_directory / "family_lofo.csv", selection["lofo"])
     model_summary = _serializable_rows(selection["model_fixed"])
     _write_csv(output_directory / "models.csv", model_summary)
+    _write_csv(
+        output_directory / "ratio_adaptive_selection.csv",
+        _serializable_rows(selection["tier_adaptive"]),
+    )
+    _write_csv(
+        output_directory / "tier_ratio_candidate_audit.csv",
+        _serializable_rows(selection["candidate_audit"]),
+    )
+    _write_csv(
+        output_directory / "tier_policy_transitions.csv",
+        _serializable_rows(selection["policy_transitions"]),
+    )
+    if not write_plots:
+        return
     figure, axis = pyplot.subplots(figsize=(12, max(4, len(model_summary) * 0.65)))
     axis.axis("off")
     table_rows = [[

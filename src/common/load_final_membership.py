@@ -15,7 +15,7 @@ FIELDS = (
 FINAL_SPLIT_ROLES = {
     "ghl25_final", "train1_to_test1", "train1_train2_to_test2",
 }
-ANALYSIS_KINDS = {"model_fixed", "tier_fixed"}
+ANALYSIS_KINDS = {"model_fixed", "tier_fixed", "tier_adaptive"}
 TSPULSE_VARIANTS = {"time", "fft", "pred", "raw_max"}
 TARGET_FREE = {"training_free", "strict_zero_shot"}
 
@@ -122,7 +122,9 @@ def load_final_membership(path, registry: dict) -> tuple[str, tuple[dict, ...]]:
             row["analysis_kind"] for row in rows if row["split_role"] == split_role
         }
         if kinds != ANALYSIS_KINDS:
-            raise ValueError(f"{split_role}에 model_fixed와 tier_fixed가 모두 필요하다")
+            raise ValueError(
+                f"{split_role}에 model_fixed, tier_fixed와 tier_adaptive가 모두 필요하다"
+            )
         model_rows = [
             row for row in rows
             if row["split_role"] == split_role and row["analysis_kind"] == "model_fixed"
@@ -139,6 +141,15 @@ def load_final_membership(path, registry: dict) -> tuple[str, tuple[dict, ...]]:
             (row["tier"], row["evaluation_ratio"]) for row in tier_rows
         } != tier_ratio_keys or len(tier_rows) != len(tier_ratio_keys):
             raise ValueError(f"{split_role}의 tier_fixed 구성이 완전하지 않다")
+        adaptive_rows = [
+            row for row in rows
+            if row["split_role"] == split_role
+            and row["analysis_kind"] == "tier_adaptive"
+        ]
+        if {
+            (row["tier"], row["evaluation_ratio"]) for row in adaptive_rows
+        } != tier_ratio_keys or len(adaptive_rows) != len(tier_ratio_keys):
+            raise ValueError(f"{split_role}의 tier_adaptive 구성이 완전하지 않다")
     return hashlib.sha256(serialized).hexdigest(), tuple(rows)
 
 

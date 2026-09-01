@@ -543,6 +543,66 @@ class TestDev18Tuning(unittest.TestCase):
             self.assertTrue(selected["selected_hyperparameters"])
             self.assertTrue(selected["selection_reason"])
 
+    def test_reports_separate_adaptive_audit_and_transition_tables(self):
+        selection = select_tuning_policies(
+            _rows(), self.registry, self.budget, evaluator_sha256="d" * 64,
+        )
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            run_dev18_tuning.pyplot, "subplots",
+            side_effect=AssertionError("write_plots=False에서 figure를 만들면 안 된다"),
+        ):
+            output = Path(directory)
+            write_selection_reports(_rows(), selection, output, write_plots=False)
+            expected = {
+                "ratio_adaptive_selection.csv",
+                "tier_ratio_candidate_audit.csv",
+                "tier_policy_transitions.csv",
+            }
+            self.assertTrue(expected.issubset({path.name for path in output.iterdir()}))
+            self.assertEqual(list(output.glob("*.png")), [])
+            with (output / "tier_ratio_candidate_audit.csv").open(
+                encoding="utf-8", newline="",
+            ) as input_file:
+                audit = list(csv.DictReader(input_file))
+            self.assertEqual(
+                set(audit[0]),
+                {
+                    "tier", "ratio", "model", "config_id", "score_variant",
+                    "eligibility", "family_lofo_vus_pr", "selected",
+                    "reason_code", "reason",
+                },
+            )
+
+    def test_deployment_scenario_schema_has_no_cost_defaults(self):
+        schema = json.loads(
+            (Path(__file__).parents[2] / "configs" / "deployment_scenario.schema.json")
+            .read_text(encoding="utf-8")
+        )
+
+        def assert_no_default(node):
+            if isinstance(node, dict):
+                self.assertNotIn("default", node)
+                for value in node.values():
+                    assert_no_default(value)
+            elif isinstance(node, list):
+                for value in node:
+                    assert_no_default(value)
+
+        assert_no_default(schema)
+        self.assertEqual(schema["required"], ["transition_key"])
+        expected_properties = {
+            "transition_key", "currency", "analysis_horizon_hours",
+            "observation_cost", "training_cost", "inference_cost",
+            "memory_cost", "artifact_storage_cost", "false_alarm_cost",
+            "miss_cost", "model_switch_cost", "validation_cost",
+            "deployment_cost", "downtime_cost", "maximum_latency_seconds",
+            "maximum_memory_mb", "maximum_artifact_bytes", "minimum_vus_pr",
+        }
+        self.assertEqual(set(schema["properties"]), expected_properties)
+        for field in ("model_switch_cost", "validation_cost", "deployment_cost"):
+            self.assertEqual(set(schema["properties"][field]["type"]), {"number", "null"})
+            self.assertEqual(schema["properties"][field]["minimum"], 0)
+
     def test_direct_file_cli_can_import_project_packages(self):
         script = Path(__file__).parents[1] / "ghl_main" / "run_dev18_tuning.py"
         completed = subprocess.run(

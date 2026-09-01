@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TSAD deployment scenario inputs",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "transition_key"
+  ],
+  "properties": {
+    "transition_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "currency": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "analysis_horizon_hours": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "observation_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "training_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "inference_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "memory_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "artifact_storage_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "false_alarm_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "miss_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "model_switch_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "validation_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "deployment_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "downtime_cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "maximum_latency_seconds": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "maximum_memory_mb": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "maximum_artifact_bytes": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "minimum_vus_pr": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}
