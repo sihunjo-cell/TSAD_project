@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.ghl_main import run_dev18_tuning
@@ -16,12 +17,15 @@ from tests.ghl_main.run_dev18_tuning import (
     _evidence_directory,
     _load_completion_receipt,
     _load_score_manifest,
+    _draw_ratio_adaptive_selection,
     _replace_manifest_rows,
     _write_completion_receipt,
     _write_run_snapshot,
     _validate_bound_run_files,
     _validate_primary_manifest_rows,
+    build_ratio_adaptive_plot_data,
     build_final_membership_rows,
+    configure_plot_font,
     load_trial_score_ledger,
     select_tuning_policies,
     validate_vus_evidence,
@@ -341,6 +345,195 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertTrue(transitions[0]["transition_key"].startswith("tr"))
         self.assertEqual(transitions[-1]["current_ratio"], 100)
 
+    def test_final_plot_data_contains_only_tier_paths_and_pca_reference(self):
+        rows = [{
+            "series": series, "family": family, "tier": "t1",
+            "model": "PCA_LEGACY", "config_id": config_id, "ratio": 100,
+            "seed": seed, "score_variant": "raw", "vus_pr": values[family],
+            "status": "complete",
+        } for config_id, values in (
+            ("pca_selected", {"A": 0.1, "B": 0.467338}),
+            ("pca_other", {"A": 0.9, "B": 0.9}),
+        ) for series, family in (
+            ("01", "A"), ("02", "B"), ("03", "B"), ("04", "B"),
+        )
+            for seed in (0, 1)]
+        selection = {
+            "model_fixed": [{
+                "model": "PCA_LEGACY", "config_id": "pca_selected",
+                "score_variant": "raw", "selection_status": "selected",
+            }],
+            "tier_adaptive": [
+                {"tier": "t1", "ratio": 100, "selected_model": "MWVAR",
+                 "selection_score": 0.41, "selection_status": "selected"},
+                {"tier": "t2", "ratio": 5, "selected_model": "",
+                 "selection_score": None, "selection_status": "unavailable"},
+                {"tier": "t3", "ratio": 5, "selected_model": "TSPulse",
+                 "selection_score": 0.52, "selection_status": "selected"},
+                {"tier": "t1", "ratio": 5, "selected_model": "MWVAR",
+                 "selection_score": 0.40, "selection_status": "selected"},
+                {"tier": "t2", "ratio": 40, "selected_model": "PaAno",
+                 "selection_score": 0.63, "selection_status": "selected"},
+            ],
+        }
+
+        data = build_ratio_adaptive_plot_data(rows, selection)
+
+        self.assertEqual(
+            [(row["tier"], row["ratio"], row["model"])
+             for row in data["points"]],
+            [
+                ("t1", 5, "MWVAR"), ("t1", 100, "MWVAR"),
+                ("t2", 40, "PaAno"), ("t3", 5, "TSPulse"),
+            ],
+        )
+        self.assertEqual(
+            [row["selection_score"] for row in data["points"]],
+            [0.40, 0.41, 0.63, 0.52],
+        )
+        self.assertEqual(data["unavailable"], [{"tier": "t2", "ratio": 5}])
+        self.assertAlmostEqual(data["pca_reference_vus_pr"], 0.283669)
+
+    def test_plot_font_resolution_prefers_malgun_and_accepts_lightning_fallback(self):
+        font_path = Path(run_dev18_tuning.font_manager.findfont("DejaVu Sans"))
+        with tempfile.TemporaryDirectory() as directory:
+            missing_path = Path(directory) / "missing.ttf"
+
+            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
+                run_dev18_tuning.os.environ,
+                {"TSAD_KOREAN_FONT_PATH": str(font_path)},
+            ), patch.object(
+                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (missing_path,),
+            ):
+                explicit = configure_plot_font()
+            self.assertEqual(explicit["source"], "environment")
+            self.assertEqual(explicit["path"], str(font_path))
+
+            with patch.dict(
+                run_dev18_tuning.os.environ,
+                {"TSAD_KOREAN_FONT_PATH": str(missing_path)},
+            ):
+                with self.assertRaisesRegex(
+                    FileNotFoundError, "TSAD_KOREAN_FONT_PATH",
+                ):
+                    configure_plot_font()
+
+            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
+                run_dev18_tuning.os.environ, {"TSAD_KOREAN_FONT_PATH": ""},
+            ), patch.object(
+                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (font_path,),
+            ):
+                malgun = configure_plot_font()
+            self.assertEqual(malgun["source"], "windows_malgun")
+
+            nanum_entry = SimpleNamespace(name="NanumGothic", fname=str(font_path))
+            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
+                run_dev18_tuning.os.environ, {"TSAD_KOREAN_FONT_PATH": ""},
+            ), patch.object(
+                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (missing_path,),
+            ), patch.object(
+                run_dev18_tuning.font_manager.fontManager, "ttflist", [nanum_entry],
+            ):
+                nanum = configure_plot_font()
+            self.assertEqual(nanum["source"], "nanum_gothic")
+
+            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
+                run_dev18_tuning.os.environ, {"TSAD_KOREAN_FONT_PATH": ""},
+            ), patch.object(
+                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (missing_path,),
+            ), patch.object(
+                run_dev18_tuning.font_manager.fontManager, "ttflist", [],
+            ):
+                before = list(run_dev18_tuning.matplotlib.rcParams["font.family"])
+                default = configure_plot_font()
+                self.assertEqual(
+                    list(run_dev18_tuning.matplotlib.rcParams["font.family"]), before,
+                )
+                self.assertFalse(
+                    run_dev18_tuning.matplotlib.rcParams["axes.unicode_minus"],
+                )
+            self.assertEqual(default["source"], "matplotlib_default")
+
+    def test_final_selection_plot_keeps_one_clean_axis(self):
+        figure = run_dev18_tuning.matplotlib.figure.Figure()
+        axis = figure.subplots()
+        data = {
+            "points": [
+                {"tier": "t1", "ratio": 5, "model": "MWVAR",
+                 "selection_score": 0.40},
+                {"tier": "t1", "ratio": 10, "model": "MWVAR",
+                 "selection_score": 0.42},
+                {"tier": "t2", "ratio": 10, "model": "GDN",
+                 "selection_score": 0.51},
+                {"tier": "t3", "ratio": 5, "model": "TSPulse",
+                 "selection_score": 0.48},
+            ],
+            "unavailable": [{"tier": "t2", "ratio": 5}],
+            "pca_reference_vus_pr": 0.283669,
+        }
+
+        _draw_ratio_adaptive_selection(axis, data)
+
+        lines = {line.get_label(): line for line in axis.lines}
+        self.assertEqual(
+            set(lines),
+            {"Tier 1", "Tier 2", "Tier 3", "PCA_LEGACY q100 reference only"},
+        )
+        self.assertEqual(lines["PCA_LEGACY q100 reference only"].get_linestyle(), "--")
+        self.assertEqual(list(axis.get_xticks()), [5, 10, 20, 40, 60, 80, 100])
+        self.assertEqual(len(figure.axes), 1)
+        self.assertEqual(len(axis.tables), 0)
+        self.assertTrue(any(line.get_visible() for line in axis.get_ygridlines()))
+        self.assertFalse(any(line.get_visible() for line in axis.get_xgridlines()))
+        annotations = {annotation.get_text(): annotation for annotation in axis.texts}
+        self.assertEqual(set(annotations), {"MWVAR", "GDN", "TSPulse", "unavailable"})
+        self.assertEqual(len(axis.texts), 5)
+        self.assertTrue(all(text.get_fontsize() == 7 for text in axis.texts))
+        self.assertGreater(annotations["MWVAR"].get_position()[1], 0)
+        self.assertLess(annotations["TSPulse"].get_position()[1], 0)
+        for label in (
+            axis.get_title(), axis.get_xlabel(), axis.get_ylabel(),
+            *(text.get_text() for text in axis.get_legend().get_texts()),
+        ):
+            label.encode("ascii")
+
+    def test_report_uses_clean_adaptive_selection_axis(self):
+        rows = _rows() + [{
+            "series": series, "family": family, "tier": "t1",
+            "model": "PCA_LEGACY", "config_id": "pca", "ratio": 100,
+            "seed": seed, "score_variant": "raw", "vus_pr": 0.283669,
+            "status": "complete",
+        } for series, family in (("01", "A"), ("02", "B")) for seed in (0, 1)]
+        selection = select_tuning_policies(
+            _rows(), self.registry, self.budget, evaluator_sha256="d" * 64,
+        )
+        selection["model_fixed"].append({
+            "tier": "t1", "model": "PCA_LEGACY", "q_support": [100],
+            "config_id": "pca", "hyperparameters": {}, "j_fixed": 0.283669,
+            "score_variant": "raw", "hpo_regime": "equal_trial",
+            "budget_id": "b123456789abc", "source_commit": "p" * 40,
+            "source_checkpoint_sha256": "none", "selection_status": "selected",
+            "selection_reason": "reference only",
+        })
+        captured = []
+
+        def capture(figure, path, *_args, **_kwargs):
+            if Path(path).name == "selection.png":
+                captured.append(figure)
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            run_dev18_tuning.matplotlib.figure.Figure, "savefig",
+            autospec=True, side_effect=capture,
+        ):
+            write_selection_reports(rows, selection, Path(directory))
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(len(captured[0].axes), 1)
+        self.assertEqual(
+            {line.get_label() for line in captured[0].axes[0].lines},
+            {"Tier 1", "Tier 2", "Tier 3", "PCA_LEGACY q100 reference only"},
+        )
+
     def test_structural_block_evidence_summarizes_pair_count_series(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "feasibility.csv"
@@ -524,15 +717,33 @@ class TestDev18Tuning(unittest.TestCase):
         selection = select_tuning_policies(
             _rows(), self.registry, self.budget, evaluator_sha256="d" * 64,
         )
-        with tempfile.TemporaryDirectory() as directory:
+        saved_plots = set()
+
+        def capture(_figure, path, *_args, **_kwargs):
+            saved_plots.add(Path(path).name)
+
+        plot_data = {
+            "points": [{"tier": "t1", "ratio": 5, "model": "M1",
+                        "selection_score": 0.8}],
+            "unavailable": [], "pca_reference_vus_pr": 0.3,
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            run_dev18_tuning.matplotlib.figure.Figure, "savefig",
+            autospec=True, side_effect=capture,
+        ), patch.object(
+            run_dev18_tuning, "build_ratio_adaptive_plot_data",
+            return_value=plot_data,
+        ):
             output = Path(directory)
             write_selection_reports(_rows(), selection, output)
             for name in (
-                "M1.csv", "M1.png", "Tier1.csv", "Tier1.png",
-                "M0.csv", "M0.png", "models.csv", "models.png",
-                "selection.csv", "selection.png", "family_lofo.csv",
+                "M1.csv", "Tier1.csv", "M0.csv", "models.csv",
+                "selection.csv", "family_lofo.csv",
             ):
                 self.assertTrue((output / name).is_file(), name)
+            self.assertTrue({
+                "M1.png", "Tier1.png", "M0.png", "models.png", "selection.png",
+            }.issubset(saved_plots))
             with (output / "selection.csv").open(encoding="utf-8", newline="") as file:
                 rows = list(csv.DictReader(file))
             self.assertEqual(rows[0]["selected_model"], "M1")

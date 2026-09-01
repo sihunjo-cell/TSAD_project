@@ -25,11 +25,59 @@ import numpy
 matplotlib.use("Agg")
 from matplotlib import font_manager, pyplot
 
-KOREAN_FONT_PATH = Path("C:/Windows/Fonts/malgun.ttf")
-if KOREAN_FONT_PATH.is_file():
-    font_manager.fontManager.addfont(KOREAN_FONT_PATH)
-    matplotlib.rcParams["font.family"] = "Malgun Gothic"
+WINDOWS_MALGUN_FONT_PATHS = tuple(dict.fromkeys((
+    Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "malgun.ttf",
+    Path("C:/Windows/Fonts/malgun.ttf"),
+)))
+
+
+def _find_installed_font(family: str):
+    normalized = family.replace(" ", "").casefold()
+    for entry in font_manager.fontManager.ttflist:
+        if entry.name.replace(" ", "").casefold() == normalized:
+            path = Path(entry.fname)
+            if path.is_file():
+                return path
+    return None
+
+
+def _apply_plot_font(path: Path, source: str) -> dict:
+    try:
+        font_manager.fontManager.addfont(path)
+        family = font_manager.FontProperties(fname=path).get_name()
+    except Exception as error:
+        raise ValueError(f"글꼴 파일을 읽을 수 없다: {path}") from error
+    matplotlib.rcParams["font.family"] = family
     matplotlib.rcParams["axes.unicode_minus"] = False
+    return {"source": source, "family": family, "path": str(path)}
+
+
+def configure_plot_font() -> dict:
+    """명시 경로, Malgun Gothic, NanumGothic 순으로 그림 글꼴을 고른다."""
+    explicit = os.environ.get("TSAD_KOREAN_FONT_PATH")
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"TSAD_KOREAN_FONT_PATH 글꼴 파일이 없다: {path}"
+            )
+        return _apply_plot_font(path, "environment")
+
+    for path in WINDOWS_MALGUN_FONT_PATHS:
+        if path.is_file():
+            return _apply_plot_font(path, "windows_malgun")
+    malgun = _find_installed_font("Malgun Gothic")
+    if malgun is not None:
+        return _apply_plot_font(malgun, "windows_malgun")
+    nanum = _find_installed_font("NanumGothic")
+    if nanum is not None:
+        return _apply_plot_font(nanum, "nanum_gothic")
+
+    matplotlib.rcParams["axes.unicode_minus"] = False
+    families = list(matplotlib.rcParams["font.family"])
+    return {
+        "source": "matplotlib_default", "family": families[0], "path": None,
+    }
 
 from src.common.equal_trial_budget import build_equal_trial_budget, registry_space_sha256
 from src.common.execution_identity import file_sha256, load_input_manifest_role
@@ -543,6 +591,85 @@ def _hyperparameters(registry: dict, model_name: str, config_id: str) -> dict:
     return candidates[0]
 
 
+def build_ratio_adaptive_plot_data(rows, selection: dict) -> dict:
+    """최종 그림에 필요한 adaptive 경로와 PCA 참고값만 만든다."""
+    pca_policies = [
+        row for row in selection["model_fixed"]
+        if row["model"] == "PCA_LEGACY" and row["selection_status"] == "selected"
+    ]
+    if len(pca_policies) != 1:
+        raise ValueError("PCA_LEGACY model-fixed 정책이 하나여야 한다")
+    pca_policy = pca_policies[0]
+    pca_reference = _candidate_score(
+        _seed_means(rows), model="PCA_LEGACY",
+        config_id=pca_policy["config_id"],
+        score_variant=pca_policy["score_variant"], ratios=[100],
+    )
+
+    points = []
+    unavailable = []
+    for policy in selection["tier_adaptive"]:
+        if policy["selection_status"] == "selected":
+            points.append({
+                "tier": policy["tier"], "ratio": policy["ratio"],
+                "model": policy["selected_model"],
+                "selection_score": float(policy["selection_score"]),
+            })
+        elif policy["selection_status"] == "unavailable":
+            unavailable.append({"tier": policy["tier"], "ratio": policy["ratio"]})
+        else:
+            raise ValueError("tier_adaptive 상태는 selected 또는 unavailable이어야 한다")
+    return {
+        "points": sorted(points, key=lambda row: (row["tier"], row["ratio"])),
+        "unavailable": sorted(
+            unavailable, key=lambda row: (row["tier"], row["ratio"]),
+        ),
+        "pca_reference_vus_pr": pca_reference,
+    }
+
+
+def _draw_ratio_adaptive_selection(axis, data: dict) -> None:
+    colors = {"t1": "#1f77b4", "t2": "#d95f02", "t3": "#2ca02c"}
+    label_offsets = {"t1": 8, "t2": 8, "t3": -12}
+    for tier in ("t1", "t2", "t3"):
+        points = [row for row in data["points"] if row["tier"] == tier]
+        axis.plot(
+            [row["ratio"] for row in points],
+            [row["selection_score"] for row in points],
+            color=colors[tier], marker="o", markersize=4.5, linewidth=1.8,
+            label=f"Tier {tier[1:]}",
+        )
+        for point in points:
+            axis.annotate(
+                point["model"],
+                (point["ratio"], point["selection_score"]),
+                xytext=(0, label_offsets[tier]), textcoords="offset points",
+                ha="center", va="bottom" if label_offsets[tier] > 0 else "top",
+                fontsize=7, color=colors[tier],
+            )
+    axis.axhline(
+        data["pca_reference_vus_pr"], color="#7f7f7f", linestyle="--",
+        linewidth=1.1, label="PCA_LEGACY q100 reference only",
+    )
+    for point in data["unavailable"]:
+        axis.text(
+            point["ratio"], 0.03, "unavailable",
+            transform=axis.get_xaxis_transform(), ha="center", va="bottom",
+            fontsize=7, color="#7f7f7f",
+        )
+    axis.set(
+        title="Ratio-adaptive Tier representatives",
+        xlabel="Normal prefix (%)", ylabel="Family-LOFO VUS-PR",
+        xticks=SUPPORTED_RATIO_PERCENTS,
+    )
+    axis.grid(axis="y", color="#d9d9d9", linewidth=0.7, alpha=0.7)
+    axis.set_axisbelow(True)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.margins(x=0.02, y=0.14)
+    axis.legend(frameon=False, fontsize=8, ncol=2)
+
+
 def select_ratio_adaptive_policies(
     rows, registry: dict, budget: dict, *, model_fixed, evaluator_sha256: str,
     structural_block_evidence=None,
@@ -931,6 +1058,8 @@ def write_selection_reports(
     """모델별·Tier별 CSV와 PNG를 같은 폴더에 단순한 이름으로 저장한다."""
     output_directory = Path(output_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
+    if write_plots:
+        configure_plot_font()
     seed_rows = _seed_means(rows)
     fixed = {row["model"]: row for row in selection["model_fixed"]}
     models = sorted(row["model"] for row in selection["model_fixed"])
@@ -1100,26 +1229,11 @@ def write_selection_reports(
     figure.tight_layout()
     figure.savefig(output_directory / "models.png", dpi=160)
     pyplot.close(figure)
-    figure, (axis, table_axis) = pyplot.subplots(
-        2, 1, figsize=(12, 7), gridspec_kw={"height_ratios": [3, 2]},
+    figure, axis = pyplot.subplots(figsize=(8.5, 4.8))
+    _draw_ratio_adaptive_selection(
+        axis, build_ratio_adaptive_plot_data(rows, selection),
     )
-    labels = [f"{row['tier']} · {row['selected_model']}" for row in selection["tier_fixed"]]
-    values = [row["selection_score"] for row in selection["tier_fixed"]]
-    axis.bar(labels, values)
-    axis.set(title="Selected tier representatives", ylabel="Family-LOFO VUS-PR")
-    axis.tick_params(axis="x", rotation=20)
-    table_axis.axis("off")
-    selection_table = table_axis.table(
-        cellText=[[
-            row["selected_model"], _json(row["hyperparameters"]), row["selection_reason"],
-        ] for row in selection["tier_fixed"]],
-        colLabels=["Model", "Parameters", "Reason"],
-        loc="center", cellLoc="left",
-    )
-    selection_table.auto_set_font_size(False)
-    selection_table.set_fontsize(7)
-    selection_table.scale(1, 1.6)
-    figure.tight_layout()
+    figure.subplots_adjust(left=0.10, right=0.98, bottom=0.14, top=0.88)
     figure.savefig(output_directory / "selection.png", dpi=160)
     pyplot.close(figure)
 
