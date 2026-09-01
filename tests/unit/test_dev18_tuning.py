@@ -188,6 +188,33 @@ class TestDev18Tuning(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "budget"):
                 load_trial_score_ledger(path, budget)
 
+            write_ledger(path, [{**row, "family": "C"} if index == 1 else row
+                                for index, row in enumerate(rows)])
+            with self.assertRaisesRegex(ValueError, "series.*family"):
+                load_trial_score_ledger(path, budget)
+
+            write_ledger(path, [{**row, "tier": "t2"} if index == 0 else row
+                                for index, row in enumerate(rows)])
+            with self.assertRaisesRegex(ValueError, "tier"):
+                load_trial_score_ledger(path, budget)
+
+            production_budget = {
+                "budget_id": "b5367ad431093", "seeds": [0],
+                "model_panels": [{
+                    "model": "M1", "tier": "t1", "logical_ratios": [5],
+                    "selected_config_ids": ["c1"], "primary_score_variants": [""],
+                }],
+            }
+            production_rows = [
+                {**rows[0], "series": f"{index:02d}", "family": f"F{min(index, 10)}"}
+                for index in range(1, 19)
+            ]
+            write_ledger(path, production_rows)
+            self.assertEqual(len(load_trial_score_ledger(path, production_budget)), 18)
+            write_ledger(path, [{**row, "family": "F1"} for row in production_rows])
+            with self.assertRaisesRegex(ValueError, "10개 family"):
+                load_trial_score_ledger(path, production_budget)
+
     def test_ratio_adaptive_selection_uses_native_support_and_fixed_recipe(self):
         registry = {
             "selection": {"tier_q_floor": {"t1": 5, "t2": 5}},
@@ -201,6 +228,9 @@ class TestDev18Tuning(unittest.TestCase):
                 "ALoRa": {"tier": "t2", "target_use": "fit_validation",
                           "source_commit": "a" * 40, "source_checkpoint_sha256": "none",
                           "candidates": [{"config_id": "alora", "hyperparameters": {}}]},
+                "Other": {"tier": "t2", "target_use": "fit_validation",
+                          "source_commit": "o" * 40, "source_checkpoint_sha256": "none",
+                          "candidates": [{"config_id": "other", "hyperparameters": {}}]},
                 "GDN": {"tier": "t2", "target_use": "fit_validation",
                         "source_commit": "g" * 40, "source_checkpoint_sha256": "none",
                         "candidates": [
@@ -222,6 +252,9 @@ class TestDev18Tuning(unittest.TestCase):
                  "selected_config_ids": ["mw"], "primary_score_variants": [""],
                  "dev18_tier_representative_eligible": True},
                 {"model": "ALoRa", "tier": "t2", "logical_ratios": [],
+                 "selected_config_ids": [], "primary_score_variants": [""],
+                 "dev18_tier_representative_eligible": False},
+                {"model": "Other", "tier": "t2", "logical_ratios": [],
                  "selected_config_ids": [], "primary_score_variants": [""],
                  "dev18_tier_representative_eligible": False},
                 {"model": "GDN", "tier": "t2", "logical_ratios": [10, 40],
@@ -250,6 +283,9 @@ class TestDev18Tuning(unittest.TestCase):
         )
         selection = select_tuning_policies(
             rows, registry, budget, evaluator_sha256="d" * 64,
+            structural_block_evidence={
+                "ALoRa": {"heads": 8, "blocked_series": ["03", "07"]},
+            },
         )
         adaptive = {
             (row["tier"], row["ratio"]): row
@@ -286,13 +322,38 @@ class TestDev18Tuning(unittest.TestCase):
             audit[("t2", 5, "ALoRa")]["eligibility"],
             "full_panel_config_unavailable",
         )
+        self.assertIn("pair_count < heads 8", audit[("t2", 5, "ALoRa")]["reason"])
+        self.assertIn("03, 07", audit[("t2", 5, "ALoRa")]["reason"])
+        self.assertEqual(
+            audit[("t2", 5, "Other")]["reason"],
+            "18개 panel을 덮는 model-fixed config가 없다",
+        )
         self.assertEqual(audit[("t2", 5, "GDN")]["eligibility"], "ratio_unsupported")
+        self.assertEqual(
+            audit[("t2", 40, "GDN")]["reason"],
+            "tolerance와 결정적 동률 규칙을 적용해 미선택",
+        )
         transitions = [
             row for row in selection["policy_transitions"] if row["tier"] == "t2"
         ]
         self.assertEqual(transitions[0]["transition"], "unavailable")
+        self.assertEqual(transitions[1]["transition"], "initial")
         self.assertTrue(transitions[0]["transition_key"].startswith("tr"))
         self.assertEqual(transitions[-1]["current_ratio"], 100)
+
+    def test_structural_block_evidence_summarizes_pair_count_series(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "feasibility.csv"
+            path.write_text(
+                "model,status,series,status_reason,derived_json\n"
+                "ALoRa,structurally_infeasible,03,pair count 1 < heads 8,\"{\"\"pair_count\"\":1}\"\n"
+                "ALoRa,structurally_infeasible,04,validation length 1 < 20,\"{\"\"pair_count\"\":512}\"\n",
+                encoding="utf-8",
+            )
+            evidence = run_dev18_tuning.load_structural_block_evidence(
+                path, {"models": {"ALoRa": {"fixed": {"heads": 8}}}},
+            )
+        self.assertEqual(evidence["ALoRa"], {"heads": 8, "blocked_series": ["03"]})
 
     def test_checkpoint_validation_reads_fresh_runtime_evidence(self):
         with patch.object(

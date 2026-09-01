@@ -53,6 +53,7 @@ SNAPSHOT_DIRECTORY = (
     / "dev18_selection"
 )
 DEFAULT_BUDGET_PATH = SNAPSHOT_DIRECTORY / "dev18_budget_manifest.json"
+DEFAULT_FEASIBILITY_LEDGER_PATH = SNAPSHOT_DIRECTORY / "dev18_feasibility_ledger.csv"
 DEFAULT_ELL_MAX_PATH = SNAPSHOT_DIRECTORY / "dev18_ell_max.json"
 DEFAULT_VUS_REPORT_PATH = (
     REPOSITORY_ROOT / "experiments" / "checks" / "reference_code"
@@ -420,6 +421,25 @@ TRIAL_SCORE_LEDGER_FIELDS = (
 )
 
 
+def load_structural_block_evidence(path, registry: dict) -> dict:
+    """봉인 feasibility ledger에서 low-pair series만 요약한다."""
+    blocked = defaultdict(set)
+    with Path(path).open(encoding="utf-8", newline="") as input_file:
+        for row in csv.DictReader(input_file):
+            model = registry["models"].get(row["model"], {})
+            heads = model.get("fixed", {}).get("heads")
+            if row["status"] != "structurally_infeasible" or heads is None:
+                continue
+            pair_count = json.loads(row["derived_json"]).get("pair_count")
+            if pair_count is not None and int(pair_count) < int(heads):
+                blocked[row["model"]].add(row["series"])
+    return {
+        model: {"heads": registry["models"][model]["fixed"]["heads"],
+                "blocked_series": sorted(series)}
+        for model, series in blocked.items()
+    }
+
+
 def load_trial_score_ledger(path, budget: dict) -> list[dict]:
     """완료된 원표의 schema와 budget 논리 키만 확인해 읽는다."""
     with Path(path).open(encoding="utf-8", newline="") as input_file:
@@ -444,8 +464,18 @@ def load_trial_score_ledger(path, budget: dict) -> list[dict]:
         raise ValueError("Dev18 trial ledger의 evaluator SHA가 하나가 아니다")
     if len({row["ell_max_id"] for row in rows}) != 1:
         raise ValueError("Dev18 trial ledger의 ell_max ID가 하나가 아니다")
+    series_families = {}
+    tiers_by_model = {panel["model"]: panel["tier"] for panel in budget["model_panels"]}
+    for row in rows:
+        family = series_families.setdefault(row["series"], row["family"])
+        if family != row["family"]:
+            raise ValueError("Dev18 trial ledger의 series와 family 연결이 하나가 아니다")
+        if tiers_by_model.get(row["model"]) != row["tier"]:
+            raise ValueError("Dev18 trial ledger model의 tier가 budget과 다르다")
     if budget.get("budget_id") == DEV18_RECOVERY_BUDGET_ID and len({row["series"] for row in rows}) != 18:
         raise ValueError("Dev18 production trial ledger는 18개 series여야 한다")
+    if budget.get("budget_id") == DEV18_RECOVERY_BUDGET_ID and len(set(series_families.values())) != 10:
+        raise ValueError("Dev18 production trial ledger는 10개 family여야 한다")
 
     expected_by_model = {
         panel["model"]: {
@@ -515,10 +545,12 @@ def _hyperparameters(registry: dict, model_name: str, config_id: str) -> dict:
 
 def select_ratio_adaptive_policies(
     rows, registry: dict, budget: dict, *, model_fixed, evaluator_sha256: str,
+    structural_block_evidence=None,
 ) -> dict:
     """모델별 고정 recipe를 유지한 채 비율마다 Tier 대표를 고른다."""
     seed_rows = _seed_means(rows)
     tolerance = float(budget["tie_rule"]["tolerance"])
+    structural_block_evidence = structural_block_evidence or {}
     fixed_by_model = {row["model"]: row for row in model_fixed}
     panels_by_tier = defaultdict(list)
     for panel in budget["model_panels"]:
@@ -579,7 +611,7 @@ def select_ratio_adaptive_policies(
                     "score_variant": fixed["score_variant"],
                     "eligibility": "eligible", "family_lofo_vus_pr": None,
                     "selected": False, "reason_code": "not_selected",
-                    "reason": "선택 가능한 다른 모델의 family-LOFO 점수가 더 높다",
+                    "reason": "tolerance와 결정적 동률 규칙을 적용해 미선택",
                 }
                 if model_name == "PCA_LEGACY":
                     audit.update({
@@ -592,6 +624,12 @@ def select_ratio_adaptive_policies(
                         "reason_code": "full_panel_config_unavailable",
                         "reason": "18개 panel을 덮는 model-fixed config가 없다",
                     })
+                    evidence = structural_block_evidence.get(model_name)
+                    if evidence:
+                        audit["reason"] = (
+                            f"pair_count < heads {evidence['heads']}; 차단 series: "
+                            + ", ".join(evidence["blocked_series"])
+                        )
                 elif ratio not in panel["logical_ratios"]:
                     audit.update({
                         "eligibility": "ratio_unsupported", "reason_code": "ratio_unsupported",
@@ -642,25 +680,25 @@ def select_ratio_adaptive_policies(
         tier: [row for row in tier_adaptive if row["tier"] == tier]
         for tier in panels_by_tier
     }.items()):
-        previous = None
+        previous_selected = None
         for policy in sorted(policies, key=lambda row: row["ratio"]):
             if policy["selection_status"] == "unavailable":
                 transition = "unavailable"
-            elif previous is None:
+            elif previous_selected is None:
                 transition = "initial"
             elif (
-                policy["selected_model"] == previous["selected_model"]
-                and policy["config_id"] == previous["config_id"]
+                policy["selected_model"] == previous_selected["selected_model"]
+                and policy["config_id"] == previous_selected["config_id"]
             ):
                 transition = "keep"
             else:
                 transition = "switch"
             transition_row = {
                 "tier": tier,
-                "previous_ratio": previous["ratio"] if previous else None,
+                "previous_ratio": previous_selected["ratio"] if previous_selected else None,
                 "current_ratio": policy["ratio"],
-                "previous_model": previous["selected_model"] if previous else "",
-                "previous_config_id": previous["config_id"] if previous else "",
+                "previous_model": previous_selected["selected_model"] if previous_selected else "",
+                "previous_config_id": previous_selected["config_id"] if previous_selected else "",
                 "current_model": policy["selected_model"],
                 "current_config_id": policy["config_id"],
                 "transition": transition,
@@ -669,7 +707,8 @@ def select_ratio_adaptive_policies(
                 _json(transition_row).encode("utf-8")
             ).hexdigest()[:12]
             policy_transitions.append(transition_row)
-            previous = policy
+            if policy["selection_status"] == "selected":
+                previous_selected = policy
 
     return {
         "tier_adaptive": tier_adaptive, "adaptive_lofo": adaptive_lofo,
@@ -677,7 +716,10 @@ def select_ratio_adaptive_policies(
     }
 
 
-def select_tuning_policies(rows, registry: dict, budget: dict, *, evaluator_sha256: str) -> dict:
+def select_tuning_policies(
+    rows, registry: dict, budget: dict, *, evaluator_sha256: str,
+    structural_block_evidence=None,
+) -> dict:
     """seed 평균 → family 균형 → LOFO 모델 선택 → full-panel recipe 고정을 수행한다."""
     seed_rows = _seed_means(rows)
     tolerance = float(budget["tie_rule"]["tolerance"])
@@ -802,6 +844,10 @@ def select_tuning_policies(rows, registry: dict, budget: dict, *, evaluator_sha2
     adaptive = select_ratio_adaptive_policies(
         rows, registry, budget, model_fixed=model_fixed,
         evaluator_sha256=evaluator_sha256,
+        structural_block_evidence=(
+            load_structural_block_evidence(DEFAULT_FEASIBILITY_LEDGER_PATH, registry)
+            if structural_block_evidence is None else structural_block_evidence
+        ),
     )
     return {"model_fixed": model_fixed, "tier_fixed": tier_fixed, "lofo": lofo, **adaptive}
 
