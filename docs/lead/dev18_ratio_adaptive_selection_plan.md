@@ -30,7 +30,7 @@
 - Test: `tests/unit/test_dev18_tuning.py`
 
 **Interfaces:**
-- Produces: `load_trial_score_ledger(path, budget) -> list[dict]`
+- Produces: `load_trial_score_ledger(path, budget, *, expected_evaluator_sha256, expected_ell_max_id) -> list[dict]`
 - Produces: `select_ratio_adaptive_policies(rows, registry, budget, *, model_fixed, evaluator_sha256) -> dict`
 - Changes: `select_tuning_policies(...)` returns `tier_adaptive`, `adaptive_lofo`, `candidate_audit`, and `policy_transitions` in addition to existing keys.
 - Preserves: existing `model_fixed`, `tier_fixed`, and fixed-policy CSV semantics.
@@ -40,7 +40,11 @@
   Add a complete small CSV fixture with the real ledger header. Ratios and seeds are serialized strings. Assert that the loader returns integer `ratio`, integer `seed`, float `vus_pr`, rejects a duplicate logical key, rejects `status != complete`, rejects more than one evaluator SHA, and rejects a key set that differs from the supplied budget.
 
   ```python
-  loaded = load_trial_score_ledger(path, budget)
+  loaded = load_trial_score_ledger(
+      path, budget,
+      expected_evaluator_sha256="b" * 64,
+      expected_ell_max_id="ell-v1",
+  )
   self.assertIsInstance(loaded[0]["ratio"], int)
   self.assertIsInstance(loaded[0]["seed"], int)
   self.assertIsInstance(loaded[0]["vus_pr"], float)
