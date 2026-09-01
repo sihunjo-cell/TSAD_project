@@ -619,6 +619,171 @@ class TestDev18Tuning(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "evaluator"):
                 validate_vus_evidence(report, evaluator)
 
+    def test_cpu_scoring_worker_count_respects_cpu_memory_and_pending_work(self):
+        gibibyte = 1024 ** 3
+        resolve = run_dev18_tuning._resolve_score_workers
+
+        self.assertEqual(resolve(
+            0, pending_count=100, cpu_count=32,
+            available_memory_bytes=10 * gibibyte,
+        ), 8)
+        self.assertEqual(resolve(
+            12, pending_count=3, cpu_count=32,
+            available_memory_bytes=10 * gibibyte,
+        ), 3)
+        with self.assertRaisesRegex(ValueError, "workers"):
+            resolve(-1, pending_count=1)
+
+    def test_cpu_postprocessing_keeps_static_gate_without_gpu_runtime(self):
+        registry_sha256 = "a" * 64
+        budget = {
+            "budget_id": "b123456789abc", "physical_execution_count": 65,
+            "primary_logical_score_row_count": 89, "seal_status": "sealed",
+            "execution_readiness_status": "ready", "pending_execution_models": [],
+            "attestation": {"config_registry_sha256": registry_sha256},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            data_root = Path(directory)
+            (data_root / "tuning").mkdir()
+            with (
+                patch.object(
+                    run_dev18_tuning, "load_model_registry_with_sha",
+                    return_value=({}, registry_sha256),
+                ),
+                patch.object(run_dev18_tuning, "validate_primary_hpo_seal"),
+                patch.object(
+                    run_dev18_tuning, "_load_current_feasibility",
+                    return_value=(None, None, {}),
+                ),
+                patch.object(
+                    run_dev18_tuning, "build_equal_trial_budget",
+                    return_value=budget,
+                ),
+                patch.object(run_dev18_tuning, "_read_json", return_value=budget),
+                patch.object(
+                    run_dev18_tuning, "_validate_ell_max",
+                    return_value={"ell_max_id": "b" * 64},
+                ),
+                patch.object(
+                    run_dev18_tuning, "validate_vus_evidence",
+                    return_value={"evaluator_sha256": "c" * 64},
+                ),
+                patch.object(run_dev18_tuning, "verify_runtime_versions") as versions,
+                patch.object(run_dev18_tuning, "_validate_checkpoint_report") as checkpoint,
+                patch.object(
+                    run_dev18_tuning, "collect_runtime_environment_identity",
+                ) as runtime,
+            ):
+                result = run_dev18_tuning.prepare_tuning(
+                    data_root=data_root, require_clean=False,
+                    require_execution_environment=False,
+                )
+
+        self.assertFalse(result["execution_environment_verified"])
+        self.assertEqual(result["checkpoint_models"], [])
+        versions.assert_called_once()
+        checkpoint.assert_not_called()
+        runtime.assert_not_called()
+
+    def test_vus_checkpoint_is_atomic_and_rejects_tampering(self):
+        identity = {
+            "schema_version": 1,
+            "manifest_key": ["01", "M1", "c1", "100", "0", ""],
+            "score_sha256": "a" * 64,
+            "evaluator_sha256": "b" * 64,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "score.json"
+            run_dev18_tuning._write_score_checkpoint(path, identity, 0.625)
+            self.assertEqual(
+                run_dev18_tuning._load_score_checkpoint(path, identity), 0.625,
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["vus_pr"] = 0.75
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "checkpoint"):
+                run_dev18_tuning._load_score_checkpoint(path, identity)
+
+    def test_primary_score_reuses_checkpoint_after_revalidating_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            score_path = root / "score.npy"
+            metadata_path = root / "score.meta.json"
+            score_path.write_bytes(b"score")
+            metadata_path.write_text("{}", encoding="utf-8")
+            manifest_row = {
+                "series": "01", "family": "A", "tier": "t1", "model": "M1",
+                "config_id": "c1", "physical_ratio": "100", "seed": "0",
+                "score_variant": "", "score_file": score_path.name,
+                "score_sha256": hashlib.sha256(score_path.read_bytes()).hexdigest(),
+                "metadata_file": metadata_path.name,
+                "metadata_sha256": hashlib.sha256(metadata_path.read_bytes()).hexdigest(),
+            }
+            task = {
+                "manifest_row": manifest_row, "entry": {"family": "A"},
+                "budget_id": "b123456789abc", "budget_sha256": "a" * 64,
+                "input_manifest_sha256": "b" * 64,
+                "environment_sha256": "e" * 64, "project_commit": "f" * 40,
+                "evaluator_sha256": "c" * 64, "ell_max_id": "d" * 64,
+                "l_max_samples": 1, "n_thresholds": 250,
+                "checkpoint_directory": str(root / "checkpoints"),
+            }
+            scores = run_dev18_tuning.numpy.array([0.1, 0.9])
+            labels = run_dev18_tuning.numpy.array([0, 1])
+            info = {
+                "dataset": "DEV18", "series": 1, "model": "M1", "tier": "t1",
+                "ratio": 100, "seed": 0, "smoothing_kind": "raw",
+                "norm_kind": "trainnorm", "channels": False,
+            }
+            metadata = {
+                "dataset": "DEV18", "series": 1, "model": "M1", "tier": "t1",
+                "ratio": 100, "seed": 0, "config_id": "c1",
+                "score_variant": None, "label_slice": [0, 2],
+            }
+            run_dev18_tuning._initialize_score_worker({"01": labels})
+            with (
+                patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root),
+                patch(
+                    "src.채점기.parser.load_and_validate_score",
+                    return_value=(scores, info, metadata),
+                ) as loader,
+                patch("tests.ghl_main.run_dev18_tuning.vus_pr", return_value=0.625) as scorer,
+            ):
+                first = run_dev18_tuning._score_primary_row(task)
+                second = run_dev18_tuning._score_primary_row(task)
+
+            self.assertFalse(first["reused"])
+            self.assertTrue(second["reused"])
+            self.assertEqual(scorer.call_count, 1)
+            self.assertEqual(loader.call_count, 2)
+
+    def test_one_physical_vus_score_expands_to_all_logical_ratios(self):
+        manifest_row = {
+            "series": "01", "family": "A", "tier": "t1", "model": "M1",
+            "config_id": "c1", "physical_ratio": "100", "seed": "0",
+            "score_variant": "", "score_file": "score.npy",
+            "score_sha256": "a" * 64,
+        }
+        rows = run_dev18_tuning._expand_primary_score(
+            manifest_row,
+            logical_ratios=(5, 10, 20),
+            normalization="trainnorm",
+            vus_pr_value=0.625,
+            evaluator_sha256="b" * 64,
+            ell_max_id="c" * 64,
+        )
+
+        self.assertEqual([row["ratio"] for row in rows], [5, 10, 20])
+        self.assertEqual([row["vus_pr"] for row in rows], [0.625] * 3)
+
+    def test_cpu_finish_cli_can_import_project_packages(self):
+        script = Path(__file__).parents[1] / "checks" / "finish_lightning_dev18.py"
+        completed = subprocess.run(
+            [sys.executable, str(script), "--help"], cwd=script.parents[2],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

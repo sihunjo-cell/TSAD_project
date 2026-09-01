@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import csv
 import datetime
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tracemalloc
@@ -64,6 +66,7 @@ DEFAULT_SCORE_MANIFEST_PATH = (
     REPOSITORY_ROOT / "experiments" / "01_ghl_main" / "logs"
     / "dev18_score_manifest.csv"
 )
+DEFAULT_VUS_CHECKPOINT_DIRECTORY = REPOSITORY_ROOT / ".runtime" / "dev18_vus_pr"
 DEFAULT_ALLOCATOR_RECOVERY_PATH = (
     REPOSITORY_ROOT / "experiments" / "01_ghl_main" / "logs"
     / "dev18_allocator_recovery.json"
@@ -258,7 +261,10 @@ def _validate_environment_snapshot(environment: dict) -> dict:
     )
 
 
-def prepare_tuning(*, data_root=DEFAULT_DATA_ROOT, require_clean=True) -> dict:
+def prepare_tuning(
+    *, data_root=DEFAULT_DATA_ROOT, require_clean=True,
+    require_execution_environment=True,
+) -> dict:
     """기존 봉인을 다시 계산하지 않고 tuning 시작 조건만 대조한다."""
     if require_clean:
         _require_clean_worktree()
@@ -285,18 +291,20 @@ def prepare_tuning(*, data_root=DEFAULT_DATA_ROOT, require_clean=True) -> dict:
     ell_max = _validate_ell_max(DEFAULT_ELL_MAX_PATH, input_manifest_sha256)
     evaluator_path = REPOSITORY_ROOT / "src" / "채점기" / "vus_pr.py"
     vus_report = validate_vus_evidence(DEFAULT_VUS_REPORT_PATH, evaluator_path)
-    checkpoints = {
-        model: _validate_checkpoint_report(model, registry, budget)
-        for model in ("TimeRCD", "TSPulse")
-    }
-    environment = collect_runtime_environment_identity()
-    verify_runtime_versions(
-        __import__("yaml").safe_load((
-            REPOSITORY_ROOT / "configs" / "environment.yaml"
-        ).read_text(encoding="utf-8"))
-    )
-    runtime_snapshot = _validate_environment_snapshot(environment)
-    environment = {**environment, "runtime_snapshot": runtime_snapshot}
+    environment_config = __import__("yaml").safe_load((
+        REPOSITORY_ROOT / "configs" / "environment.yaml"
+    ).read_text(encoding="utf-8"))
+    verify_runtime_versions(environment_config)
+    checkpoints = {}
+    environment = {}
+    if require_execution_environment:
+        checkpoints = {
+            model: _validate_checkpoint_report(model, registry, budget)
+            for model in ("TimeRCD", "TSPulse")
+        }
+        environment = collect_runtime_environment_identity()
+        runtime_snapshot = _validate_environment_snapshot(environment)
+        environment = {**environment, "runtime_snapshot": runtime_snapshot}
 
     data_root = Path(data_root)
     if not (data_root / "tuning").is_dir():
@@ -311,6 +319,8 @@ def prepare_tuning(*, data_root=DEFAULT_DATA_ROOT, require_clean=True) -> dict:
         "ell_max_id": ell_max["ell_max_id"],
         "checkpoint_models": sorted(checkpoints),
         "environment": environment,
+        "execution_environment_verified": require_execution_environment,
+        "package_versions_verified": True,
     }
 
 
@@ -1473,16 +1483,286 @@ def _load_dev18_labels(entry: dict, data_root) -> numpy.ndarray:
     return labels
 
 
-def build_trial_score_ledger(
-    manifest_rows, *, data_root=DEFAULT_DATA_ROOT, output_path=None,
-) -> list[dict]:
-    """완료된 primary score만 라벨에 연결해 18×89 채점 원표를 만든다."""
+_SCORE_WORKER_LABELS = {}
+
+
+def _initialize_score_worker(labels_by_series) -> None:
+    global _SCORE_WORKER_LABELS
+    _SCORE_WORKER_LABELS = labels_by_series
+
+
+def _detect_available_memory_bytes() -> int | None:
+    candidates = []
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemAvailable:"):
+                candidates.append(int(line.split()[1]) * 1024)
+                break
+    except (OSError, ValueError, IndexError):
+        pass
+    for limit_path, used_path in (
+        (Path("/sys/fs/cgroup/memory.max"), Path("/sys/fs/cgroup/memory.current")),
+        (
+            Path("/sys/fs/cgroup/memory/memory.limit_in_bytes"),
+            Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+        ),
+    ):
+        try:
+            limit_text = limit_path.read_text(encoding="utf-8").strip()
+            if limit_text == "max":
+                continue
+            limit = int(limit_text)
+            used = int(used_path.read_text(encoding="utf-8").strip())
+            if 0 < limit < 2 ** 60:
+                candidates.append(max(0, limit - used))
+        except (OSError, ValueError):
+            continue
+    return min(candidates) if candidates else None
+
+
+def _resolve_score_workers(
+    workers, *, pending_count, cpu_count=None, available_memory_bytes=None,
+) -> int:
+    if type(workers) is not int or workers < 0:
+        raise ValueError("workers는 0 이상의 정수여야 한다")
+    if type(pending_count) is not int or pending_count < 1:
+        raise ValueError("pending_count는 1 이상의 정수여야 한다")
+    if cpu_count is None:
+        try:
+            cpu_count = len(os.sched_getaffinity(0))
+        except AttributeError:
+            cpu_count = os.cpu_count() or 1
+    cpu_count = max(1, int(cpu_count))
+    if available_memory_bytes is None:
+        available_memory_bytes = _detect_available_memory_bytes()
+    if available_memory_bytes is None:
+        memory_limit = 4
+    else:
+        gibibyte = 1024 ** 3
+        memory_limit = max(1, (int(available_memory_bytes) - 2 * gibibyte) // gibibyte)
+    safe_limit = min(16, cpu_count, memory_limit, pending_count)
+    return safe_limit if workers == 0 else min(workers, safe_limit)
+
+
+def _score_checkpoint_path(directory, identity: dict) -> Path:
+    digest = hashlib.sha256(_json(identity).encode("utf-8")).hexdigest()
+    return Path(directory) / f"{digest}.json"
+
+
+def _checkpoint_payload(identity: dict, vus_pr_value: float) -> dict:
+    payload = {"identity": identity, "vus_pr": float(vus_pr_value)}
+    return {
+        **payload,
+        "payload_sha256": hashlib.sha256(
+            _json(payload).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _write_score_checkpoint(path, identity: dict, vus_pr_value: float) -> None:
+    if not numpy.isfinite(vus_pr_value):
+        raise ValueError("VUS-PR checkpoint 값은 유한해야 한다")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary_path.write_text(
+        json.dumps(
+            _checkpoint_payload(identity, vus_pr_value),
+            ensure_ascii=False, sort_keys=True, indent=2,
+        ) + "\n",
+        encoding="utf-8",
+    )
+    temporary_path.replace(path)
+
+
+def _load_score_checkpoint(path, identity: dict) -> float | None:
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        payload = _read_json(path)
+        vus_pr_value = payload["vus_pr"]
+        expected = _checkpoint_payload(identity, vus_pr_value)
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(f"VUS-PR checkpoint를 읽을 수 없다: {path.name}") from error
+    if (
+        payload != expected
+        or type(vus_pr_value) not in (int, float)
+        or not numpy.isfinite(vus_pr_value)
+    ):
+        raise ValueError(f"VUS-PR checkpoint가 손상됐다: {path.name}")
+    return float(vus_pr_value)
+
+
+def _score_primary_row(task: dict) -> dict:
     from src.채점기.parser import load_and_validate_score
 
+    manifest_row = task["manifest_row"]
+    score_path = (REPOSITORY_ROOT / manifest_row["score_file"]).resolve()
+    metadata_path = (REPOSITORY_ROOT / manifest_row["metadata_file"]).resolve()
+    for path in (score_path, metadata_path):
+        try:
+            path.relative_to(REPOSITORY_ROOT)
+        except ValueError as error:
+            raise ValueError("Dev18 score manifest가 저장소 밖 파일을 가리킨다") from error
+    if file_sha256(score_path) != manifest_row["score_sha256"]:
+        raise ValueError("Dev18 primary score SHA-256이 manifest와 다르다")
+    if (
+        metadata_path != score_path.with_suffix(".meta.json")
+        or file_sha256(metadata_path) != manifest_row["metadata_sha256"]
+    ):
+        raise ValueError("Dev18 primary metadata SHA-256이 manifest와 다르다")
+
+    scores, info, metadata = load_and_validate_score(score_path)
+    series = manifest_row["series"]
+    expected_file_info = {
+        "dataset": "DEV18", "series": int(series),
+        "model": manifest_row["model"], "tier": manifest_row["tier"],
+        "ratio": int(manifest_row["physical_ratio"]),
+        "seed": int(manifest_row["seed"]), "smoothing_kind": "raw",
+        "norm_kind": "trainnorm", "channels": False,
+    }
+    if info != expected_file_info:
+        raise ValueError("Dev18 primary score 파일명이 manifest와 다르다")
+    metadata_fields = {
+        "dataset": "DEV18", "series": int(series),
+        "model": manifest_row["model"], "tier": manifest_row["tier"],
+        "ratio": int(manifest_row["physical_ratio"]),
+        "seed": int(manifest_row["seed"]),
+        "config_id": manifest_row["config_id"],
+        "score_variant": manifest_row["score_variant"] or None,
+    }
+    if any(metadata.get(field) != value for field, value in metadata_fields.items()):
+        raise ValueError("Dev18 primary metadata 신원이 manifest와 다르다")
+    if manifest_row["family"] != task["entry"]["family"]:
+        raise ValueError("Dev18 family가 봉인 manifest와 다르다")
+    start, end = metadata["label_slice"]
+    labels = _SCORE_WORKER_LABELS[series][slice(start, end)]
+    if len(labels) != len(scores):
+        raise ValueError("Dev18 score-label 정렬 길이가 다르다")
+
+    label_sha256 = hashlib.sha256(
+        numpy.ascontiguousarray(labels, dtype=numpy.uint8).tobytes()
+    ).hexdigest()
+    identity = {
+        "schema_version": 1,
+        "manifest_key": list(_manifest_key(manifest_row)),
+        "budget_id": task["budget_id"],
+        "budget_sha256": task["budget_sha256"],
+        "input_manifest_sha256": task["input_manifest_sha256"],
+        "environment_sha256": task["environment_sha256"],
+        "project_commit": task["project_commit"],
+        "score_file": manifest_row["score_file"],
+        "score_sha256": manifest_row["score_sha256"],
+        "metadata_file": manifest_row["metadata_file"],
+        "metadata_sha256": manifest_row["metadata_sha256"],
+        "evaluator_sha256": task["evaluator_sha256"],
+        "ell_max_id": task["ell_max_id"],
+        "l_max_samples": task["l_max_samples"],
+        "n_thresholds": task["n_thresholds"],
+        "label_sha256": label_sha256,
+    }
+    checkpoint_path = _score_checkpoint_path(task["checkpoint_directory"], identity)
+    vus_pr_value = _load_score_checkpoint(checkpoint_path, identity)
+    reused = vus_pr_value is not None
+    if vus_pr_value is None:
+        vus_pr_value = vus_pr(
+            scores, labels, task["l_max_samples"],
+            n_thresholds=task["n_thresholds"],
+        )
+        _write_score_checkpoint(checkpoint_path, identity, vus_pr_value)
+    return {
+        "manifest_key": list(_manifest_key(manifest_row)),
+        "normalization": info["norm_kind"],
+        "vus_pr": vus_pr_value,
+        "reused": reused,
+    }
+
+
+def _score_primary_rows(tasks, labels_by_series, workers) -> dict:
+    tasks = sorted(
+        tasks,
+        key=lambda task: (-task["estimated_cost"], _manifest_key(task["manifest_row"])),
+    )
+    worker_count = _resolve_score_workers(workers, pending_count=len(tasks))
+    print(
+        f"VUS-PR 채점 시작: physical={len(tasks)}, workers={worker_count}",
+        flush=True,
+    )
+    results = {}
+    reused_count = 0
+
+    def record(result):
+        nonlocal reused_count
+        key = tuple(result["manifest_key"])
+        if key in results:
+            raise ValueError("VUS-PR worker가 중복 manifest key를 반환했다")
+        results[key] = result
+        reused_count += int(result["reused"])
+        completed = len(results)
+        if completed == 1 or completed % 10 == 0 or completed == len(tasks):
+            print(
+                f"VUS-PR 진행: {completed}/{len(tasks)} "
+                f"(checkpoint 재사용 {reused_count})",
+                flush=True,
+            )
+
+    if worker_count == 1:
+        _initialize_score_worker(labels_by_series)
+        for task in tasks:
+            record(_score_primary_row(task))
+    else:
+        executor = concurrent.futures.ProcessPoolExecutor(
+            max_workers=worker_count,
+            initializer=_initialize_score_worker,
+            initargs=(labels_by_series,),
+        )
+        futures = []
+        try:
+            futures = [executor.submit(_score_primary_row, task) for task in tasks]
+            for future in concurrent.futures.as_completed(futures):
+                record(future.result())
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
+    return results
+
+
+def _expand_primary_score(
+    manifest_row, *, logical_ratios, normalization, vus_pr_value,
+    evaluator_sha256, ell_max_id,
+) -> list[dict]:
+    return [{
+        "series": manifest_row["series"], "family": manifest_row["family"],
+        "tier": manifest_row["tier"], "model": manifest_row["model"],
+        "config_id": manifest_row["config_id"], "ratio": ratio,
+        "seed": int(manifest_row["seed"]),
+        "score_variant": manifest_row["score_variant"],
+        "normalization": normalization, "vus_pr": vus_pr_value,
+        "score_file": manifest_row["score_file"],
+        "score_sha256": manifest_row["score_sha256"],
+        "evaluator_sha256": evaluator_sha256,
+        "ell_max_id": ell_max_id,
+        "status": "complete", "status_reason": "",
+    } for ratio in logical_ratios]
+
+
+def build_trial_score_ledger(
+    manifest_rows, *, data_root=DEFAULT_DATA_ROOT, output_path=None, workers=1,
+    checkpoint_directory=DEFAULT_VUS_CHECKPOINT_DIRECTORY, project_commit=None,
+) -> list[dict]:
+    """완료된 primary score만 라벨에 연결해 18×89 채점 원표를 만든다."""
     budget = _read_json(DEFAULT_BUDGET_PATH)
     input_manifest_path = REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
+    input_manifest_sha256 = file_sha256(input_manifest_path)
+    environment_sha256 = file_sha256(REPOSITORY_ROOT / "configs" / "environment.yaml")
+    project_commit = project_commit or _git_head()
     ell_max = _validate_ell_max(
-        DEFAULT_ELL_MAX_PATH, file_sha256(input_manifest_path),
+        DEFAULT_ELL_MAX_PATH, input_manifest_sha256,
     )
     evaluator_path = REPOSITORY_ROOT / "src" / "채점기" / "vus_pr.py"
     vus_report = validate_vus_evidence(DEFAULT_VUS_REPORT_PATH, evaluator_path)
@@ -1498,80 +1778,60 @@ def build_trial_score_ledger(
     primary_rows = _validate_primary_manifest_rows(
         manifest_rows, budget, tuple(sorted(entries)),
     )
+    from tests.ghl_main.run_registered_models import _verify_manifest_file
+
+    for entry in entries.values():
+        _verify_manifest_file(
+            Path(data_root) / entry["source_directory"] / entry["name"], entry,
+        )
     labels_by_series = {
         series: _load_dev18_labels(entry, data_root) for series, entry in entries.items()
     }
+    tasks = []
+    for manifest_row in primary_rows:
+        series = manifest_row["series"]
+        entry = entries[series]
+        tasks.append({
+            "manifest_row": manifest_row,
+            "entry": entry,
+            "budget_id": budget["budget_id"],
+            "budget_sha256": budget["budget_sha256"],
+            "input_manifest_sha256": input_manifest_sha256,
+            "environment_sha256": environment_sha256,
+            "project_commit": project_commit,
+            "evaluator_sha256": vus_report["evaluator_sha256"],
+            "ell_max_id": ell_max["ell_max_id"],
+            "l_max_samples": l_max_by_series[series],
+            "n_thresholds": vus_report["n_thresholds"],
+            "checkpoint_directory": str(Path(checkpoint_directory)),
+            "estimated_cost": (
+                entry["row_count"] - entry["training_boundary"]
+            ) * (l_max_by_series[series] + 1),
+        })
+    scored = _score_primary_rows(tasks, labels_by_series, workers)
     ledger = []
     for manifest_row in sorted(primary_rows, key=_manifest_key):
-        score_path = (REPOSITORY_ROOT / manifest_row["score_file"]).resolve()
-        metadata_path = (REPOSITORY_ROOT / manifest_row["metadata_file"]).resolve()
-        for path in (score_path, metadata_path):
-            try:
-                path.relative_to(REPOSITORY_ROOT)
-            except ValueError as error:
-                raise ValueError("Dev18 score manifest가 저장소 밖 파일을 가리킨다") from error
-        if file_sha256(score_path) != manifest_row["score_sha256"]:
-            raise ValueError("Dev18 primary score SHA-256이 manifest와 다르다")
-        if (
-            metadata_path != score_path.with_suffix(".meta.json")
-            or file_sha256(metadata_path) != manifest_row["metadata_sha256"]
-        ):
-            raise ValueError("Dev18 primary metadata SHA-256이 manifest와 다르다")
-        scores, info, metadata = load_and_validate_score(score_path)
-        series = manifest_row["series"]
-        expected_file_info = {
-            "dataset": "DEV18", "series": int(series),
-            "model": manifest_row["model"], "tier": manifest_row["tier"],
-            "ratio": int(manifest_row["physical_ratio"]),
-            "seed": int(manifest_row["seed"]), "smoothing_kind": "raw",
-            "norm_kind": "trainnorm", "channels": False,
-        }
-        if info != expected_file_info:
-            raise ValueError("Dev18 primary score 파일명이 manifest와 다르다")
-        expected_metadata_variant = manifest_row["score_variant"] or None
-        metadata_fields = {
-            "dataset": "DEV18", "series": int(series),
-            "model": manifest_row["model"], "tier": manifest_row["tier"],
-            "ratio": int(manifest_row["physical_ratio"]),
-            "seed": int(manifest_row["seed"]),
-            "config_id": manifest_row["config_id"],
-            "score_variant": expected_metadata_variant,
-        }
-        if any(metadata.get(field) != value for field, value in metadata_fields.items()):
-            raise ValueError("Dev18 primary metadata 신원이 manifest와 다르다")
-        if manifest_row["family"] != entries[series]["family"]:
-            raise ValueError("Dev18 family가 봉인 manifest와 다르다")
-        start, end = metadata["label_slice"]
-        labels = labels_by_series[series][slice(start, end)]
-        if len(labels) != len(scores):
-            raise ValueError("Dev18 score-label 정렬 길이가 다르다")
         panel = panel_by_key[(
             manifest_row["model"], manifest_row["config_id"],
             manifest_row["physical_ratio"], manifest_row["seed"],
         )]
-        for ratio in panel["logical_ratios"]:
-            ledger.append({
-                "series": series, "family": manifest_row["family"],
-                "tier": manifest_row["tier"], "model": manifest_row["model"],
-                "config_id": manifest_row["config_id"], "ratio": ratio,
-                "seed": int(manifest_row["seed"]),
-                "score_variant": manifest_row["score_variant"],
-                "normalization": info["norm_kind"],
-                "vus_pr": vus_pr(
-                    scores, labels, l_max_by_series[series],
-                    n_thresholds=vus_report["n_thresholds"],
-                ),
-                "score_file": manifest_row["score_file"],
-                "score_sha256": manifest_row["score_sha256"],
-                "evaluator_sha256": vus_report["evaluator_sha256"],
-                "ell_max_id": ell_max["ell_max_id"],
-                "status": "complete", "status_reason": "",
-            })
+        result = scored[_manifest_key(manifest_row)]
+        ledger.extend(_expand_primary_score(
+            manifest_row,
+            logical_ratios=panel["logical_ratios"],
+            normalization=result["normalization"],
+            vus_pr_value=result["vus_pr"],
+            evaluator_sha256=vus_report["evaluator_sha256"],
+            ell_max_id=ell_max["ell_max_id"],
+        ))
     expected_rows = 18 * budget["primary_logical_score_row_count"]
     if len(ledger) != expected_rows:
         raise ValueError(f"Dev18 tuning ledger 행 수가 다르다: {len(ledger)} != {expected_rows}")
     if output_path is not None:
-        _write_csv(output_path, ledger)
+        output_path = Path(output_path)
+        temporary_path = output_path.with_name(f".{output_path.name}.tmp")
+        _write_csv(temporary_path, ledger)
+        temporary_path.replace(output_path)
     return ledger
 
 
@@ -1579,15 +1839,26 @@ def _policy_csv_rows(rows):
     return _serializable_rows(rows)
 
 
-def finish_tuning(manifest_rows, *, data_root=DEFAULT_DATA_ROOT) -> dict:
+def finish_tuning(
+    manifest_rows, *, data_root=DEFAULT_DATA_ROOT, workers=1,
+    checkpoint_directory=DEFAULT_VUS_CHECKPOINT_DIRECTORY,
+    require_execution_environment=True,
+) -> dict:
     """완료 score를 채점하고 정책표·membership·검토용 CSV/PNG를 한 폴더에 쓴다."""
-    prepare_tuning(data_root=data_root, require_clean=True)
+    project_commit = _git_head()
+    prepare_tuning(
+        data_root=data_root, require_clean=True,
+        require_execution_environment=require_execution_environment,
+    )
+    _require_same_worktree(project_commit)
     registry, _ = load_model_registry_with_sha()
     budget = _read_json(DEFAULT_BUDGET_PATH)
     DEFAULT_RESULT_DIRECTORY.mkdir(parents=True, exist_ok=True)
     ledger_path = DEFAULT_RESULT_DIRECTORY / "dev18_trial_score_ledger.csv"
     ledger = build_trial_score_ledger(
         manifest_rows, data_root=data_root, output_path=ledger_path,
+        workers=workers, checkpoint_directory=checkpoint_directory,
+        project_commit=project_commit,
     )
     evaluator_sha256 = ledger[0]["evaluator_sha256"]
     selection = select_tuning_policies(
@@ -1606,8 +1877,10 @@ def finish_tuning(manifest_rows, *, data_root=DEFAULT_DATA_ROOT) -> dict:
     if len(loaded) != len(membership):
         raise ValueError("final membership 저장 행 수가 다르다")
     write_selection_reports(ledger, selection, DEFAULT_RESULT_DIRECTORY)
+    _require_same_worktree(project_commit)
     return {
         "status": "complete", "budget_id": budget["budget_id"],
+        "project_commit": project_commit,
         "ledger_rows": len(ledger), "selected_models": {
             row["tier"]: row["selected_model"] for row in selection["tier_fixed"]
         },
