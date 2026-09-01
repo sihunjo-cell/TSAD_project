@@ -20,20 +20,22 @@ TOST는 `±δ` 단측 검정 두 번으로 구현합니다. bootstrap은 10,000�
 ## 받는 입력
 
 - `model_fixed_policy.csv`: 모든 활성 모델의 고정 recipe 곡선
-- `tier_fixed_policy.csv`: Tier별 대표 모델의 주분석 곡선
+- `ratio_adaptive_selection.csv`: 비율마다 고른 Tier 대표 모델의 주분석 경로
+- `tier_fixed_policy.csv`: Tier 대표 모델을 전 비율에 고정한 통제 비교
+- `final_policy_membership.csv`: `model_fixed·tier_fixed·tier_adaptive` 실행 요청
 - `ghl25_score_ledger.csv`, `hai_score_ledger.csv`: 지우님의 최종 채점 원표
 - 모델별 실행 시간, peak memory, artifact 크기와 관측량 근거
 - 강혁님의 이상 구간·채널·주기성 EDA 요약
 
-비율별 재튜닝과 Tier 내부 모델 교체 표가 별도로 오면 운영 민감도로만 분석합니다. 이 표가 없어도
-주분석과 비용 최적화 입력을 완성해야 합니다. TSB 튜닝 점수는 최종 성능이나 교차점 계산에 넣지
-않습니다.
+`tier_adaptive`는 모델별 recipe를 고정한 채 비율마다 Tier 대표를 바꾸는 운영 주분석입니다.
+`tier_fixed`는 대표 모델까지 고정해 데이터 양의 효과를 분리하는 통제 비교입니다. 비율별로 recipe를
+다시 고르거나 재튜닝하지 않습니다. TSB 튜닝 점수는 최종 성능이나 교차점 계산에 넣지 않습니다.
 
 ## GHL 분석
 
-주분석은 같은 `q`와 같은 GHL 시계열에서 고정 모델·고정 recipe를 짝지어 비교합니다. GHL
-시계열 macro는 `1/25`입니다. 일곱 `q`를 독립 표본으로 세지 않고 한 bootstrap replicate에서
-같은 시계열을 모델·Tier·`q` 전반에 함께 적용합니다.
+주분석은 같은 `q`와 같은 GHL 시계열에서 그 비율에 봉인된 Tier 대표와 고정 recipe를 짝지어
+비교합니다. GHL 시계열 macro는 `1/25`입니다. 일곱 `q`를 독립 표본으로 세지 않고 한 bootstrap
+replicate에서 같은 시계열을 모델·Tier·`q` 전반에 함께 적용합니다.
 
 같은 simulator에서 나온 시계열의 의존성이 확인되면 provenance cluster 단위 bootstrap을
 주결과로 올립니다. GHL25를 제조 공정 전체의 독립 표본이라고 일반화하지 않습니다.
