@@ -65,7 +65,7 @@ Windows에서는 Malgun Gothic을 우선 등록하고 `matplotlib.rcParams["font
 
 ## 재생성과 오류 처리
 
-Lightning 완료 경로에 selection-only 옵션을 추가한다. 이 옵션은 ledger의 schema, 1,602개 complete 행, 중복 key, budget ID와 evaluator SHA를 검증한 뒤 선택표와 그림만 다시 만든다. ledger가 불완전하면 기존 산출물을 덮기 전에 중단한다.
+Lightning 완료 경로에 selection-only 옵션을 추가한다. 이 옵션은 ledger의 schema, 1,602개 complete 행, 중복 key, budget ID와 evaluator·`ell_max` 봉인 신원을 검증한 뒤 선택표와 그림만 다시 만든다. ledger가 불완전하면 기존 산출물을 덮기 전에 중단한다.
 
 ## 검증
 

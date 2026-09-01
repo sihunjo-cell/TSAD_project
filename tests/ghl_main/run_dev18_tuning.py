@@ -8,6 +8,7 @@ import csv
 import datetime
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
@@ -494,8 +495,10 @@ def load_structural_block_evidence(path, registry: dict) -> dict:
     }
 
 
-def load_trial_score_ledger(path, budget: dict) -> list[dict]:
-    """완료된 원표의 schema와 budget 논리 키만 확인해 읽는다."""
+def load_trial_score_ledger(
+    path, budget: dict, *, expected_evaluator_sha256: str, expected_ell_max_id: str,
+) -> list[dict]:
+    """완료 원표의 점수·채점 신원과 budget 논리 키를 확인해 읽는다."""
     with Path(path).open(encoding="utf-8", newline="") as input_file:
         reader = csv.DictReader(input_file)
         if tuple(reader.fieldnames or ()) != TRIAL_SCORE_LEDGER_FIELDS:
@@ -504,8 +507,11 @@ def load_trial_score_ledger(path, budget: dict) -> list[dict]:
         for row in reader:
             if row["status"] != "complete":
                 raise ValueError("Dev18 trial ledger에는 complete 행만 있어야 한다")
+            vus_pr_value = float(row["vus_pr"])
+            if not math.isfinite(vus_pr_value) or not 0 <= vus_pr_value <= 1:
+                raise ValueError("Dev18 trial ledger의 VUS-PR은 유한한 [0, 1] 값이어야 한다")
             rows.append({**row, "ratio": int(row["ratio"]), "seed": int(row["seed"]),
-                         "vus_pr": float(row["vus_pr"])})
+                         "vus_pr": vus_pr_value})
 
     keys = [
         (row["series"], row["model"], row["config_id"], row["ratio"],
@@ -514,10 +520,10 @@ def load_trial_score_ledger(path, budget: dict) -> list[dict]:
     ]
     if len(set(keys)) != len(keys):
         raise ValueError("Dev18 trial ledger에 duplicate 논리 키가 있다")
-    if len({row["evaluator_sha256"] for row in rows}) != 1:
-        raise ValueError("Dev18 trial ledger의 evaluator SHA가 하나가 아니다")
-    if len({row["ell_max_id"] for row in rows}) != 1:
-        raise ValueError("Dev18 trial ledger의 ell_max ID가 하나가 아니다")
+    if {row["evaluator_sha256"] for row in rows} != {expected_evaluator_sha256}:
+        raise ValueError("Dev18 trial ledger의 evaluator SHA가 공식 봉인과 다르다")
+    if {row["ell_max_id"] for row in rows} != {expected_ell_max_id}:
+        raise ValueError("Dev18 trial ledger의 ell_max ID가 공식 봉인과 다르다")
     series_families = {}
     tiers_by_model = {panel["model"]: panel["tier"] for panel in budget["model_panels"]}
     for row in rows:
@@ -2311,7 +2317,18 @@ def finish_selection_from_ledger(
 
     ledger_path = Path(ledger_path)
     ledger_sha256 = file_sha256(ledger_path)
-    ledger = load_trial_score_ledger(ledger_path, budget)
+    input_manifest_sha256 = file_sha256(
+        REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
+    )
+    ell_max = _validate_ell_max(DEFAULT_ELL_MAX_PATH, input_manifest_sha256)
+    vus_report = validate_vus_evidence(
+        DEFAULT_VUS_REPORT_PATH, REPOSITORY_ROOT / "src" / "채점기" / "vus_pr.py",
+    )
+    ledger = load_trial_score_ledger(
+        ledger_path, budget,
+        expected_evaluator_sha256=vus_report["evaluator_sha256"],
+        expected_ell_max_id=ell_max["ell_max_id"],
+    )
     selection = select_tuning_policies(
         ledger, registry, budget, evaluator_sha256=ledger[0]["evaluator_sha256"],
     )

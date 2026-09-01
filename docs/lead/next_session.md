@@ -15,8 +15,8 @@ ledger는 지우거나 다시 계산하지 않는다.
 Lightning에 이미 있는
 `experiments/01_ghl_main/results/dev18_tuning/dev18_trial_score_ledger.csv`를 입력으로
 [완료 ledger에서 선택표만 다시 생성](lightning_studio.md#완료-ledger에서-선택표만-다시-생성) 명령
-하나만 실행한다. 이 경로는 score manifest, 원본 CSV, score 배열, VUS evaluator, checkpoint lock과
-모델 runner를 읽거나 호출하지 않는다.
+하나만 실행한다. 이 경로는 score manifest, 원본 CSV, score 배열과 checkpoint lock을 읽지 않고
+VUS evaluator나 모델 runner를 실행하지 않는다. 봉인 evaluator·`ell_max` 신원만 현재 코드와 대조한다.
 
 완료 조건은 `selection_complete.json`의 ledger 1,602행, membership 294행, 필수 결과 SHA-256이
 실제 파일과 모두 일치하는 것이다. `selection.png`에는 Tier 선 세 개, PCA_LEGACY 참고 점선과 작은

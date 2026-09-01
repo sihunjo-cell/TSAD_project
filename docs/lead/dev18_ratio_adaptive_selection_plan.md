@@ -4,7 +4,7 @@
 
 **Goal:** 완료된 Dev18 ledger만 재사용해 비율별 Tier 대표를 주분석으로 봉인하고, PCA_LEGACY 참고선과 Tier 선 세 개만 담은 최종 그림을 만든다.
 
-**Architecture:** 기존 `model_fixed`·`tier_fixed` 선택과 score ledger는 그대로 보존한다. 새 `tier_adaptive`는 holdout family 밖에서 한 번 고정한 fold recipe로 비율별 모델 점수를 계산하고, 최종 실행에는 full-panel `model_fixed` recipe를 연결한다. selection-only 경로는 score 배열과 VUS evaluator를 읽지 않고 ledger에서 정책 CSV·membership·그림만 다시 만든다.
+**Architecture:** 기존 `model_fixed`·`tier_fixed` 선택과 score ledger는 그대로 보존한다. 새 `tier_adaptive`는 holdout family 밖에서 한 번 고정한 fold recipe로 비율별 모델 점수를 계산하고, 최종 실행에는 full-panel `model_fixed` recipe를 연결한다. selection-only 경로는 score 배열을 읽거나 VUS evaluator를 실행하지 않는다. 봉인 evaluator·`ell_max` 신원만 대조한 뒤 ledger에서 정책 CSV·membership·그림을 다시 만든다.
 
 **Tech Stack:** Python 3.11+, NumPy, Matplotlib, 표준 `csv/json/hashlib`, `unittest`
 

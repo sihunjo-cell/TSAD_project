@@ -373,9 +373,9 @@ ledger가 SHA-256으로 참조한다.
 
 0단계의 Dev18 인수, 1단계의 정적 증거와 2단계의 exact panel·VUS-PR 채점을 닫았다. 현재 게이트는
 완료 ledger 1,602행에서 `tier_adaptive` 선택표, 상세 감사표, 그림과 294행 membership을 다시 만드는
-일이다. selection-only 경로는 과거 score manifest, 원본 CSV, score 배열, checkpoint와 evaluator를
-읽거나 모델·HPO·채점을 실행하지 않는다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로
-닫는다.
+일이다. selection-only 경로는 과거 score manifest, 원본 CSV, score 배열과 checkpoint를 읽거나
+모델·HPO·채점·evaluator를 실행하지 않는다. 봉인 evaluator·`ell_max` 신원만 현재 코드와
+대조한다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로 닫는다.
 
 ## 15. 중단과 완료 규칙
 

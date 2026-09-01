@@ -62,6 +62,7 @@ def main() -> None:
             parser.error("--selection-only에는 --ledger PATH가 필요하다")
         from src.common.execution_identity import file_sha256
 
+        (arguments.result_directory / "selection_complete.json").unlink(missing_ok=True)
         result = finish_selection_from_ledger(
             arguments.ledger, result_directory=arguments.result_directory,
         )

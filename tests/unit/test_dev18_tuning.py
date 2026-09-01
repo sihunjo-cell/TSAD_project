@@ -167,41 +167,62 @@ class TestDev18Tuning(unittest.TestCase):
                 writer.writeheader()
                 writer.writerows(ledger_rows)
 
+        def load(path, current_budget=budget):
+            return load_trial_score_ledger(
+                path, current_budget,
+                expected_evaluator_sha256="b" * 64,
+                expected_ell_max_id="ell-v1",
+            )
+
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "ledger.csv"
             write_ledger(path, rows)
-            loaded = load_trial_score_ledger(path, budget)
+            loaded = load(path)
             self.assertIsInstance(loaded[0]["ratio"], int)
             self.assertIsInstance(loaded[0]["seed"], int)
             self.assertIsInstance(loaded[0]["vus_pr"], float)
 
+            for invalid in ("nan", "inf", "-0.01", "1.01"):
+                with self.subTest(vus_pr=invalid):
+                    write_ledger(path, [{**rows[0], "vus_pr": invalid}, *rows[1:]])
+                    with self.assertRaisesRegex(ValueError, "VUS-PR"):
+                        load(path)
+
+            write_ledger(path, [{**row, "evaluator_sha256": "c" * 64} for row in rows])
+            with self.assertRaisesRegex(ValueError, "evaluator"):
+                load(path)
+
+            write_ledger(path, [{**row, "ell_max_id": "ell-v2"} for row in rows])
+            with self.assertRaisesRegex(ValueError, "ell_max"):
+                load(path)
+
             write_ledger(path, rows + [rows[0]])
             with self.assertRaisesRegex(ValueError, "duplicate"):
-                load_trial_score_ledger(path, budget)
+                load(path)
 
             write_ledger(path, [{**row, "status": "failed"} for row in rows])
             with self.assertRaisesRegex(ValueError, "complete"):
-                load_trial_score_ledger(path, budget)
+                load(path)
 
             write_ledger(path, [{**row, "evaluator_sha256": "c" * 64} if index == 0 else row
                                 for index, row in enumerate(rows)])
             with self.assertRaisesRegex(ValueError, "evaluator"):
-                load_trial_score_ledger(path, budget)
+                load(path)
 
             write_ledger(path, [{**row, "ratio": "40"} if index == 0 else row
                                 for index, row in enumerate(rows)])
             with self.assertRaisesRegex(ValueError, "budget"):
-                load_trial_score_ledger(path, budget)
+                load(path)
 
             write_ledger(path, [{**row, "family": "C"} if index == 1 else row
                                 for index, row in enumerate(rows)])
             with self.assertRaisesRegex(ValueError, "series.*family"):
-                load_trial_score_ledger(path, budget)
+                load(path)
 
             write_ledger(path, [{**row, "tier": "t2"} if index == 0 else row
                                 for index, row in enumerate(rows)])
             with self.assertRaisesRegex(ValueError, "tier"):
-                load_trial_score_ledger(path, budget)
+                load(path)
 
             production_budget = {
                 "budget_id": "b5367ad431093", "seeds": [0],
@@ -215,10 +236,10 @@ class TestDev18Tuning(unittest.TestCase):
                 for index in range(1, 19)
             ]
             write_ledger(path, production_rows)
-            self.assertEqual(len(load_trial_score_ledger(path, production_budget)), 18)
+            self.assertEqual(len(load(path, production_budget)), 18)
             write_ledger(path, [{**row, "family": "F1"} for row in production_rows])
             with self.assertRaisesRegex(ValueError, "10개 family"):
-                load_trial_score_ledger(path, production_budget)
+                load(path, production_budget)
 
     def test_ratio_adaptive_selection_uses_native_support_and_fixed_recipe(self):
         registry = {
@@ -791,6 +812,12 @@ class TestDev18Tuning(unittest.TestCase):
         budget = json.loads(json.dumps(run_dev18_tuning._read_json(
             run_dev18_tuning.DEFAULT_BUDGET_PATH,
         )))
+        evaluator_sha256 = run_dev18_tuning._read_json(
+            run_dev18_tuning.DEFAULT_VUS_REPORT_PATH,
+        )["evaluator_sha256"]
+        ell_max_id = run_dev18_tuning._read_json(
+            run_dev18_tuning.DEFAULT_ELL_MAX_PATH,
+        )["ell_max_id"]
         scores = {
             "PCA_LEGACY": 0.20, "MWVAR": 0.40, "SQDIFF_LAST3": 0.30,
             "PaAno": 0.65, "GDN": 0.60, "TimeRCD": 0.50, "TSPulse": 0.70,
@@ -810,8 +837,8 @@ class TestDev18Tuning(unittest.TestCase):
                                     "normalization": "trainnorm",
                                     "vus_pr": scores[panel["model"]] + config_index / 1000,
                                     "score_file": "unused.npy", "score_sha256": "a" * 64,
-                                    "evaluator_sha256": "b" * 64,
-                                    "ell_max_id": "ell-v1", "status": "complete",
+                                    "evaluator_sha256": evaluator_sha256,
+                                    "ell_max_id": ell_max_id, "status": "complete",
                                     "status_reason": "",
                                 })
 
@@ -831,7 +858,6 @@ class TestDev18Tuning(unittest.TestCase):
                     run_dev18_tuning, "load_model_registry_with_sha",
                     return_value=(registry, registry_sha256),
                 ),
-                patch.object(run_dev18_tuning, "_read_json", return_value=budget),
                 patch.object(
                     run_dev18_tuning, "DEV18_RECOVERY_BUDGET_ID", "test-budget",
                 ),
@@ -917,6 +943,49 @@ class TestDev18Tuning(unittest.TestCase):
                         patch.object(run_dev18_tuning, "_require_same_worktree"),
                     ):
                         with self.assertRaisesRegex(ValueError, "budget.*봉인"):
+                            finish_selection_from_ledger(
+                                ledger_path, result_directory=result_directory,
+                            )
+                    self.assertFalse(result_directory.exists())
+
+    def test_selection_only_rejects_invalid_ledger_before_output(self):
+        budget = run_dev18_tuning._read_json(run_dev18_tuning.DEFAULT_BUDGET_PATH)
+        panel = budget["model_panels"][0]
+        evaluator_sha256 = run_dev18_tuning._read_json(
+            run_dev18_tuning.DEFAULT_VUS_REPORT_PATH,
+        )["evaluator_sha256"]
+        ell_max_id = run_dev18_tuning._read_json(
+            run_dev18_tuning.DEFAULT_ELL_MAX_PATH,
+        )["ell_max_id"]
+        row = {
+            "series": "01", "family": "MSL", "tier": panel["tier"],
+            "model": panel["model"], "config_id": panel["selected_config_ids"][0],
+            "ratio": panel["logical_ratios"][0],
+            "seed": panel.get("seeds", budget["seeds"])[0],
+            "score_variant": panel["primary_score_variants"][0],
+            "normalization": "trainnorm", "vus_pr": "0.5",
+            "score_file": "unused.npy", "score_sha256": "a" * 64,
+            "evaluator_sha256": evaluator_sha256, "ell_max_id": ell_max_id,
+            "status": "complete", "status_reason": "",
+        }
+        cases = {
+            "nonfinite": ({"vus_pr": "nan"}, "VUS-PR"),
+            "outside": ({"vus_pr": "1.01"}, "VUS-PR"),
+            "evaluator": ({"evaluator_sha256": "b" * 64}, "evaluator"),
+            "ell_max": ({"ell_max_id": "ell-v2"}, "ell_max"),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, (changes, message) in cases.items():
+                with self.subTest(name=name):
+                    ledger_path = root / f"{name}.csv"
+                    run_dev18_tuning._write_csv(
+                        ledger_path, [{**row, **changes}],
+                        run_dev18_tuning.TRIAL_SCORE_LEDGER_FIELDS,
+                    )
+                    result_directory = root / f"{name}-results"
+                    with patch.object(run_dev18_tuning, "_require_same_worktree"):
+                        with self.assertRaisesRegex(ValueError, message):
                             finish_selection_from_ledger(
                                 ledger_path, result_directory=result_directory,
                             )
@@ -1499,6 +1568,39 @@ import tests.ghl_main.run_dev18_tuning
             self.assertEqual(receipt["expected_result_files"], list(required))
             self.assertEqual(set(receipt["result_files_sha256"]), set(required))
             self.assertNotIn("score_manifest_sha256", receipt)
+
+    def test_selection_only_cli_removes_stale_receipt_before_failed_run(self):
+        from tests.checks import finish_lightning_dev18
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_directory = root / "results"
+            result_directory.mkdir()
+            receipt_path = result_directory / "selection_complete.json"
+            receipt_path.write_text('{"status":"complete"}\n', encoding="utf-8")
+            preserved_path = result_directory / "model_fixed_policy.csv"
+            preserved_path.write_text("existing output\n", encoding="utf-8")
+            ledger_path = root / "dev18_trial_score_ledger.csv"
+            ledger_path.write_text("invalid ledger\n", encoding="utf-8")
+            with (
+                patch.object(
+                    sys, "argv",
+                    [
+                        str(Path(finish_lightning_dev18.__file__)),
+                        "--selection-only", "--ledger", str(ledger_path),
+                        "--result-directory", str(result_directory),
+                    ],
+                ),
+                patch.object(
+                    finish_lightning_dev18, "finish_selection_from_ledger",
+                    side_effect=ValueError("ledger rejected"),
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "ledger rejected"):
+                    finish_lightning_dev18.main()
+
+            self.assertFalse(receipt_path.exists())
+            self.assertEqual(preserved_path.read_text(encoding="utf-8"), "existing output\n")
 
     def test_cpu_finish_cli_can_import_project_packages(self):
         script = Path(__file__).parents[1] / "checks" / "finish_lightning_dev18.py"
