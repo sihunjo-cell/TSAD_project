@@ -125,7 +125,7 @@ j_fixed, score_variant, hpo_regime, budget_id,
 source_commit, source_checkpoint_sha256, selection_status, selection_reason
 ```
 
-`tier_fixed_policy.csv`는 계층별 주분석을 고정한다.
+`tier_fixed_policy.csv`는 대표 모델까지 고정한 통제 비교다.
 
 ```text
 tier, selected_model, config_id, hyperparameters,
@@ -139,9 +139,19 @@ source_commit, source_checkpoint_sha256, selection_status, selection_reason
 recipe 점수다. `evaluation_q_support`는 `ghl25_final`, `train1_to_test1`,
 `train1_train2_to_test2`를 구분한다.
 
-비율별 model-adaptive, tier-adaptive와 native-feasible 표는 선택적 민감도다. 이 표들을 필수
-bundle에 넣거나 주실험 runner의 시작 조건으로 삼지 않는다. Dev18 exact panel의 자원·동등성 gate가
-막혔을 때도 adaptive 표나 수동 모델 실행으로 대체하지 않는다.
+`ratio_adaptive_selection.csv`는 운영 주분석이다.
+
+```text
+tier, ratio, selected_model, config_id, score_variant, hyperparameters,
+q_floor, selection_score, selection_status, selection_reason,
+budget_id, evaluator_sha256, source_commit, source_checkpoint_sha256
+```
+
+각 모델의 family-LOFO fold recipe는 전체 지원 비율에서 한 번 고정한다. 최종 adaptive 행은
+`model_fixed_policy.csv`의 config와 score variant를 그대로 연결하며 비율별 config 재선택을 하지
+않는다. PCA_LEGACY는 후보와 gate에서 제외하고 q100 VUS-PR을 `selection.png`의 수평 참고선으로만
+쓴다. `tier_ratio_candidate_audit.csv`와 `tier_policy_transitions.csv`가 후보 배제와 모델 전환을
+기록한다.
 
 ## 최종 실행 요청
 
@@ -152,9 +162,11 @@ analysis_kind, split_role, tier, model, evaluation_ratio,
 physical_ratio, config_id, score_variant, status, status_reason
 ```
 
-필수 `analysis_kind`는 `model_fixed`와 `tier_fixed`다. runnable 행은 유효한 `physical_ratio`와
-빈 `status_reason`을 갖는다. 실행 불가 행은 `status=unavailable`, 빈 `physical_ratio`와 구체적인
-이유를 남긴다. target-free 모델의 모든 평가 비율은 같은 `physical_ratio=100` score를 참조한다.
+필수 `analysis_kind`는 `model_fixed`, `tier_fixed`, `tier_adaptive`다. 세 split을 합친 membership은
+294행이다. runnable 행은 유효한 `physical_ratio`와 빈 `status_reason`을 갖는다. 실행 불가 행은
+`status=unavailable`, 빈 `physical_ratio`와 구체적인 이유를 남긴다. target-free 모델의 모든 평가
+비율은 같은 `physical_ratio=100` score를 참조한다. adaptive runnable key는 모두 `model_fixed`에
+이미 있으므로 물리 실행 합집합을 늘리지 않는다.
 
 모델 runner는 membership, registry, config와 입력 SHA-256만 확인한다. 튜닝 원표나 선택식을
 읽어 다시 검증하지 않는다. 모델 담당자는 membership 밖의 final 실행을 추가하지 않는다.
@@ -163,7 +175,7 @@ physical_ratio, config_id, score_variant, status, status_reason
 
 `ghl25_score_ledger.csv`와 `hai_score_ledger.csv`는 final score manifest를 참조하고 VUS-PR,
 evaluator·`ℓ_max` 신원, `analysis_kind`, 평가 비율을 연결한다. 같은 물리 score가 `model_fixed`와
-`tier_fixed`에 모두 쓰이면 ledger 행은 둘로 두되 배열은 하나만 보존한다.
+`tier_fixed`와 `tier_adaptive`에 함께 쓰이면 ledger 행은 분석별로 두되 배열은 하나만 보존한다.
 
 GHL25 결과로 선택표나 membership을 바꾸지 않는다. HAI test1·test2도 서로 다른 split으로
 채점한다. 두 HAI 결과를 한 숫자로 요약해야 할 때만 산술평균하며 행 수로 가중하지 않는다.

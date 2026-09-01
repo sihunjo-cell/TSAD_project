@@ -1,6 +1,6 @@
 # 현재 결정
 
-갱신일: 2026-08-27
+갱신일: 2026-09-01
 
 이 문서는 [계획서 v5](plan_v5.md)의 확정 결정을 짧게 기록한다. 설계 이유와 전체 절차는 계획서를
 따르고, 값이 아직 정해지지 않은 항목을 완료된 결정처럼 쓰지 않는다.
@@ -11,8 +11,9 @@
 본실험 데이터는 GHL과 HAI다. TSB-AD-M 비-GHL 18개는 모델과 recipe를 고르는 사전 튜닝 패널이며
 세 번째 본실험 데이터셋이 아니다.
 
-주분석은 고정된 모델·recipe에 target 정상 prefix가 늘어날 때 성능과 비용이 어떻게 달라지는지
-본다. 비율별 재튜닝과 모델 교체는 운영 민감도이며 데이터 양의 단독 효과로 해석하지 않는다.
+운영 주분석은 모델별 recipe를 고정한 채 정상 prefix 비율마다 Tier 대표 모델을 다시 고르는
+`tier_adaptive`다. `tier_fixed`는 대표 모델까지 고정해 데이터 양의 효과를 분리하는 통제 비교로
+보존한다. adaptive 곡선에는 모델 전환 효과가 섞이므로 데이터 양의 단독 효과로 해석하지 않는다.
 
 ## 데이터 역할
 
@@ -92,9 +93,15 @@ family leave-one-out 바깥 검증으로 고르고, 선택 모델의 recipe는 �
 한 번 고정한다. 점수 차이가 `1e-6` 이내면 `(model, config_id, score_variant)` 사전순으로 고른다.
 비용은 동률 처리에 쓰지 않는다.
 
-필수 정책표는 `model_fixed_policy.csv`와 `tier_fixed_policy.csv`다. 전자는 비용 최적화가 모든
-활성 모델의 후보를 볼 수 있게 하며, 후자는 계층별 주분석을 고정한다. 비율별 재튜닝·모델 교체
-표는 선택적 민감도다. 주실험 runner의 필수 입력은 `final_policy_membership.csv` 하나다.
+`model_fixed_policy.csv`는 모든 활성 모델의 고정 recipe와 물리 실행 합집합을 보존한다.
+`tier_fixed_policy.csv`는 통제 비교이며 `ratio_adaptive_selection.csv`가 운영 주분석이다.
+adaptive 선택도 모델마다 전체 지원 비율에서 정한 family-LOFO recipe와 최종 `model_fixed` config를
+쓴다. 비율별 config 재선택이나 HPO 재실행은 하지 않는다. PCA_LEGACY는 adaptive 후보와 성능 gate에서
+빼고 q100 VUS-PR 참고선으로만 그린다.
+
+`final_policy_membership.csv`는 `model_fixed·tier_fixed·tier_adaptive` 294행이다. adaptive 행을
+더해도 runnable 물리 key의 합집합은 `model_fixed`만 있을 때와 같다. 주실험 runner의 필수 입력은
+이 membership 하나다.
 
 ## 점수와 재현성
 
@@ -115,8 +122,8 @@ snapshot에 남긴다. Dev18의 `dev18_registered_runner.v2`는 in-memory 등록
 ## 최종 평가와 비용
 
 GHL25는 모든 활성 모델의 고정-recipe 곡선을 보존한다. Tier 대표만 남기지 않는다. HAI는 TSB
-튜닝에서 정한 모델과 recipe를 두 실행에 그대로 적용한다. GHL이나 HAI 결과로 정책을 다시 고르지
-않는다.
+튜닝에서 정한 모델과 recipe를 두 실행에 그대로 적용한다. `tier_adaptive`가 운영 주분석이고
+`tier_fixed`는 통제 비교다. GHL이나 HAI 결과로 정책을 다시 고르지 않는다.
 
 주혜는 GHL `1/25` macro, paired bootstrap, Wilcoxon, TOST와 지속 교차점을 만든다. 같은 시계열의
 일곱 `q`를 독립 표본으로 세지 않는다. HAI 두 실행은 따로 보고하고 GHL과 합쳐 검정하지 않는다.
@@ -124,16 +131,18 @@ GHL25는 모든 활성 모델의 고정-recipe 곡선을 보존한다. Tier 대�
 최종 행동 단위는 `(tier, model, config_id, q, operating_threshold)`다. GHL·HAI split은 행동이
 아니라 평가 근거를 구분하는 문맥이다. 목적함수는 정상
 데이터 관측비, 현장 재학습비, 반복 추론비, memory·artifact 비용, 오탐비와 미탐비를 합친다. HPO는
-개발비로 따로 보고한다. GHL에서 시간 근거가 없으면 관측 수를 임의의 초 단위로 바꾸지 않는다.
-비용 가중치와 현장 제약은 성능·비용 원자료가 봉인된 뒤 정한다.
+개발비로 따로 보고한다. 비율 사이 모델 교체·검증·배포·중단 비용도 현장 입력이 있을 때 더한다.
+값이 없으면 0으로 채우지 않는다. GHL에서 시간 근거가 없으면 관측 수를 임의의 초 단위로 바꾸지
+않는다. 비용 가중치와 현장 제약은 성능·비용 원자료가 봉인된 뒤 정한다.
 
 ## 아직 열려 있는 결정
 
 - GHL25·HAI Role-A manifest의 최종 승인 상태
 - 비용 항목별 단가, 반복 횟수, latency·memory·최소 성능 제약
-- adaptive 정책 민감도를 실제로 추가할지 여부. Dev18 gate가 막힌 동안 이를 fallback으로 실행하지 않음
+- 모델 교체·검증·배포·중단 비용을 포함한 현장 transition 단가와 제약
 
-Dev18 입력, feasibility, VUS-PR, 시계열별 `ℓ_max`와 공통 Python 환경은 승인됐다. 과거
-TimeRCD·TSPulse checkpoint 증거는 현재 project commit의 실행 허가가 아니다. 현재 게이트는
-TSB 비-GHL 18개 exact panel 직전이며, 새 TimeRCD checkpoint smoke, TSPulse batch 32 동등성과 L4
-80% 자원 보고서가 통과할 때까지 실행은 blocked다. GHL25·HAI 항목은 이 튜닝을 막지 않는다.
+Dev18 입력, feasibility, VUS-PR, 시계열별 `ℓ_max`, exact panel과 공통 Python 환경은 승인됐다.
+primary 물리 실행 1,170건과 1,602행 ledger가 완료됐다. 과거 TimeRCD·TSPulse checkpoint와 L4 80%
+자원 보고서는 이 실행의 역사 증거이며 selection-only에서 다시 요구하지 않는다. 현재 게이트는
+완료 ledger로 운영 선택표와 294행 membership을 봉인하는 일이다. GHL25·HAI 항목은 이 작업을
+막지 않는다.

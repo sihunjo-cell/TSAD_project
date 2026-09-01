@@ -26,6 +26,7 @@ from tests.ghl_main.run_dev18_tuning import (
     build_ratio_adaptive_plot_data,
     build_final_membership_rows,
     configure_plot_font,
+    finish_selection_from_ledger,
     load_trial_score_ledger,
     select_tuning_policies,
     validate_vus_evidence,
@@ -784,6 +785,108 @@ class TestDev18Tuning(unittest.TestCase):
                 },
             )
 
+    def test_selection_only_reuses_ledger_without_vus_or_score_arrays(self):
+        registry, registry_sha256 = run_dev18_tuning.load_model_registry_with_sha()
+        registry = json.loads(json.dumps(registry))
+        budget = json.loads(json.dumps(run_dev18_tuning._read_json(
+            run_dev18_tuning.DEFAULT_BUDGET_PATH,
+        )))
+        test_budget_id = "b123456789abc"
+        registry["selection"]["budget_id"] = test_budget_id
+        budget["budget_id"] = test_budget_id
+        scores = {
+            "PCA_LEGACY": 0.20, "MWVAR": 0.40, "SQDIFF_LAST3": 0.30,
+            "PaAno": 0.65, "GDN": 0.60, "TimeRCD": 0.50, "TSPulse": 0.70,
+        }
+        ledger_rows = []
+        for series, family in (("01", "A"), ("02", "B")):
+            for panel in budget["model_panels"]:
+                for config_index, config_id in enumerate(panel["selected_config_ids"]):
+                    for ratio in panel["logical_ratios"]:
+                        for seed in panel.get("seeds", budget["seeds"]):
+                            for variant in panel["primary_score_variants"]:
+                                ledger_rows.append({
+                                    "series": series, "family": family,
+                                    "tier": panel["tier"], "model": panel["model"],
+                                    "config_id": config_id, "ratio": ratio,
+                                    "seed": seed, "score_variant": variant,
+                                    "normalization": "trainnorm",
+                                    "vus_pr": scores[panel["model"]] + config_index / 1000,
+                                    "score_file": "unused.npy", "score_sha256": "a" * 64,
+                                    "evaluator_sha256": "b" * 64,
+                                    "ell_max_id": "ell-v1", "status": "complete",
+                                    "status_reason": "",
+                                })
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ledger_path = root / "dev18_trial_score_ledger.csv"
+            run_dev18_tuning._write_csv(
+                ledger_path, ledger_rows, run_dev18_tuning.TRIAL_SCORE_LEDGER_FIELDS,
+            )
+            ledger_sha256 = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+
+            def save_placeholder(_figure, path, *_args, **_kwargs):
+                Path(path).write_bytes(b"png placeholder")
+
+            with (
+                patch.object(
+                    run_dev18_tuning, "load_model_registry_with_sha",
+                    return_value=(registry, registry_sha256),
+                ),
+                patch.object(run_dev18_tuning, "_read_json", return_value=budget),
+                patch.object(
+                    run_dev18_tuning, "load_structural_block_evidence",
+                    return_value={},
+                ),
+                patch.object(run_dev18_tuning, "_git_head", return_value="c" * 40),
+                patch.object(
+                    run_dev18_tuning, "_require_same_worktree",
+                ) as worktree_guard,
+                patch.object(
+                    run_dev18_tuning, "build_trial_score_ledger",
+                    side_effect=AssertionError("selection-only가 score를 다시 채점했다"),
+                ) as ledger_builder,
+                patch.object(
+                    run_dev18_tuning, "vus_pr",
+                    side_effect=AssertionError("selection-only가 VUS-PR을 호출했다"),
+                ) as scorer,
+                patch.object(
+                    run_dev18_tuning, "_load_score_manifest",
+                    side_effect=AssertionError("selection-only가 score manifest를 읽었다"),
+                ) as manifest_loader,
+                patch.object(
+                    run_dev18_tuning.matplotlib.figure.Figure, "savefig",
+                    autospec=True, side_effect=save_placeholder,
+                ),
+            ):
+                result = finish_selection_from_ledger(
+                    ledger_path, result_directory=root / "results",
+                )
+
+            self.assertEqual(result["status"], "complete")
+            self.assertEqual(result["ledger_sha256"], ledger_sha256)
+            self.assertEqual(result["ledger_rows"], len(ledger_rows))
+            self.assertEqual(result["membership_rows"], 294)
+            self.assertEqual(len(result["selected_path"]), 21)
+            self.assertEqual(hashlib.sha256(ledger_path.read_bytes()).hexdigest(), ledger_sha256)
+            ledger_builder.assert_not_called()
+            scorer.assert_not_called()
+            manifest_loader.assert_not_called()
+            self.assertEqual(worktree_guard.call_count, 2)
+            output = root / "results"
+            for name in (
+                "model_fixed_policy.csv", "tier_fixed_policy.csv",
+                "ratio_adaptive_selection.csv", "tier_ratio_candidate_audit.csv",
+                "tier_policy_transitions.csv", "final_policy_membership.csv",
+                "selection.png",
+            ):
+                self.assertTrue((output / name).is_file(), name)
+            with (output / "final_policy_membership.csv").open(
+                encoding="utf-8", newline="",
+            ) as input_file:
+                self.assertEqual(len(list(csv.DictReader(input_file))), 294)
+
     def test_deployment_scenario_schema_has_no_cost_defaults(self):
         schema = json.loads(
             (Path(__file__).parents[2] / "configs" / "deployment_scenario.schema.json")
@@ -818,6 +921,23 @@ class TestDev18Tuning(unittest.TestCase):
         script = Path(__file__).parents[1] / "ghl_main" / "run_dev18_tuning.py"
         completed = subprocess.run(
             [sys.executable, str(script), "--help"], cwd=script.parents[2],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_selection_module_import_does_not_load_vus_evaluator(self):
+        code = """
+import builtins
+real_import = builtins.__import__
+def reject_evaluator(name, *args, **kwargs):
+    if name == 'src.채점기.vus_pr':
+        raise RuntimeError('selection import가 VUS evaluator를 읽었다')
+    return real_import(name, *args, **kwargs)
+builtins.__import__ = reject_evaluator
+import tests.ghl_main.run_dev18_tuning
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", code], cwd=Path(__file__).parents[2],
             capture_output=True, text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -1269,6 +1389,81 @@ class TestDev18Tuning(unittest.TestCase):
 
         self.assertEqual([row["ratio"] for row in rows], [5, 10, 20])
         self.assertEqual([row["vus_pr"] for row in rows], [0.625] * 3)
+
+    def test_selection_only_cli_bypasses_scoring_lock_and_manifest(self):
+        from tests.checks import finish_lightning_dev18
+
+        required = (
+            "model_fixed_policy.csv", "tier_fixed_policy.csv",
+            "ratio_adaptive_selection.csv", "tier_ratio_candidate_audit.csv",
+            "tier_policy_transitions.csv", "final_policy_membership.csv",
+            "selection.png",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result_directory = root / "results"
+            result_directory.mkdir()
+            for name in required:
+                (result_directory / name).write_bytes(name.encode("ascii"))
+            ledger_path = root / "dev18_trial_score_ledger.csv"
+            ledger_path.write_text("sealed ledger", encoding="utf-8")
+            selection_result = {
+                "status": "complete", "budget_id": "b5367ad431093",
+                "selection_rule_id": "tier_adaptive_family_lofo_v1",
+                "project_commit": "c" * 40, "ledger_path": str(ledger_path),
+                "ledger_sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest(),
+                "ledger_rows": 1602, "membership_rows": 294,
+                "final_policy_membership_sha256": hashlib.sha256(
+                    (result_directory / "final_policy_membership.csv").read_bytes()
+                ).hexdigest(),
+                "selected_path": [],
+                "result_rows": {"final_policy_membership.csv": 294},
+                "result_directory": str(result_directory),
+            }
+            lock_directory = root / "must_not_exist"
+            with (
+                patch.object(
+                    sys, "argv",
+                    [
+                        str(Path(finish_lightning_dev18.__file__)),
+                        "--selection-only", "--ledger", str(ledger_path),
+                        "--result-directory", str(result_directory),
+                    ],
+                ),
+                patch.object(
+                    finish_lightning_dev18, "finish_selection_from_ledger",
+                    return_value=selection_result,
+                ) as selector,
+                patch.object(
+                    finish_lightning_dev18, "finish_tuning",
+                    side_effect=AssertionError("selection-only가 기존 채점을 호출했다"),
+                ) as finisher,
+                patch.object(
+                    finish_lightning_dev18, "_load_score_manifest",
+                    side_effect=AssertionError("selection-only가 manifest를 읽었다"),
+                ) as manifest_loader,
+                patch.object(
+                    finish_lightning_dev18, "DEFAULT_VUS_CHECKPOINT_DIRECTORY",
+                    lock_directory,
+                ),
+                patch("builtins.print"),
+            ):
+                finish_lightning_dev18.main()
+
+            selector.assert_called_once_with(
+                ledger_path, result_directory=result_directory,
+            )
+            finisher.assert_not_called()
+            manifest_loader.assert_not_called()
+            self.assertFalse(lock_directory.exists())
+            receipt_path = result_directory / "selection_complete.json"
+            self.assertTrue(receipt_path.is_file())
+            self.assertFalse((result_directory / "finish_complete.json").exists())
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(receipt["membership_rows"], 294)
+            self.assertEqual(receipt["expected_result_files"], list(required))
+            self.assertEqual(set(receipt["result_files_sha256"]), set(required))
+            self.assertNotIn("score_manifest_sha256", receipt)
 
     def test_cpu_finish_cli_can_import_project_packages(self):
         script = Path(__file__).parents[1] / "checks" / "finish_lightning_dev18.py"

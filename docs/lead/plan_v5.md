@@ -19,11 +19,10 @@
 → 주혜 통계·교차점 → 비용 목적함수와 최종 도입안
 ```
 
-0·1단계는 끝났다. 현재는 2단계 TSB 튜닝의 exact panel을 실행 중이다. 후보, 예산, VUS-PR,
-시계열별 `ℓ_max`, checkpoint와 실행 환경은 봉인했다. primary 물리 실행 1,170건 중 1,136건을
-마쳤고 series 13 GDN 한 건이 CUDA OOM으로 네 번 실패해 중단됐다. 첫 복구에서 attention graph
-보유는 없앴으나 장시간 학습 중 CUDA 예약 메모리가 조각났다. 완료 산출물은 보존하고
-`expandable_segments`와 더 긴 GDN 자원 gate를 적용한 직계 복구 commit에서 남은 34건만 재개한다.
+0·1단계와 2단계 exact panel 실행·채점을 마쳤다. primary 물리 실행 1,170건과 논리 점수
+1,602행이 모두 `complete`이며, 완료 ledger를 다시 채점하지 않고 비율별 Tier 대표와 최종 실행
+membership을 봉인하는 단계다. 당시 L4 checkpoint·자원 gate와 GDN OOM 복구 기록은 실행 증거로
+보존하되 선택표를 다시 만들 때 되풀이하지 않는다.
 
 ## 1. 최종 연구 질문
 
@@ -219,13 +218,17 @@ recipe를 고르고 holdout 점수만 모아 모델 점수 `S(m)`을 만든다. 
 18개 전체에서 고정 recipe 한 벌을 정한다. 점수 차이가 `1e-6` 이내면
 `(model, config_id, score_variant)` 사전순으로 고른다. 계산비는 동률 처리에 쓰지 않는다.
 
-주분석에 필요한 표는 두 개다.
+선택 결과는 세 정책으로 나눈다.
 
-- `model_fixed_policy.csv`: 활성 모델마다 지원 `q` 전체에 쓸 recipe 한 벌
-- `tier_fixed_policy.csv`: Tier별 대표 모델과 그 고정 recipe
+- `model_fixed_policy.csv`: 활성 모델마다 지원 `q` 전체에 쓸 recipe 한 벌과 물리 실행 합집합
+- `tier_fixed_policy.csv`: 비율과 무관하게 Tier 대표를 고정한 통제 비교
+- `ratio_adaptive_selection.csv`: model-fixed recipe를 유지하면서 각 `(Tier,q)`의 대표 모델을 고른
+  운영 주분석
 
-비율별 재튜닝과 Tier 내부 모델 교체는 같은 튜닝 원표에서 만드는 선택적 민감도다. 이 표들이
-없어도 GHL·HAI 주실험과 최종 비용 최적화를 진행할 수 있어야 한다. 별도 HPO를 다시 돌리지 않는다.
+`tier_adaptive`는 비율별로 config를 다시 고르지 않는다. 각 모델의 전체 지원 비율에서 고정한
+family-LOFO recipe를 비교하고, 최종 행에는 `model_fixed` config를 연결한다. PCA_LEGACY는 adaptive
+후보나 성능 gate가 아니라 q100 점수를 그린 참고선이다. 후보 배제와 모델 전환은 별도 CSV로
+남기며 HPO와 VUS-PR을 다시 계산하지 않는다.
 
 ## 9. GHL과 HAI 본실험
 
@@ -233,15 +236,17 @@ recipe를 고르고 holdout 점수만 모아 모델 점수 `S(m)`을 만든다. 
 membership의 runnable 행만 실행하며 임의로 모델·recipe·비율을 추가하지 않는다.
 
 GHL25에서는 모든 활성 모델의 `model_fixed` 곡선을 보존한다. Tier 대표 세 개만 남기면 비용
-목적함수의 후보가 사라지기 때문이다. `tier_fixed` 곡선은 계층별 학습곡선과 교차점의 주분석이다.
+목적함수의 후보가 사라지기 때문이다. `tier_adaptive` 곡선은 비율마다 대표 모델을 바꿀 수 있는
+운영 주분석이고, `tier_fixed` 곡선은 데이터 양의 효과를 분리하는 통제 비교다.
 stochastic 모델의 GHL seed는 `{3,4,5,6,7}`, deterministic 모델은 한 번 실행한다.
 
 HAI는 두 실행을 따로 저장한다. 두 실행에서 모델과 recipe는 GHL 결과를 보지 않고 TSB 튜닝에서
 고정한 값을 쓴다. 다중 세션을 안전하게 처리하지 못하면 해당 행을 `unavailable`로 남기며 세션을
 이어 붙이지 않는다.
 
-adaptive 곡선은 운영자가 매 비율마다 재튜닝하거나 모델을 교체할 수 있다는 별도 가정을 둔
-민감도다. 데이터 양만의 효과로 해석하지 않는다.
+adaptive membership은 `model_fixed`에 이미 포함된 model·config·physical ratio만 참조한다.
+물리 실행을 추가하지 않으며 비율별 모델 전환, 검증과 배포 비용은 현장 입력이 생긴 뒤 목적함수에
+연결한다. adaptive 곡선을 데이터 양만의 효과로 해석하지 않는다.
 
 ## 10. 점수와 실행 증거
 
@@ -320,6 +325,7 @@ TotalCost(a)
   + MemoryAndArtifactCost(a)
   + FalseAlarmCost(a)
   + MissCost(a)
+  + TransitionCost(previous_action, a)
 ```
 
 HPO 비용은 모델을 채택하기 전의 개발비로 따로 보고한다. 반복되는 현장 재학습·추론비와 섞지
@@ -330,6 +336,8 @@ threshold별 confusion 결과와 현장 단가가 모두 있어야 계산한다.
 최종 선택은 두 단계로 한다. 먼저 성능, 정상 데이터 요구량, 재학습·추론 시간, 메모리와 artifact의
 Pareto 열위를 제거한다. 그다음 현장 비용 가중치와 latency·memory·최소 성능 제약을 넣어
 `argmin_a TotalCost(a)`를 고른다. 가중치가 달라질 때 선택이 바뀌는 구간도 함께 보고한다.
+`TransitionCost`의 모델 교체·검증·배포·중단 비용은 웹사이트가 현장 값을 받은 뒤에만 계산한다.
+값이 없으면 0으로 채우지 않는다.
 
 ## 13. 최소 산출물 계약
 
@@ -341,8 +349,9 @@ Pareto 열위를 제거한다. 그다음 현장 비용 가중치와 latency·mem
 | 모델 담당자 | `dev18_feasibility_ledger.csv` | TSB 튜닝 가능 조합 봉인 |
 | 모델 담당자 | `dev18_score_manifest.csv` | TSB 튜닝 점수와 실행 증거 |
 | 지우 | `dev18_trial_score_ledger.csv` | VUS-PR 튜닝 원표 |
-| 지우 | `model_fixed_policy.csv`, `tier_fixed_policy.csv` | 고정 recipe와 Tier 대표 |
-| 지우 | `final_policy_membership.csv` | GHL·HAI 물리 실행 요청 |
+| 지우 | `model_fixed_policy.csv`, `tier_fixed_policy.csv`, `ratio_adaptive_selection.csv` | 고정 recipe, 통제 비교와 운영 주분석 |
+| 지우 | `tier_ratio_candidate_audit.csv`, `tier_policy_transitions.csv` | 후보 배제와 비율별 모델 전환 감사 |
+| 지우 | `final_policy_membership.csv` 294행 | GHL·HAI 논리 정책과 중복 없는 물리 실행 요청 |
 | 모델 담당자 | `ghl25_score_manifest.csv`, `hai_score_manifest.csv` | 최종 점수와 비용 원자료 |
 | 지우 | `ghl25_score_ledger.csv`, `hai_score_ledger.csv` | 최종 채점 원표 |
 | 주혜 | 통계·교차점·난이도 결과 | 비용 최적화의 성능 입력 |
@@ -362,12 +371,11 @@ ledger가 SHA-256으로 참조한다.
 - 4단계: HAI 두 실행으로 외부 확인을 마친다.
 - 5단계: 성능·비용 원자료에 현장 가중치와 제약을 결합해 최종 도입안을 고른다.
 
-0단계의 강혁 Dev18 인수와 1단계의 정적 증거를 닫았다. 현재 게이트는 2단계 exact panel 직전이다.
-다만 새 project commit에서 TimeRCD Dev18 checkpoint smoke, TSPulse batch 1 대 등록 batch 32의
-실측 동등성, non-interruptible L4의 80% 자원 보고서를 모두 다시 통과하기 전에는 panel을 시작하지
-않는다. 이 동등성이 확인될 때에만 기존 `c...` config 행과 `budget_id=b5367ad431093`을 그대로
-유지한다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로 닫으며 Dev18 튜닝의 선행 조건으로
-되돌리지 않는다.
+0단계의 Dev18 인수, 1단계의 정적 증거와 2단계의 exact panel·VUS-PR 채점을 닫았다. 현재 게이트는
+완료 ledger 1,602행에서 `tier_adaptive` 선택표, 상세 감사표, 그림과 294행 membership을 다시 만드는
+일이다. selection-only 경로는 과거 score manifest, 원본 CSV, score 배열, checkpoint와 evaluator를
+읽거나 모델·HPO·채점을 실행하지 않는다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로
+닫는다.
 
 ## 15. 중단과 완료 규칙
 

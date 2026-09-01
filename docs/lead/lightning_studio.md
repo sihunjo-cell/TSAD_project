@@ -1,10 +1,11 @@
-# Lightning AI에서 Dev18 튜닝 실행
+# Lightning AI Dev18 실행 기록과 선택표 재생성
 
-이 절차는 [계획서 v5](plan_v5.md)의 2단계 Dev18 exact panel만 실행한다. 모델, config, seed,
-예산과 채점 규칙은 바꾸지 않는다. 새 project commit에서 TimeRCD checkpoint smoke, TSPulse batch
-1 대 batch 32 동등성, L4 80% 자원 보고서를 모두 통과하기 전에는 panel을 시작하지 않는다.
+앞부분은 [계획서 v5](plan_v5.md)의 2단계 Dev18 exact panel을 만들 때 쓴 역사 기록이다. 모델,
+checkpoint, L4 자원 gate와 OOM 복구 근거를 보존하려고 남겼으며 이미 끝난 실행을 다시 시작하는
+절차가 아니다. 현재 실행할 항목은 [완료 ledger에서 선택표만 다시 생성](#완료-ledger에서-선택표만-다시-생성)
+한 곳뿐이다.
 
-## 준비할 파일
+## 모델 실행 당시 준비 파일 — 역사 기록
 
 현재 게이트에는 `shared_data/TSAD_project/tuning/`의 CSV 18개만 필요하다. GHL25와 HAI는
 올리지 않는다. Lightning에서 저장소와 데이터가 아래처럼 놓이면 기본 경로를 그대로 쓸 수 있다.
@@ -18,7 +19,7 @@
             └── CSV 18개
 ```
 
-## 무료 CPU Studio에서 한 번만 준비
+## 모델 실행 당시 Studio 준비 — 역사 기록
 
 대학 이메일로 만든 Lightning Studio를 무료 CPU 상태로 연다. 무료 계정의 credit과 GPU 시간은
 가입 시점과 계정 인증 상태에 따라 화면에 표시된 잔액을 기준으로 한다. 저장소를 clone한 뒤 프로젝트
@@ -41,7 +42,7 @@ unzip .runtime/lightning_dev18_input.zip -d ../shared_data/TSAD_project
 
 압축을 쓰지 않으면 CSV 18개가 든 `tuning` 폴더를 위 경로에 그대로 올린다.
 
-## 새 commit에서 한 번만 초기화하고 시작
+## 모델 실행 당시 초기화와 시작 — 역사 기록
 
 Studio 장치를 `1×L4`, `Interruptible off`로 바꾼 뒤 프로젝트 폴더에서 아래 순서를 한 번만 따른다.
 각 명령이 성공해야 다음 명령을 실행한다. 하나라도 실패하면 그 자리에서 멈춘다. reset은 새
@@ -74,7 +75,7 @@ equivalence가 있어야 한다. 그때만 마지막 명령을 실행한다. 진
 먼저 확인하고 `.runtime/runtime.json`을 봉인한 뒤 1,170건 panel을 재개한다. config 변경, adaptive
 정책, 모델별 수동 실행은 허용하지 않는다.
 
-## series 13 GDN OOM 복구
+## series 13 GDN OOM 복구 — 역사 기록
 
 이 절차는 project commit `501cb23cf0c02b9ebc9d94ca396d09e7049093d7`에서 primary 1,136건을
 완료하고 첫 복구 commit `6d5bcafda7a10fa6247f9cc32fe35d5061a286fa`에서 네 번째 CUDA OOM이
@@ -102,240 +103,94 @@ test -z "$(git status --porcelain)"
 다섯 번째 모델 실패가 기록되면 추가 시도 없이 멈춘다. 최종 성공값은 manifest 1,224행, primary
 1,170행, logical score 원표 1,602행이다.
 
-## 모델 완료 후 고코어 CPU에서 채점
+## 완료 ledger에서 선택표만 다시 생성
 
-manifest 1,224행과 primary 1,170행이 모두 생긴 뒤에만 이 절차를 쓴다. Studio 장치를 CPU로
-바꿔도 된다. 이 경로는 모델을 실행하지 않으며, 기존 score·metadata와 원본 CSV의 SHA-256을
-다시 확인한 뒤 물리 점수 1,170개를 VUS-PR로 채점한다. 원래 evaluator는 바꾸지 않는다. 같은
-물리 점수를 논리 비율별로 다시 계산하지 않고 한 번만 계산해 원표 1,602행으로 펼친다.
+물리 score 1,170건과 VUS-PR ledger 1,602행은 이미 완료됐다. 앞의 checkpoint smoke, TSPulse
+동등성, L4 80% 자원 gate와 GDN OOM 복구는 당시 실행을 설명하는 역사 증거다. 아래 선택표 재생성
+때 다시 실행하지 않는다. score manifest, 원본 CSV, score 배열, VUS checkpoint와
+`finish_complete.json`도 읽거나 지우지 않는다.
 
-먼저 현재 GPU commit에서 완료 수를 확인한다. 이 검사가 실패하면 `git pull`도 하지 않고 L4 복구
-절차로 돌아간다. 1,170건 완료를 확인한 뒤 private 저장소 인증을 점검하고 CPU 채점 commit을
-받는다. 기존 인증이 유효하면 `gh auth login` 단계는 자동으로 건너뛴다. 인증이 없으면 브라우저에
-표시되는 GitHub device 절차를 마친다. token을 clone URL이나 명령 기록에 넣지 않는다.
+현재 재개 명령은 아래 블록 하나다. Lightning에 이미 있는 ledger를 검증한 뒤 model-fixed,
+tier-fixed, ratio-adaptive 정책과 상세 CSV, 294행 membership, 깨끗한 `selection.png`만 다시
+만든다. 기존 ledger가 불완전하거나 registry·budget 봉인과 다르면 결과 파일을 덮기 전에 멈춘다.
 
 ```bash
 set -euo pipefail
 cd /teamspace/studios/this_studio/TSAD_project
 
 PY=/home/zeus/miniconda3/bin/python
-DATA_ROOT=../shared_data/TSAD_project
 BRANCH=codex/lightning-dev18
+RESULT_ROOT=experiments/01_ghl_main/results/dev18_tuning
+LEDGER="$RESULT_ROOT/dev18_trial_score_ledger.csv"
 
 test "$(git branch --show-current)" = "$BRANCH"
 test -z "$(git status --porcelain --untracked-files=all)"
-
-"$PY" - <<'PY'
-from src.common.execution_identity import load_input_manifest_role
-from tests.ghl_main.run_dev18_tuning import (
-    DEFAULT_BUDGET_PATH,
-    _load_score_manifest,
-    _read_json,
-    _validate_primary_manifest_rows,
-)
-
-manifest, _ = load_input_manifest_role(
-    "configs/input_manifest.yaml", "development", "dev18_selection",
-)
-entries = manifest["datasets"]["DEV18"]["files"]
-rows = _load_score_manifest()
-primary = _validate_primary_manifest_rows(
-    rows, _read_json(DEFAULT_BUDGET_PATH),
-    tuple(sorted(entry["series"] for entry in entries)),
-)
-assert len(rows) == 1224, len(rows)
-assert len(primary) == 1170, len(primary)
-print("pull 전 완료 확인: manifest 1224행, primary 1170행")
-PY
-
-if ! GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD >/dev/null 2>&1; then
-    command -v gh >/dev/null || {
-        echo "private GitHub 인증에 gh CLI가 필요합니다. 여기서 중단합니다."
-        exit 1
-    }
-    gh auth login --hostname github.com --git-protocol https --web
-    gh auth setup-git
-fi
-GIT_TERMINAL_PROMPT=0 git ls-remote origin HEAD >/dev/null
 git pull --ff-only origin "$BRANCH"
 test -z "$(git status --porcelain --untracked-files=all)"
-test -f tests/checks/finish_lightning_dev18.py
-"$PY" tests/checks/finish_lightning_dev18.py --help >/dev/null
+test -f "$LEDGER"
 
-"$PY" - "$DATA_ROOT" <<'PY'
-import sys
-from pathlib import Path
+"$PY" tests/checks/finish_lightning_dev18.py \
+    --selection-only \
+    --ledger "$LEDGER" \
+    --result-directory "$RESULT_ROOT"
 
-from src.common.execution_identity import load_input_manifest_role
-from tests.ghl_main.run_dev18_tuning import (
-    DEFAULT_BUDGET_PATH,
-    _load_score_manifest,
-    _read_json,
-    _validate_primary_manifest_rows,
-)
-from tests.ghl_main.run_registered_models import _verify_manifest_file
-
-data_root = Path(sys.argv[1]).resolve()
-input_manifest, _ = load_input_manifest_role(
-    "configs/input_manifest.yaml", "development", "dev18_selection",
-)
-entries = input_manifest["datasets"]["DEV18"]["files"]
-assert len(entries) == 18, len(entries)
-for entry in entries:
-    _verify_manifest_file(
-        data_root / entry["source_directory"] / entry["name"], entry,
-    )
-
-rows = _load_score_manifest()
-budget = _read_json(DEFAULT_BUDGET_PATH)
-primary = _validate_primary_manifest_rows(
-    rows, budget, tuple(sorted(entry["series"] for entry in entries)),
-)
-assert len(rows) == 1224, len(rows)
-assert len(primary) == 1170, len(primary)
-print("사전검사 통과: 원본 18개, manifest 1224행, primary 1170행")
-PY
-```
-
-마지막 문구가 정확히 나온 뒤 아래 블록으로 백그라운드 채점을 시작한다. `--workers 0`은 할당된
-CPU와 가용 메모리를 확인해 최대 16개 worker를 고른다. 각 worker의 BLAS thread는 하나로 고정해
-CPU 과다 할당을 막는다. lock은 같은 채점이 동시에 두 번 시작되는 것을 막는다.
-
-```bash
-cd /teamspace/studios/this_studio/TSAD_project
-
-PY=/home/zeus/miniconda3/bin/python
-DATA_ROOT=../shared_data/TSAD_project
-CHECKPOINT_ROOT=.runtime/dev18_vus_pr
-PID_FILE="$CHECKPOINT_ROOT/finish.pid"
-LOG_FILE="$CHECKPOINT_ROOT/finish.log"
-
-mkdir -p "$CHECKPOINT_ROOT"
-CURRENT_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-if [[ "$CURRENT_PID" =~ ^[0-9]+$ ]] \
-   && kill -0 "$CURRENT_PID" 2>/dev/null \
-   && ps -p "$CURRENT_PID" -o args= | grep -Fq 'finish_lightning_dev18.py'; then
-    echo "채점이 이미 실행 중입니다. PID=$CURRENT_PID"
-else
-    nohup env PYTHONUNBUFFERED=1 \
-        OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-        MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
-        "$PY" tests/checks/finish_lightning_dev18.py \
-        --data-root "$DATA_ROOT" \
-        --workers 0 \
-        --checkpoint-directory "$CHECKPOINT_ROOT" \
-        >> "$LOG_FILE" 2>&1 &
-    echo "채점 진입점을 요청했습니다. launch PID=$!"
-    echo "실제 scorer PID는 lock 획득 뒤 $PID_FILE 에 기록됩니다."
-fi
-
-tail -n 80 "$LOG_FILE"
-```
-
-진행 상황은 아래처럼 확인한다. `tail -f`에서 `Ctrl+C`를 눌러도 로그 보기만 끝나며 채점은 계속된다.
-
-```bash
-cd /teamspace/studios/this_studio/TSAD_project
-CHECKPOINT_ROOT=.runtime/dev18_vus_pr
-PID_FILE="$CHECKPOINT_ROOT/finish.pid"
-LOG_FILE="$CHECKPOINT_ROOT/finish.log"
-CURRENT_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-
-if [[ "$CURRENT_PID" =~ ^[0-9]+$ ]] && kill -0 "$CURRENT_PID" 2>/dev/null; then
-    echo "채점 실행 중: PID=$CURRENT_PID"
-else
-    echo "실행 중인 PID가 없습니다. 완료 또는 중단 여부를 로그에서 확인하세요."
-fi
-find "$CHECKPOINT_ROOT" -type f -name '*.json' \
-    ! -name 'finish_complete.json' | wc -l
-tail -f "$LOG_FILE"
-```
-
-Studio가 중지돼 프로세스가 사라졌다면 시작 블록을 그대로 다시 실행한다. 재개할 때도 원본
-score·metadata SHA-256을 검증하며, 신원이 정확히 맞는 JSON checkpoint만 재사용한다. 깨진
-checkpoint는 조용히 넘기지 않고 중단한다. 최종 CSV는 1,170개 채점이 모두 끝난 뒤 원자적으로
-교체하므로 중간 파일을 결과로 오인하지 않는다. checkpoint에는 Python/package 봉인과 채점
-commit도 묶인다. 채점 중 commit이나 작업 트리가 바뀌면 최종 정책표 완료로 인정하지 않는다.
-
-모든 정책표와 그림을 쓴 뒤에만 `finish_complete.json`이 원자적으로 생긴다. 완료 후 이 영수증의
-commit·manifest·결과 파일 SHA와 필수 행 수를 확인하고 한 파일로 묶는다.
-
-```bash
-set -euo pipefail
-cd /teamspace/studios/this_studio/TSAD_project
-
-PY=/home/zeus/miniconda3/bin/python
-RESULT_ROOT=experiments/01_ghl_main/results/dev18_tuning
-RECEIPT=.runtime/dev18_vus_pr/finish_complete.json
-
-tail -n 100 .runtime/dev18_vus_pr/finish.log
-"$PY" - "$RESULT_ROOT" "$RECEIPT" <<'PY'
+"$PY" - "$RESULT_ROOT" <<'PY'
 import csv
 import json
-import math
-import subprocess
 import sys
 from pathlib import Path
-
-root = Path(sys.argv[1])
-receipt = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-required = (
-    "dev18_trial_score_ledger.csv", "model_fixed_policy.csv",
-    "tier_fixed_policy.csv", "family_lofo.csv",
-    "final_policy_membership.csv", "selection.csv", "models.csv",
-    "selection.png", "models.png",
-)
-missing = [name for name in required if not (root / name).is_file()]
-assert not missing, missing
 
 from src.common.execution_identity import file_sha256
 
-head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-assert receipt["status"] == "complete", receipt
-assert receipt["project_commit"] == head, (receipt["project_commit"], head)
-assert receipt["budget_id"] == "b5367ad431093", receipt["budget_id"]
-assert receipt["ledger_rows"] == 1602, receipt["ledger_rows"]
-assert receipt["score_manifest_sha256"] == file_sha256(
-    "experiments/01_ghl_main/logs/dev18_score_manifest.csv"
+root = Path(sys.argv[1])
+receipt = json.loads(
+    (root / "selection_complete.json").read_text(encoding="utf-8")
 )
-for relative_path, expected_sha256 in receipt["result_files_sha256"].items():
-    path = root / relative_path
-    assert path.is_file(), path
-    assert file_sha256(path) == expected_sha256, path
-assert set(required) <= set(receipt["result_files_sha256"])
+required = (
+    "model_fixed_policy.csv", "tier_fixed_policy.csv",
+    "ratio_adaptive_selection.csv", "tier_ratio_candidate_audit.csv",
+    "tier_policy_transitions.csv", "final_policy_membership.csv",
+    "selection.png",
+)
+assert receipt["status"] == "complete", receipt
+assert receipt["budget_id"] == "b5367ad431093", receipt["budget_id"]
+assert receipt["selection_rule_id"] == "tier_adaptive_family_lofo_v1"
+assert receipt["ledger_rows"] == 1602, receipt["ledger_rows"]
+assert receipt["membership_rows"] == 294, receipt["membership_rows"]
+assert receipt["expected_result_files"] == list(required)
+assert receipt["ledger_sha256"] == file_sha256(
+    root / "dev18_trial_score_ledger.csv"
+)
 assert receipt["final_policy_membership_sha256"] == file_sha256(
     root / "final_policy_membership.csv"
 )
+for name in required:
+    path = root / name
+    assert path.is_file(), path
+    assert receipt["result_files_sha256"][name] == file_sha256(path), path
 
 def rows(name):
     with (root / name).open(encoding="utf-8", newline="") as source:
         return list(csv.DictReader(source))
 
-ledger = rows("dev18_trial_score_ledger.csv")
-assert len(ledger) == 1602, len(ledger)
-assert all(row["status"] == "complete" for row in ledger)
-assert all(
-    math.isfinite(float(row["vus_pr"])) and 0 <= float(row["vus_pr"]) <= 1
-    for row in ledger
-)
-assert len(rows("model_fixed_policy.csv")) == 7
+assert len(rows("model_fixed_policy.csv")) == 8
 assert len(rows("tier_fixed_policy.csv")) == 3
-assert len(rows("final_policy_membership.csv")) == 210
+assert len(rows("ratio_adaptive_selection.csv")) == 21
+assert len(rows("tier_ratio_candidate_audit.csv")) == 56
+assert len(rows("tier_policy_transitions.csv")) == 21
+assert len(rows("final_policy_membership.csv")) == 294
 print(
-    "최종 검증 통과: 완료 영수증과 모든 결과 SHA 일치, "
-    "ledger 1602행, 모델 정책 7행, Tier 정책 3행, membership 210행"
+    "선택표 재생성 완료: ledger 1602행 재사용, adaptive 21행, "
+    "membership 294행, 필수 SHA-256 일치"
 )
 PY
-
-tar -czf .runtime/dev18_tuning_results.tar.gz "$RESULT_ROOT" "$RECEIPT"
-sha256sum .runtime/dev18_tuning_results.tar.gz
-ls -lh .runtime/dev18_tuning_results.tar.gz "$RESULT_ROOT"
 ```
 
-이 절차에서는 `run_lightning_dev18.py`, `reset_lightning_dev18.py`, 일반
-`run_dev18_tuning.py`를 실행하지 않는다. 셋 모두 완료된 score를 채점만 하는 진입점이 아니다.
+`selection_complete.json`은 입력 ledger SHA-256, 선택 규칙, 비율별 대표 경로, 각 CSV 행 수,
+membership SHA-256과 위 필수 파일 SHA-256을 기록한다. adaptive membership은
+`model_fixed`의 runnable 물리 key만 재사용하므로 모델 실행을 늘리지 않는다.
 
-## 같은 commit에서 중단 후 재개
+## 모델 실행 당시 같은 commit 재개 — 역사 기록
 
 Studio가 멈추거나 credit을 다 쓰면 환경을 고치지 않는다. 같은 Studio에서 이전과 같은 `1×L4`,
 `Interruptible off`를 다시 선택한다. 이 재개 절차에서는 `reset_lightning_dev18.py`를 실행하지
@@ -362,7 +217,7 @@ trial 하나만 처음부터 다시 시작한다. CUDA 실행에 `--remote-execu
 20GB를 넘을 수 있으므로 Studio 여유 공간을 25GB 이상 유지한다. 현재 무료 계정의 persistent storage
 한도 안에는 들어가지만 다른 Studio 파일과 합산한 여유 공간을 확인한다.
 
-## 중단 조건
+## 모델 실행 당시 중단 조건 — 역사 기록
 
 - `git status --short`가 비어 있지 않으면 실행하지 않는다.
 - GPU 종류, Python, package 또는 source commit이 바뀌면 기존 panel과 섞지 않는다. GPU를 바꿀

@@ -40,17 +40,21 @@ holdout family마다 나머지 9개 family에서 recipe를 고른 뒤 holdout �
 
 1. `dev18_trial_score_ledger.csv`: 시계열·seed·model·config·`q`별 채점 원표
 2. `model_fixed_policy.csv`: 활성 모델별 고정 recipe와 지원 `q`
-3. `tier_fixed_policy.csv`: Tier별 대표 모델과 고정 recipe
-4. `family_lofo.csv`: 10개 holdout family별 선택 config와 바깥 점수
-5. `final_policy_membership.csv`: GHL25·HAI가 소비할 단일 실행 요청
+3. `tier_fixed_policy.csv`: Tier 대표를 고정한 통제 비교
+4. `ratio_adaptive_selection.csv`: 비율별 Tier 대표를 고른 운영 주분석
+5. `tier_ratio_candidate_audit.csv`, `tier_policy_transitions.csv`: 후보 배제와 모델 전환 감사
+6. `family_lofo.csv`: 10개 holdout family별 선택 config와 바깥 점수
+7. `final_policy_membership.csv`: GHL25·HAI가 소비할 294행 단일 실행 요청
 
 모든 파일과 검토용 그림은 `experiments/01_ghl_main/results/dev18_tuning/` 한 폴더에 둡니다.
-모델별 파일은 `PaAno.csv`, `PaAno.png`처럼 짧게 이름을 붙입니다. `models.csv·png`에는 전체
-모델의 고정 파라미터와 선택·제외 이유를, `selection.csv·png`에는 Tier 대표와 family-LOFO
-선택 이유를 함께 남깁니다.
+모델별 파일은 `PaAno.csv`, `PaAno.png`처럼 짧게 이름을 붙입니다. 최종 `selection.png`에는
+Tier 선 세 개, PCA_LEGACY q100 참고 점선과 작은 모델명만 둡니다. 후보 점수, 배제 사유와 전환
+내역은 그림에 넣지 않고 위 상세 CSV에 남깁니다.
 
-비율별 재튜닝과 Tier 내부 모델 교체 표는 선택적 민감도입니다. 주실험을 열기 위한 필수 산출물이
-아니며, 만들더라도 같은 튜닝 원표를 재사용합니다.
+`tier_adaptive`는 모델별 recipe를 고정한 상태에서 비율마다 대표 모델을 고르는 운영 주분석입니다.
+`tier_fixed`는 데이터 양의 효과를 분리하는 통제 비교입니다. adaptive 선택은 같은 완료 ledger를
+재사용하며 HPO나 VUS-PR을 다시 실행하지 않습니다. PCA_LEGACY는 대표 후보나 성능 gate가 아니라
+그림의 참고선입니다.
 
 ## GHL·HAI 실행 요청과 채점
 
@@ -60,8 +64,9 @@ runner는 이 실행 요청만 소비합니다. 지우님의 선택식이나 VUS
 않습니다.
 
 GHL25에서는 모든 활성 모델의 `model_fixed` 지원점을 빠뜨리지 않습니다. 그래야 마지막 비용
-목적함수가 Tier 대표 외의 더 싼 후보도 비교할 수 있습니다. `tier_fixed`는 계층별 주분석입니다.
-GHL 결과로 TSB 선택표나 membership을 다시 만들지 않습니다.
+목적함수가 Tier 대표 외의 더 싼 후보도 비교할 수 있습니다. `tier_adaptive`는 운영 주분석이고
+`tier_fixed`는 통제 비교입니다. adaptive membership은 `model_fixed`에 없는 물리 실행을 추가하지
+않습니다. GHL 결과로 TSB 선택표나 membership을 다시 만들지 않습니다.
 
 HAI는 `train1 → test1`, `train1+train2 → test2`를 별도 행으로 채점합니다. 모델·recipe는 TSB
 튜닝에서 고정한 값을 그대로 씁니다. 두 결과를 먼저 따로 넘기고, 요약이 필요할 때만 같은
@@ -73,6 +78,6 @@ HAI는 `train1 → test1`, `train1+train2 → test2`를 별도 행으로 채점�
 
 ## 완료 신호
 
-evaluator·`ℓ_max` 신원, TSB 튜닝 원표, 두 고정 정책표와 final membership이 서로 맞고 GHL·HAI
-채점 원표가 봉인되면 완료입니다. 모델 구현, runner 수정, 난이도·통계·비용 가중치 결정은 완료
+evaluator·`ℓ_max` 신원, TSB 튜닝 원표, 세 정책표와 294행 final membership이 서로 맞고 GHL·HAI
+채점 원표가 봉인되면 완료입니다. 모델 구현, runner 수정, 난이도·통계·현장 비용값 결정은 완료
 범위에 넣지 않습니다.

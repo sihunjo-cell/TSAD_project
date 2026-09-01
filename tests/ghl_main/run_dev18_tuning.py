@@ -87,12 +87,17 @@ from src.common.model_registry import (
     validate_primary_hpo_seal,
 )
 from src.common.verify_run_context import verify_runtime_versions
-from src.채점기.vus_pr import vus_pr
 from tests.checks.seal_runtime_environment import (
     collect_runtime_environment_identity,
     validate_runtime_snapshot,
 )
 from tests.ghl_main.build_dev18_budget import _load_current_feasibility
+
+
+def vus_pr(*args, **kwargs):
+    from src.채점기.vus_pr import vus_pr as evaluate
+
+    return evaluate(*args, **kwargs)
 
 
 DEFAULT_DATA_ROOT = REPOSITORY_ROOT.parent / "shared_data" / "TSAD_project"
@@ -148,6 +153,7 @@ DEV18_RECOVERY_CHANGED_PATHS = frozenset({
 FINAL_SPLIT_ROLES = (
     "ghl25_final", "train1_to_test1", "train1_train2_to_test2",
 )
+RATIO_ADAPTIVE_SELECTION_RULE_ID = "tier_adaptive_family_lofo_v1"
 EXPECTED_MODEL_RUNTIME_ORDER = {
     "SQDIFF_LAST3": 0,
     "MWVAR": 1,
@@ -2268,6 +2274,88 @@ def build_trial_score_ledger(
 
 def _policy_csv_rows(rows):
     return _serializable_rows(rows)
+
+
+def finish_selection_from_ledger(
+    ledger_path, *, result_directory=DEFAULT_RESULT_DIRECTORY,
+) -> dict:
+    """완료 ledger만 검증해 선택표·membership·그림을 다시 만든다."""
+    project_commit = _git_head()
+    _require_same_worktree(project_commit)
+    registry, registry_sha256 = load_model_registry_with_sha()
+    validate_primary_hpo_seal(registry)
+    budget = _read_json(DEFAULT_BUDGET_PATH)
+    selection_seal = registry["selection"]
+    if (
+        budget.get("budget_id") != selection_seal["budget_id"]
+        or budget.get("primary_hpo_regime") != selection_seal["primary_hpo_regime"]
+        or budget.get("selection_rule_id") != selection_seal["selection_rule_id"]
+        or budget.get("registry_space_sha256") != registry_space_sha256(registry)
+        or budget.get("attestation", {}).get("config_registry_sha256")
+        != registry_sha256
+    ):
+        raise ValueError("Dev18 budget과 현재 registry 봉인이 다르다")
+
+    ledger_path = Path(ledger_path)
+    ledger_sha256 = file_sha256(ledger_path)
+    ledger = load_trial_score_ledger(ledger_path, budget)
+    selection = select_tuning_policies(
+        ledger, registry, budget, evaluator_sha256=ledger[0]["evaluator_sha256"],
+    )
+    membership = build_final_membership_rows(selection, registry)
+    if len(membership) != 294:
+        raise ValueError(f"final membership 행 수가 다르다: {len(membership)} != 294")
+
+    result_directory = Path(result_directory)
+    result_directory.mkdir(parents=True, exist_ok=True)
+    from src.common.load_final_membership import FIELDS, load_final_membership
+
+    membership_path = result_directory / "final_policy_membership.csv"
+    temporary_membership_path = membership_path.with_name(
+        f".{membership_path.name}.tmp"
+    )
+    _write_csv(temporary_membership_path, membership, FIELDS)
+    membership_sha256, loaded = load_final_membership(
+        temporary_membership_path, registry,
+    )
+    if len(loaded) != len(membership):
+        raise ValueError("final membership 저장 행 수가 다르다")
+    temporary_membership_path.replace(membership_path)
+    _write_csv(
+        result_directory / "model_fixed_policy.csv",
+        _policy_csv_rows(selection["model_fixed"]),
+    )
+    _write_csv(
+        result_directory / "tier_fixed_policy.csv",
+        _policy_csv_rows(selection["tier_fixed"]),
+    )
+    write_selection_reports(ledger, selection, result_directory)
+    if file_sha256(ledger_path) != ledger_sha256:
+        raise RuntimeError("Dev18 selection 도중 입력 ledger가 바뀌었다")
+    _require_same_worktree(project_commit)
+    selected_path = [{
+        "tier": row["tier"], "ratio": row["ratio"],
+        "model": row["selected_model"], "config_id": row["config_id"],
+        "status": row["selection_status"],
+    } for row in selection["tier_adaptive"]]
+    return {
+        "status": "complete", "budget_id": budget["budget_id"],
+        "selection_rule_id": RATIO_ADAPTIVE_SELECTION_RULE_ID,
+        "project_commit": project_commit, "ledger_path": str(ledger_path.resolve()),
+        "ledger_sha256": ledger_sha256, "ledger_rows": len(ledger),
+        "membership_rows": len(membership),
+        "final_policy_membership_sha256": membership_sha256,
+        "selected_path": selected_path,
+        "result_rows": {
+            "model_fixed_policy.csv": len(selection["model_fixed"]),
+            "tier_fixed_policy.csv": len(selection["tier_fixed"]),
+            "ratio_adaptive_selection.csv": len(selection["tier_adaptive"]),
+            "tier_ratio_candidate_audit.csv": len(selection["candidate_audit"]),
+            "tier_policy_transitions.csv": len(selection["policy_transitions"]),
+            "final_policy_membership.csv": len(membership),
+        },
+        "result_directory": str(result_directory),
+    }
 
 
 def finish_tuning(

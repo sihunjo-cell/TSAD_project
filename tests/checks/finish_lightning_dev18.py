@@ -21,16 +21,30 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from tests.ghl_main.run_dev18_tuning import (
     DEFAULT_DATA_ROOT,
+    DEFAULT_RESULT_DIRECTORY,
     DEFAULT_SCORE_MANIFEST_PATH,
     DEFAULT_VUS_CHECKPOINT_DIRECTORY,
     _load_score_manifest,
+    finish_selection_from_ledger,
     finish_tuning,
+)
+
+SELECTION_REQUIRED_FILES = (
+    "model_fixed_policy.csv", "tier_fixed_policy.csv",
+    "ratio_adaptive_selection.csv", "tier_ratio_candidate_audit.csv",
+    "tier_policy_transitions.csv", "final_policy_membership.csv",
+    "selection.png",
 )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="기존 Dev18 score를 CPU 병렬 VUS-PR로 채점하고 정책표를 만든다.",
+        description="기존 Dev18 score를 채점하거나 완료 ledger에서 선택표만 다시 만든다.",
+    )
+    parser.add_argument("--selection-only", action="store_true")
+    parser.add_argument("--ledger", type=Path)
+    parser.add_argument(
+        "--result-directory", type=Path, default=DEFAULT_RESULT_DIRECTORY,
     )
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument(
@@ -42,6 +56,45 @@ def main() -> None:
         default=DEFAULT_VUS_CHECKPOINT_DIRECTORY,
     )
     arguments = parser.parse_args()
+
+    if arguments.selection_only:
+        if arguments.ledger is None:
+            parser.error("--selection-only에는 --ledger PATH가 필요하다")
+        from src.common.execution_identity import file_sha256
+
+        result = finish_selection_from_ledger(
+            arguments.ledger, result_directory=arguments.result_directory,
+        )
+        result_directory = Path(result["result_directory"])
+        missing = [
+            name for name in SELECTION_REQUIRED_FILES
+            if not (result_directory / name).is_file()
+        ]
+        if missing:
+            raise RuntimeError(f"selection-only 필수 산출물이 없다: {missing}")
+        receipt = {
+            "schema_version": 1,
+            "completed_at_utc": datetime.datetime.now(
+                datetime.timezone.utc,
+            ).isoformat(),
+            **result,
+            "expected_result_files": list(SELECTION_REQUIRED_FILES),
+            "result_files_sha256": {
+                name: file_sha256(result_directory / name)
+                for name in SELECTION_REQUIRED_FILES
+            },
+        }
+        completion_path = result_directory / "selection_complete.json"
+        temporary_completion_path = completion_path.with_name(
+            f".{completion_path.name}.{os.getpid()}.tmp"
+        )
+        temporary_completion_path.write_text(
+            json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary_completion_path.replace(completion_path)
+        print(json.dumps(receipt, ensure_ascii=False, indent=2), flush=True)
+        return
 
     import fcntl
 
