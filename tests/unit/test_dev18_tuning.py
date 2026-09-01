@@ -791,9 +791,6 @@ class TestDev18Tuning(unittest.TestCase):
         budget = json.loads(json.dumps(run_dev18_tuning._read_json(
             run_dev18_tuning.DEFAULT_BUDGET_PATH,
         )))
-        test_budget_id = "b123456789abc"
-        registry["selection"]["budget_id"] = test_budget_id
-        budget["budget_id"] = test_budget_id
         scores = {
             "PCA_LEGACY": 0.20, "MWVAR": 0.40, "SQDIFF_LAST3": 0.30,
             "PaAno": 0.65, "GDN": 0.60, "TimeRCD": 0.50, "TSPulse": 0.70,
@@ -835,6 +832,9 @@ class TestDev18Tuning(unittest.TestCase):
                     return_value=(registry, registry_sha256),
                 ),
                 patch.object(run_dev18_tuning, "_read_json", return_value=budget),
+                patch.object(
+                    run_dev18_tuning, "DEV18_RECOVERY_BUDGET_ID", "test-budget",
+                ),
                 patch.object(
                     run_dev18_tuning, "load_structural_block_evidence",
                     return_value={},
@@ -886,6 +886,41 @@ class TestDev18Tuning(unittest.TestCase):
                 encoding="utf-8", newline="",
             ) as input_file:
                 self.assertEqual(len(list(csv.DictReader(input_file))), 294)
+
+    def test_selection_only_rejects_tampered_budget_before_output(self):
+        registry, registry_sha256 = run_dev18_tuning.load_model_registry_with_sha()
+        budget = run_dev18_tuning._read_json(run_dev18_tuning.DEFAULT_BUDGET_PATH)
+        mutations = {
+            "tie_rule": lambda changed: changed["tie_rule"].update(tolerance=0.5),
+            "model_panels": lambda changed: changed["model_panels"][0].update(
+                logical_ratios=[100],
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ledger_path = root / "dev18_trial_score_ledger.csv"
+            run_dev18_tuning._write_csv(
+                ledger_path, [], run_dev18_tuning.TRIAL_SCORE_LEDGER_FIELDS,
+            )
+            for name, mutate in mutations.items():
+                with self.subTest(name=name):
+                    changed = json.loads(json.dumps(budget))
+                    mutate(changed)
+                    result_directory = root / name
+                    with (
+                        patch.object(
+                            run_dev18_tuning, "load_model_registry_with_sha",
+                            return_value=(registry, registry_sha256),
+                        ),
+                        patch.object(run_dev18_tuning, "_read_json", return_value=changed),
+                        patch.object(run_dev18_tuning, "_git_head", return_value="c" * 40),
+                        patch.object(run_dev18_tuning, "_require_same_worktree"),
+                    ):
+                        with self.assertRaisesRegex(ValueError, "budget.*봉인"):
+                            finish_selection_from_ledger(
+                                ledger_path, result_directory=result_directory,
+                            )
+                    self.assertFalse(result_directory.exists())
 
     def test_deployment_scenario_schema_has_no_cost_defaults(self):
         schema = json.loads(

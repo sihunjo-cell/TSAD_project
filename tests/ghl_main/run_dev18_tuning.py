@@ -2286,11 +2286,24 @@ def finish_selection_from_ledger(
     validate_primary_hpo_seal(registry)
     budget = _read_json(DEFAULT_BUDGET_PATH)
     selection_seal = registry["selection"]
+    budget_core = {
+        field: value for field, value in budget.items()
+        if field not in {
+            "budget_sha256", "budget_id", "seal_status",
+            "execution_readiness_status", "pending_execution_models", "attestation",
+        }
+    }
+    budget_sha256 = hashlib.sha256(_json(budget_core).encode("utf-8")).hexdigest()
     if (
-        budget.get("budget_id") != selection_seal["budget_id"]
+        budget.get("budget_sha256") != budget_sha256
+        or budget.get("budget_id") != "b" + budget_sha256[:12]
+        or budget.get("budget_id") != selection_seal["budget_id"]
         or budget.get("primary_hpo_regime") != selection_seal["primary_hpo_regime"]
         or budget.get("selection_rule_id") != selection_seal["selection_rule_id"]
         or budget.get("registry_space_sha256") != registry_space_sha256(registry)
+        or budget.get("seal_status") != "sealed"
+        or budget.get("execution_readiness_status") != "ready"
+        or budget.get("pending_execution_models") != []
         or budget.get("attestation", {}).get("config_registry_sha256")
         != registry_sha256
     ):

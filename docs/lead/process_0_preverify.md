@@ -1,6 +1,6 @@
 # 사전 점검 결과
 
-갱신일: 2026-08-27
+갱신일: 2026-09-01
 
 ## 현재 판정
 
@@ -13,18 +13,15 @@ GDN은 공식 `d-ailin/GDN` 적응 구현 하나만 활성 모델로 인정한�
 동등성을 증명하는 작업은 필요하지 않다.
 
 Dev18 Role-A 감사와 manifest 인수, label-blind 정적 feasibility, exact `equal_trial` panel과
-`budget_id=b5367ad431093`, VUS-PR evaluator와 시계열별 `ℓ_max`까지 닫았다. non-interruptible L4의
-checkpoint smoke와 80% 자원 gate를 통과해 2단계 exact panel을 실행했고, primary 물리 실행
-1,170건 중 1,136건을 마쳤다. series 13 GDN `c1168c94d4dfc`, q10, seed 0은 CUDA OOM으로
-네 번 실패했다. 첫 복구에서 attention autograd graph 보유를 없애고 연속 두 배치 자원 gate를
-통과했지만, 장시간 학습에서 CUDA 예약 메모리 3.76GiB가 조각나 3.82GiB 연속 할당에 실패했다.
+`budget_id=b5367ad431093`, VUS-PR evaluator와 시계열별 `ℓ_max`까지 닫았다. primary 물리 실행
+1,170건과 `dev18_trial_score_ledger.csv` 1,602행도 모두 완료했다. 현재 입력은 이 완료 ledger이며,
+score·VUS checkpoint·원본 CSV를 다시 계산하지 않는다.
 
-완료한 1,136건은 score·metadata·training file SHA-256, 입력, 환경, spec, execution policy를
-그대로 검증해 보존한다. 두 번째 직계 복구 commit은 PyTorch CUDA 할당기에
-`expandable_segments:True`를 강제하고 GDN 자원 gate를 연속 여덟 배치로 늘린다. 이 gate를
-통과한 뒤 같은 trial의 마지막 재시도 한 번과 남은 34건만 재개한다. 모델 config, batch, epoch,
-seed, 예산과 점수 계산은 바꾸지 않는다. 라벨은 Role-A 오염·구간 감사와 evaluator 대조에만
-썼으며 feasibility, 예산, checkpoint forward와 gate smoke에서는 읽지 않았다.
+2026-08-27의 L4 기록은 실행 이력이다. 당시 1,136건을 마친 뒤 series 13 GDN
+`c1168c94d4dfc`, q10, seed 0의 CUDA OOM을 복구했고, PyTorch CUDA 할당기
+`expandable_segments:True`와 연속 여덟 배치 자원 gate를 적용해 남은 34건을 재개했다. 이 gate와
+재개 절차는 이미 끝났으므로 다시 실행하지 않는다. 라벨은 Role-A 오염·구간 감사와 evaluator
+대조에만 썼으며 feasibility, 예산, checkpoint forward와 gate smoke에서는 읽지 않았다.
 
 ## 데이터 EDA 인수 조건
 
@@ -105,9 +102,9 @@ PaAno는 `q40` 이상, GDN은 `q10` 이상에서만 후보가 남는다.
 
 equal-trial config 수는 Tier 1·2·3 순서로 `1·2·1`이다. target-free 실행을 `r100` 한 벌로 접은
 exact panel은 물리 실행 65건, primary logical score 89행이다. TSPulse의 primary score variant는
-`raw_max` 하나로 고정했고 `time·fft·pred`는 진단용으로만 남겼다. 예산은 조건부 `sealed`이며 실행은
-위 L4 gate가 닫힐 때까지 blocked다. 18개 전체 물리 실행은 1,170건이며 완성할 primary logical score
-원표는 1,602행이다.
+`raw_max` 하나로 고정했고 `time·fft·pred`는 진단용으로만 남겼다. 예산은 `sealed`다. 당시 L4 gate가
+닫히기 전에는 실행이 blocked였으나 gate 통과 뒤 18개 전체 물리 실행 1,170건과 primary logical
+score 원표 1,602행을 완성했다.
 
 ## 활성 모델 실행 전 확인
 
@@ -149,11 +146,11 @@ GDN 검사는 한 구현의 충실도 검사다. 과거 구현과 수치 결과�
 
 ## 현재 남은 항목
 
-- Dev18: 기존 1,136건을 지우지 않고 두 번째 직계 복구 commit의 non-interruptible L4 80% 자원 gate를
-  통과한 뒤 남은 34건 재개. 전체 primary 1,170건과 logical score 원표 1,602행 완성
+- Dev18: 완료 ledger 1,602행을 입력으로 selection-only를 한 번 실행해 비율별 Tier 대표,
+  294행 membership과 `selection_complete.json` 봉인
 - GHL25·HAI: 각 본실험을 열기 전 Role-A EDA·manifest 최종 승인
 - 최종 평가: GHL·HAI score가 생긴 뒤 threshold와 보조 F1 원표 연결
 
-GHL25·HAI 항목은 Dev18 튜닝을 막지 않는다. adaptive 정책이나 모델별 수동 실행은 이 gate의
-fallback이 아니다. 다음 시작점은 [Lightning AI 실행 절차](lightning_studio.md)의 OOM 복구
-순서대로 새 자원 gate를 닫고 `tests/checks/run_lightning_dev18.py`를 재개하는 일이다.
+GHL25·HAI 항목은 Dev18 선택표 봉인을 막지 않는다. `tier_adaptive`가 운영 주분석이고
+`tier_fixed`는 통제 비교다. 다음 시작점은 [Lightning AI 실행 절차](lightning_studio.md)의
+[완료 ledger에서 선택표만 다시 생성](lightning_studio.md#완료-ledger에서-선택표만-다시-생성) 명령이다.
