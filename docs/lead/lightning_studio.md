@@ -246,7 +246,8 @@ if [[ "$CURRENT_PID" =~ ^[0-9]+$ ]] && kill -0 "$CURRENT_PID" 2>/dev/null; then
 else
     echo "실행 중인 PID가 없습니다. 완료 또는 중단 여부를 로그에서 확인하세요."
 fi
-find "$CHECKPOINT_ROOT" -type f -name '*.json' | wc -l
+find "$CHECKPOINT_ROOT" -type f -name '*.json' \
+    ! -name 'finish_complete.json' | wc -l
 tail -f "$LOG_FILE"
 ```
 
