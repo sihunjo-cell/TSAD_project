@@ -52,7 +52,7 @@ Tier 2의 5%는 현재 봉인본에 실행 가능한 모델이 없으므로 다�
 - Tier 2의 5%는 선을 만들 값이 없으므로 회색 `unavailable` 표지만 둔다.
 - 후보별 세부 점수와 제외 근거는 CSV에 남기고 최종 그림 안에 긴 설명을 넣지 않는다.
 
-Windows에서는 Malgun Gothic을 우선 등록하고 `matplotlib.rcParams["font.family"]`에 적용한다. Lightning에서는 환경 변수로 지정한 글꼴 파일, 설치된 Malgun Gothic, 설치된 NanumGothic 순서로 찾는다. 찾은 실제 family와 글꼴 경로를 산출물 provenance에 남기며, 한글 글꼴을 찾지 못하면 깨진 그림을 저장하지 않고 명시적으로 중단한다.
+Windows에서는 Malgun Gothic을 우선 등록하고 `matplotlib.rcParams["font.family"]`에 적용한다. Lightning에서는 환경 변수로 지정한 글꼴 파일, 설치된 Malgun Gothic, 설치된 NanumGothic 순서로 찾는다. 최종 그림의 축·범례·모델명은 ASCII로 써서 한글 글꼴이 없어도 문자가 깨지지 않게 한다.
 
 ## 현장 비용 연결 계약
 
@@ -65,7 +65,7 @@ Windows에서는 Malgun Gothic을 우선 등록하고 `matplotlib.rcParams["font
 
 ## 재생성과 오류 처리
 
-Lightning 완료 경로에 selection-only 옵션을 추가한다. 이 옵션은 ledger의 schema, 1,602개 complete 행, 중복 key, budget ID와 evaluator SHA를 검증한 뒤 선택표와 그림만 다시 만든다. ledger가 불완전하거나 글꼴이 없으면 기존 산출물을 덮기 전에 중단한다.
+Lightning 완료 경로에 selection-only 옵션을 추가한다. 이 옵션은 ledger의 schema, 1,602개 complete 행, 중복 key, budget ID와 evaluator SHA를 검증한 뒤 선택표와 그림만 다시 만든다. ledger가 불완전하면 기존 산출물을 덮기 전에 중단한다.
 
 ## 검증
 
