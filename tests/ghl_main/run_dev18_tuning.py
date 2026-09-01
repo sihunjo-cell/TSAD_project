@@ -413,6 +413,61 @@ def _seed_means(rows) -> list[dict]:
     ]
 
 
+TRIAL_SCORE_LEDGER_FIELDS = (
+    "series", "family", "tier", "model", "config_id", "ratio", "seed",
+    "score_variant", "normalization", "vus_pr", "score_file", "score_sha256",
+    "evaluator_sha256", "ell_max_id", "status", "status_reason",
+)
+
+
+def load_trial_score_ledger(path, budget: dict) -> list[dict]:
+    """완료된 원표의 schema와 budget 논리 키만 확인해 읽는다."""
+    with Path(path).open(encoding="utf-8", newline="") as input_file:
+        reader = csv.DictReader(input_file)
+        if tuple(reader.fieldnames or ()) != TRIAL_SCORE_LEDGER_FIELDS:
+            raise ValueError("Dev18 trial ledger header가 다르다")
+        rows = []
+        for row in reader:
+            if row["status"] != "complete":
+                raise ValueError("Dev18 trial ledger에는 complete 행만 있어야 한다")
+            rows.append({**row, "ratio": int(row["ratio"]), "seed": int(row["seed"]),
+                         "vus_pr": float(row["vus_pr"])})
+
+    keys = [
+        (row["series"], row["model"], row["config_id"], row["ratio"],
+         row["seed"], row["score_variant"])
+        for row in rows
+    ]
+    if len(set(keys)) != len(keys):
+        raise ValueError("Dev18 trial ledger에 duplicate 논리 키가 있다")
+    if len({row["evaluator_sha256"] for row in rows}) != 1:
+        raise ValueError("Dev18 trial ledger의 evaluator SHA가 하나가 아니다")
+    if len({row["ell_max_id"] for row in rows}) != 1:
+        raise ValueError("Dev18 trial ledger의 ell_max ID가 하나가 아니다")
+    if budget.get("budget_id") == DEV18_RECOVERY_BUDGET_ID and len({row["series"] for row in rows}) != 18:
+        raise ValueError("Dev18 production trial ledger는 18개 series여야 한다")
+
+    expected_by_model = {
+        panel["model"]: {
+            (config_id, ratio, seed, variant)
+            for config_id in panel["selected_config_ids"]
+            for ratio in panel["logical_ratios"]
+            for seed in panel.get("seeds", budget["seeds"])
+            for variant in panel["primary_score_variants"]
+        }
+        for panel in budget["model_panels"]
+    }
+    expected_keys = {
+        (series, model, config_id, ratio, seed, variant)
+        for series in {row["series"] for row in rows}
+        for model, entries in expected_by_model.items()
+        for config_id, ratio, seed, variant in entries
+    }
+    if set(keys) != expected_keys:
+        raise ValueError("Dev18 trial ledger의 논리 키가 budget과 다르다")
+    return rows
+
+
 def _candidate_score(
     rows, *, model: str, config_id: str, score_variant: str,
     ratios, included_families=None,
@@ -456,6 +511,170 @@ def _hyperparameters(registry: dict, model_name: str, config_id: str) -> dict:
     if len(candidates) != 1:
         raise ValueError(f"registry config가 유일하지 않다: {model_name}/{config_id}")
     return candidates[0]
+
+
+def select_ratio_adaptive_policies(
+    rows, registry: dict, budget: dict, *, model_fixed, evaluator_sha256: str,
+) -> dict:
+    """모델별 고정 recipe를 유지한 채 비율마다 Tier 대표를 고른다."""
+    seed_rows = _seed_means(rows)
+    tolerance = float(budget["tie_rule"]["tolerance"])
+    fixed_by_model = {row["model"]: row for row in model_fixed}
+    panels_by_tier = defaultdict(list)
+    for panel in budget["model_panels"]:
+        panels_by_tier[panel["tier"]].append(panel)
+
+    adaptive_lofo = []
+    model_ratio_scores = defaultdict(lambda: defaultdict(list))
+    for panel in budget["model_panels"]:
+        model_name = panel["model"]
+        fixed = fixed_by_model[model_name]
+        if (
+            model_name == "PCA_LEGACY"
+            or fixed["selection_status"] != "selected"
+            or not panel["selected_config_ids"]
+        ):
+            continue
+        families = sorted({
+            row["family"] for row in seed_rows if row["model"] == model_name
+        })
+        for holdout in families:
+            training_families = set(families) - {holdout}
+            fold_candidates = [
+                (
+                    _candidate_score(
+                        seed_rows, model=model_name, config_id=config_id,
+                        score_variant=variant, ratios=panel["logical_ratios"],
+                        included_families=training_families,
+                    ), model_name, config_id, variant,
+                )
+                for config_id in panel["selected_config_ids"]
+                for variant in panel["primary_score_variants"]
+            ]
+            _, _, config_id, variant = _pick(fold_candidates, tolerance)
+            for ratio in panel["logical_ratios"]:
+                holdout_score = _candidate_score(
+                    seed_rows, model=model_name, config_id=config_id,
+                    score_variant=variant, ratios=[ratio], included_families={holdout},
+                )
+                model_ratio_scores[model_name][ratio].append(holdout_score)
+                adaptive_lofo.append({
+                    "tier": panel["tier"], "ratio": ratio, "model": model_name,
+                    "holdout_family": holdout, "selected_config_id": config_id,
+                    "score_variant": variant, "holdout_vus_pr": holdout_score,
+                })
+
+    tier_adaptive = []
+    candidate_audit = []
+    for tier, panels in sorted(panels_by_tier.items()):
+        for ratio in SUPPORTED_RATIO_PERCENTS:
+            audit_by_model = {}
+            candidates = []
+            for panel in sorted(panels, key=lambda item: item["model"]):
+                model_name = panel["model"]
+                fixed = fixed_by_model[model_name]
+                audit = {
+                    "tier": tier, "ratio": ratio, "model": model_name,
+                    "config_id": fixed["config_id"],
+                    "score_variant": fixed["score_variant"],
+                    "eligibility": "eligible", "family_lofo_vus_pr": None,
+                    "selected": False, "reason_code": "not_selected",
+                    "reason": "선택 가능한 다른 모델의 family-LOFO 점수가 더 높다",
+                }
+                if model_name == "PCA_LEGACY":
+                    audit.update({
+                        "eligibility": "reference_only", "reason_code": "reference_only",
+                        "reason": "PCA_LEGACY는 adaptive 대표 후보가 아닌 참고선이다",
+                    })
+                elif fixed["selection_status"] != "selected":
+                    audit.update({
+                        "eligibility": "full_panel_config_unavailable",
+                        "reason_code": "full_panel_config_unavailable",
+                        "reason": "18개 panel을 덮는 model-fixed config가 없다",
+                    })
+                elif ratio not in panel["logical_ratios"]:
+                    audit.update({
+                        "eligibility": "ratio_unsupported", "reason_code": "ratio_unsupported",
+                        "reason": "이 비율은 모델의 실행 지원 범위 밖이다",
+                    })
+                else:
+                    score = float(numpy.mean(model_ratio_scores[model_name][ratio]))
+                    audit["family_lofo_vus_pr"] = score
+                    candidates.append((
+                        score, model_name, fixed["config_id"], fixed["score_variant"],
+                    ))
+                audit_by_model[model_name] = audit
+                candidate_audit.append(audit)
+
+            if not candidates:
+                tier_adaptive.append({
+                    "tier": tier, "ratio": ratio, "selected_model": "",
+                    "config_id": "", "score_variant": "", "hyperparameters": {},
+                    "q_floor": registry["selection"]["tier_q_floor"].get(tier),
+                    "selection_score": None, "selection_status": "unavailable",
+                    "selection_reason": "이 비율에서 실행 가능한 Tier 후보가 없다",
+                    "budget_id": budget["budget_id"], "evaluator_sha256": evaluator_sha256,
+                })
+                continue
+            score, selected_model, _, _ = _pick(candidates, tolerance)
+            fixed = fixed_by_model[selected_model]
+            audit_by_model[selected_model].update({
+                "selected": True, "reason_code": "selected",
+                "reason": "family-LOFO 점수가 동률 규칙을 적용한 후보 중 최고다",
+            })
+            tier_adaptive.append({
+                "tier": tier, "ratio": ratio, "selected_model": selected_model,
+                "config_id": fixed["config_id"],
+                "score_variant": fixed["score_variant"],
+                "hyperparameters": fixed["hyperparameters"],
+                "q_floor": registry["selection"]["tier_q_floor"].get(tier),
+                "selection_score": score, "selection_status": "selected",
+                "selection_reason": (
+                    f"family-LOFO 점수 {score:.6f}가 {tier} 후보 중 가장 높아 선택"
+                ),
+                "budget_id": budget["budget_id"], "evaluator_sha256": evaluator_sha256,
+                "source_commit": fixed["source_commit"],
+                "source_checkpoint_sha256": fixed["source_checkpoint_sha256"],
+            })
+
+    policy_transitions = []
+    for tier, policies in sorted({
+        tier: [row for row in tier_adaptive if row["tier"] == tier]
+        for tier in panels_by_tier
+    }.items()):
+        previous = None
+        for policy in sorted(policies, key=lambda row: row["ratio"]):
+            if policy["selection_status"] == "unavailable":
+                transition = "unavailable"
+            elif previous is None:
+                transition = "initial"
+            elif (
+                policy["selected_model"] == previous["selected_model"]
+                and policy["config_id"] == previous["config_id"]
+            ):
+                transition = "keep"
+            else:
+                transition = "switch"
+            transition_row = {
+                "tier": tier,
+                "previous_ratio": previous["ratio"] if previous else None,
+                "current_ratio": policy["ratio"],
+                "previous_model": previous["selected_model"] if previous else "",
+                "previous_config_id": previous["config_id"] if previous else "",
+                "current_model": policy["selected_model"],
+                "current_config_id": policy["config_id"],
+                "transition": transition,
+            }
+            transition_row["transition_key"] = "tr" + hashlib.sha256(
+                _json(transition_row).encode("utf-8")
+            ).hexdigest()[:12]
+            policy_transitions.append(transition_row)
+            previous = policy
+
+    return {
+        "tier_adaptive": tier_adaptive, "adaptive_lofo": adaptive_lofo,
+        "candidate_audit": candidate_audit, "policy_transitions": policy_transitions,
+    }
 
 
 def select_tuning_policies(rows, registry: dict, budget: dict, *, evaluator_sha256: str) -> dict:
@@ -580,7 +799,11 @@ def select_tuning_policies(rows, registry: dict, budget: dict, *, evaluator_sha2
                 f"{tier} 후보 중 가장 높아 선택"
             ),
         })
-    return {"model_fixed": model_fixed, "tier_fixed": tier_fixed, "lofo": lofo}
+    adaptive = select_ratio_adaptive_policies(
+        rows, registry, budget, model_fixed=model_fixed,
+        evaluator_sha256=evaluator_sha256,
+    )
+    return {"model_fixed": model_fixed, "tier_fixed": tier_fixed, "lofo": lofo, **adaptive}
 
 
 def build_final_membership_rows(

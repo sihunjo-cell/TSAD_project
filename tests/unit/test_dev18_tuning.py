@@ -22,6 +22,7 @@ from tests.ghl_main.run_dev18_tuning import (
     _validate_bound_run_files,
     _validate_primary_manifest_rows,
     build_final_membership_rows,
+    load_trial_score_ledger,
     select_tuning_policies,
     validate_vus_evidence,
     write_selection_reports,
@@ -131,6 +132,167 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertEqual(model_rows["M0"]["selection_status"], "unavailable")
         self.assertEqual(selection["tier_fixed"][0]["selected_model"], "M1")
         self.assertIn("family-LOFO", selection["tier_fixed"][0]["selection_reason"])
+
+    def test_trial_score_ledger_loader_validates_sealed_logical_keys(self):
+        header = [
+            "series", "family", "tier", "model", "config_id", "ratio", "seed",
+            "score_variant", "normalization", "vus_pr", "score_file", "score_sha256",
+            "evaluator_sha256", "ell_max_id", "status", "status_reason",
+        ]
+        budget = {
+            "budget_id": "b123456789abc", "seeds": [0, 1],
+            "model_panels": [{
+                "model": "M1", "tier": "t1", "logical_ratios": [5, 10],
+                "selected_config_ids": ["c1"], "primary_score_variants": [""],
+            }],
+        }
+        rows = [{
+            "series": series, "family": family, "tier": "t1", "model": "M1",
+            "config_id": "c1", "ratio": str(ratio), "seed": str(seed),
+            "score_variant": "", "normalization": "trainnorm", "vus_pr": "0.5",
+            "score_file": "score.npy", "score_sha256": "a" * 64,
+            "evaluator_sha256": "b" * 64, "ell_max_id": "ell-v1",
+            "status": "complete", "status_reason": "",
+        } for series, family in (("01", "A"), ("02", "B"))
+            for ratio in (5, 10) for seed in (0, 1)]
+
+        def write_ledger(path, ledger_rows):
+            with path.open("w", encoding="utf-8", newline="") as output:
+                writer = csv.DictWriter(output, fieldnames=header)
+                writer.writeheader()
+                writer.writerows(ledger_rows)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ledger.csv"
+            write_ledger(path, rows)
+            loaded = load_trial_score_ledger(path, budget)
+            self.assertIsInstance(loaded[0]["ratio"], int)
+            self.assertIsInstance(loaded[0]["seed"], int)
+            self.assertIsInstance(loaded[0]["vus_pr"], float)
+
+            write_ledger(path, rows + [rows[0]])
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                load_trial_score_ledger(path, budget)
+
+            write_ledger(path, [{**row, "status": "failed"} for row in rows])
+            with self.assertRaisesRegex(ValueError, "complete"):
+                load_trial_score_ledger(path, budget)
+
+            write_ledger(path, [{**row, "evaluator_sha256": "c" * 64} if index == 0 else row
+                                for index, row in enumerate(rows)])
+            with self.assertRaisesRegex(ValueError, "evaluator"):
+                load_trial_score_ledger(path, budget)
+
+            write_ledger(path, [{**row, "ratio": "40"} if index == 0 else row
+                                for index, row in enumerate(rows)])
+            with self.assertRaisesRegex(ValueError, "budget"):
+                load_trial_score_ledger(path, budget)
+
+    def test_ratio_adaptive_selection_uses_native_support_and_fixed_recipe(self):
+        registry = {
+            "selection": {"tier_q_floor": {"t1": 5, "t2": 5}},
+            "models": {
+                "PCA_LEGACY": {"tier": "t1", "target_use": "fit_validation",
+                               "source_commit": "p" * 40, "source_checkpoint_sha256": "none",
+                               "candidates": [{"config_id": "pca", "hyperparameters": {}}]},
+                "MWVAR": {"tier": "t1", "target_use": "training_free",
+                          "source_commit": "m" * 40, "source_checkpoint_sha256": "none",
+                          "candidates": [{"config_id": "mw", "hyperparameters": {}}]},
+                "ALoRa": {"tier": "t2", "target_use": "fit_validation",
+                          "source_commit": "a" * 40, "source_checkpoint_sha256": "none",
+                          "candidates": [{"config_id": "alora", "hyperparameters": {}}]},
+                "GDN": {"tier": "t2", "target_use": "fit_validation",
+                        "source_commit": "g" * 40, "source_checkpoint_sha256": "none",
+                        "candidates": [
+                            {"config_id": "gdn_q10", "hyperparameters": {"window": 10}},
+                            {"config_id": "gdn_full", "hyperparameters": {"window": 20}},
+                        ]},
+                "PaAno": {"tier": "t2", "target_use": "fit_validation",
+                          "source_commit": "n" * 40, "source_checkpoint_sha256": "none",
+                          "candidates": [{"config_id": "paano", "hyperparameters": {}}]},
+            },
+        }
+        budget = {
+            "budget_id": "b123456789abc", "primary_hpo_regime": "equal_trial",
+            "tie_rule": {"tolerance": 1e-6}, "model_panels": [
+                {"model": "PCA_LEGACY", "tier": "t1", "logical_ratios": [100],
+                 "selected_config_ids": ["pca"], "primary_score_variants": [""],
+                 "dev18_tier_representative_eligible": False},
+                {"model": "MWVAR", "tier": "t1", "logical_ratios": [5, 10, 40, 100],
+                 "selected_config_ids": ["mw"], "primary_score_variants": [""],
+                 "dev18_tier_representative_eligible": True},
+                {"model": "ALoRa", "tier": "t2", "logical_ratios": [],
+                 "selected_config_ids": [], "primary_score_variants": [""],
+                 "dev18_tier_representative_eligible": False},
+                {"model": "GDN", "tier": "t2", "logical_ratios": [10, 40],
+                 "selected_config_ids": ["gdn_q10", "gdn_full"], "primary_score_variants": [""],
+                 "dev18_tier_representative_eligible": True},
+                {"model": "PaAno", "tier": "t2", "logical_ratios": [40, 60],
+                 "selected_config_ids": ["paano"], "primary_score_variants": [""],
+                 "dev18_tier_representative_eligible": False},
+            ],
+        }
+
+        def scores(model, tier, config_id, values):
+            return [{
+                "series": series, "family": family, "tier": tier, "model": model,
+                "config_id": config_id, "ratio": ratio, "seed": 0, "score_variant": "",
+                "vus_pr": value, "status": "complete",
+            } for ratio, value in values.items()
+                for series, family in (("01", "A"), ("02", "B"))]
+
+        rows = (
+            scores("PCA_LEGACY", "t1", "pca", {100: 0.99})
+            + scores("MWVAR", "t1", "mw", {5: 0.70, 10: 0.70, 40: 0.70, 100: 0.70})
+            + scores("GDN", "t2", "gdn_q10", {10: 0.90, 40: 0.10})
+            + scores("GDN", "t2", "gdn_full", {10: 0.60, 40: 0.95})
+            + scores("PaAno", "t2", "paano", {40: 0.96, 60: 0.80})
+        )
+        selection = select_tuning_policies(
+            rows, registry, budget, evaluator_sha256="d" * 64,
+        )
+        adaptive = {
+            (row["tier"], row["ratio"]): row
+            for row in selection["tier_adaptive"]
+        }
+
+        self.assertEqual(adaptive[("t1", 100)]["selected_model"], "MWVAR")
+        self.assertEqual(adaptive[("t2", 5)]["selection_status"], "unavailable")
+        self.assertEqual(adaptive[("t2", 10)]["selected_model"], "GDN")
+        self.assertEqual(adaptive[("t2", 40)]["selected_model"], "PaAno")
+        self.assertNotIn("PCA_LEGACY", {
+            row["selected_model"] for row in selection["tier_adaptive"]
+        })
+        fixed = {row["model"]: row for row in selection["model_fixed"]}
+        self.assertEqual(fixed["GDN"]["config_id"], "gdn_full")
+        self.assertTrue(all(
+            row["config_id"] == fixed[row["selected_model"]]["config_id"]
+            for row in selection["tier_adaptive"]
+            if row["selection_status"] == "selected"
+        ))
+        audit = {
+            (row["tier"], row["ratio"], row["model"]): row
+            for row in selection["candidate_audit"]
+        }
+        self.assertEqual(
+            set(audit[("t2", 10, "GDN")]),
+            {
+                "tier", "ratio", "model", "config_id", "score_variant", "eligibility",
+                "family_lofo_vus_pr", "selected", "reason_code", "reason",
+            },
+        )
+        self.assertEqual(audit[("t1", 100, "PCA_LEGACY")]["eligibility"], "reference_only")
+        self.assertEqual(
+            audit[("t2", 5, "ALoRa")]["eligibility"],
+            "full_panel_config_unavailable",
+        )
+        self.assertEqual(audit[("t2", 5, "GDN")]["eligibility"], "ratio_unsupported")
+        transitions = [
+            row for row in selection["policy_transitions"] if row["tier"] == "t2"
+        ]
+        self.assertEqual(transitions[0]["transition"], "unavailable")
+        self.assertTrue(transitions[0]["transition_key"].startswith("tr"))
+        self.assertEqual(transitions[-1]["current_ratio"], 100)
 
     def test_checkpoint_validation_reads_fresh_runtime_evidence(self):
         with patch.object(
