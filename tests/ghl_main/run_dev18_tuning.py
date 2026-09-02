@@ -24,61 +24,7 @@ import matplotlib
 import numpy
 
 matplotlib.use("Agg")
-from matplotlib import font_manager, pyplot
-
-WINDOWS_MALGUN_FONT_PATHS = tuple(dict.fromkeys((
-    Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "malgun.ttf",
-    Path("C:/Windows/Fonts/malgun.ttf"),
-)))
-
-
-def _find_installed_font(family: str):
-    normalized = family.replace(" ", "").casefold()
-    for entry in font_manager.fontManager.ttflist:
-        if entry.name.replace(" ", "").casefold() == normalized:
-            path = Path(entry.fname)
-            if path.is_file():
-                return path
-    return None
-
-
-def _apply_plot_font(path: Path, source: str) -> dict:
-    try:
-        font_manager.fontManager.addfont(path)
-        family = font_manager.FontProperties(fname=path).get_name()
-    except Exception as error:
-        raise ValueError(f"글꼴 파일을 읽을 수 없다: {path}") from error
-    matplotlib.rcParams["font.family"] = family
-    matplotlib.rcParams["axes.unicode_minus"] = False
-    return {"source": source, "family": family, "path": str(path)}
-
-
-def configure_plot_font() -> dict:
-    """명시 경로, Malgun Gothic, NanumGothic 순으로 그림 글꼴을 고른다."""
-    explicit = os.environ.get("TSAD_KOREAN_FONT_PATH")
-    if explicit:
-        path = Path(explicit).expanduser()
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"TSAD_KOREAN_FONT_PATH 글꼴 파일이 없다: {path}"
-            )
-        return _apply_plot_font(path, "environment")
-
-    for path in WINDOWS_MALGUN_FONT_PATHS:
-        if path.is_file():
-            return _apply_plot_font(path, "windows_malgun")
-    malgun = _find_installed_font("Malgun Gothic")
-    if malgun is not None:
-        return _apply_plot_font(malgun, "windows_malgun")
-    nanum = _find_installed_font("NanumGothic")
-    if nanum is not None:
-        return _apply_plot_font(nanum, "nanum_gothic")
-
-    matplotlib.rcParams["axes.unicode_minus"] = False
-    families = list(matplotlib.rcParams["font.family"])
-    return {
-        "source": "matplotlib_default", "family": families[0], "path": None,
-    }
+from matplotlib import pyplot
 
 from src.common.equal_trial_budget import build_equal_trial_budget, registry_space_sha256
 from src.common.execution_identity import file_sha256, load_input_manifest_role
@@ -651,7 +597,12 @@ def _draw_ratio_adaptive_selection(axis, data: dict) -> None:
             color=colors[tier], marker="o", markersize=4.5, linewidth=1.8,
             label=f"Tier {tier[1:]}",
         )
-        for point in points:
+        changes = [
+            point for index, point in enumerate(points)
+            if index == 0 or point["model"] != points[index - 1]["model"]
+        ]
+        labels = [points[-1]] if len(changes) == 1 and points else changes
+        for point in labels:
             axis.annotate(
                 point["model"],
                 (point["ratio"], point["selection_score"]),
@@ -661,17 +612,17 @@ def _draw_ratio_adaptive_selection(axis, data: dict) -> None:
             )
     axis.axhline(
         data["pca_reference_vus_pr"], color="#7f7f7f", linestyle="--",
-        linewidth=1.1, label="PCA_LEGACY q100 reference only",
+        linewidth=1.1, label="PCA q100 reference",
     )
     for point in data["unavailable"]:
         axis.text(
-            point["ratio"], 0.03, "unavailable",
+            point["ratio"], 0.03, f"Tier {point['tier'][1:]} unavailable",
             transform=axis.get_xaxis_transform(), ha="center", va="bottom",
             fontsize=7, color="#7f7f7f",
         )
     axis.set(
-        title="Ratio-adaptive Tier representatives",
-        xlabel="Normal prefix (%)", ylabel="Family-LOFO VUS-PR",
+        title="Adaptive Tier representatives",
+        xlabel="Observed normal prefix (%)", ylabel="Family-LOFO VUS-PR",
         xticks=SUPPORTED_RATIO_PERCENTS,
     )
     axis.grid(axis="y", color="#d9d9d9", linewidth=0.7, alpha=0.7)
@@ -1070,8 +1021,6 @@ def write_selection_reports(
     """모델별·Tier별 CSV와 PNG를 같은 폴더에 단순한 이름으로 저장한다."""
     output_directory = Path(output_directory)
     output_directory.mkdir(parents=True, exist_ok=True)
-    if write_plots:
-        configure_plot_font()
     seed_rows = _seed_means(rows)
     fixed = {row["model"]: row for row in selection["model_fixed"]}
     models = sorted(row["model"] for row in selection["model_fixed"])
@@ -1120,34 +1069,83 @@ def write_selection_reports(
         figure, axis = pyplot.subplots(figsize=(7, 4))
         if fixed[model_name]["selection_status"] == "unavailable":
             axis.axis("off")
+            axis.set_title(model_name)
             axis.text(
-                0.5, 0.58, f"{model_name}: unavailable", ha="center", va="center",
+                0.5, 0.58, "Unavailable", ha="center", va="center",
                 fontsize=16, transform=axis.transAxes,
             )
             axis.text(
-                0.5, 0.42, fixed[model_name]["selection_reason"],
-                ha="center", va="center", wrap=True, transform=axis.transAxes,
+                0.5, 0.42, "No eligible recipe covers the full tuning panel.",
+                ha="center", va="center", transform=axis.transAxes,
             )
         else:
-            for config_id, variant in sorted({
+            recipes = sorted({
                 (row["config_id"], row["score_variant"]) for row in model_rows
-            }):
+            })
+            other_recipe_labeled = False
+            selected_curve = None
+            curves = []
+            for config_id, variant in recipes:
                 curve = [
                     row for row in model_rows
                     if row["config_id"] == config_id and row["score_variant"] == variant
                 ]
+                curves.append(curve)
+                selected = curve[0]["selected_recipe"]
+                if selected:
+                    label = "Selected recipe"
+                    selected_curve = curve
+                elif not other_recipe_labeled:
+                    label = "Other tested recipe"
+                    other_recipe_labeled = True
+                else:
+                    label = "_nolegend_"
                 axis.plot(
                     [row["ratio"] for row in curve],
                     [row["family_macro_vus_pr"] for row in curve], marker="o",
-                    linewidth=2.5 if curve[0]["selected_recipe"] else 1,
-                    label=f"{config_id}{':' + variant if variant else ''}",
+                    color="#1f77b4" if selected else "#a6a6a6",
+                    linestyle="-" if selected else "--",
+                    linewidth=2.5 if selected else 1.2, label=label,
                 )
             axis.set(
-                title=model_name, xlabel="Normal prefix (%)",
+                title=model_name, xlabel="Observed normal prefix (%)",
                 ylabel="Family-macro VUS-PR",
             )
-            axis.grid(alpha=0.25)
-            axis.legend(fontsize=7)
+            axis.set_xticks(SUPPORTED_RATIO_PERCENTS)
+            axis.set_xlim(
+                min(SUPPORTED_RATIO_PERCENTS) - 2,
+                max(SUPPORTED_RATIO_PERCENTS) + 2,
+            )
+            axis.grid(axis="y", color="#d9d9d9", linewidth=0.7, alpha=0.7)
+            axis.spines["top"].set_visible(False)
+            axis.spines["right"].set_visible(False)
+            if len(recipes) > 1:
+                axis.legend(frameon=False, fontsize=8)
+            if selected_curve:
+                endpoint = selected_curve[-1]
+                axis.annotate(
+                    f"{endpoint['family_macro_vus_pr']:.3f}",
+                    (endpoint["ratio"], endpoint["family_macro_vus_pr"]),
+                    xytext=(-5, 7), textcoords="offset points", ha="right",
+                    fontsize=8, color="#1f77b4",
+                )
+            if all(
+                len(curve) > 1
+                and numpy.allclose(
+                    [row["family_macro_vus_pr"] for row in curve],
+                    curve[0]["family_macro_vus_pr"],
+                )
+                for curve in curves
+            ):
+                axis.text(
+                    0.01, 0.03, "Same score reused across ratios",
+                    transform=axis.transAxes, fontsize=8, color="#666666",
+                )
+            elif model_name == "PCA_LEGACY":
+                axis.text(
+                    0.01, 0.03, "q100 reference only",
+                    transform=axis.transAxes, fontsize=8, color="#666666",
+                )
         figure.tight_layout()
         figure.savefig(output_directory / f"{model_name}.png", dpi=160)
         pyplot.close(figure)
@@ -1178,27 +1176,32 @@ def write_selection_reports(
         if not write_plots:
             continue
         figure, axis = pyplot.subplots(figsize=(7, 4))
-        for tier_row in tier_rows:
-            curve = [
-                row for row in model_tables[tier_row["model"]]
-                if row["config_id"] == tier_row["fixed_config_id"]
-            ]
-            axis.plot(
-                [row["ratio"] for row in curve],
-                [row["family_macro_vus_pr"] for row in curve], marker="o",
-                linewidth=3 if tier_row["selected_model"] else 1,
-                label=tier_row["model"],
-            )
-        axis.set(title=f"Tier {tier_number}", xlabel="Normal prefix (%)", ylabel="Family-macro VUS-PR")
-        axis.grid(alpha=0.25)
-        axis.legend()
-        axis.text(
-            0, -0.27,
-            f"선택: {tier_policy['selected_model']} · 파라미터: {_json(tier_policy['hyperparameters'])}\n"
-            f"이유: {tier_policy['selection_reason']}",
-            transform=axis.transAxes, fontsize=7, va="top", wrap=True,
+        bars = axis.barh(
+            [row["model"] for row in tier_rows],
+            [row["family_lofo_score"] for row in tier_rows],
+            color=[
+                "#1f77b4" if row["selected_model"] else "#bdbdbd"
+                for row in tier_rows
+            ],
         )
-        figure.subplots_adjust(bottom=0.31)
+        axis.bar_label(bars, fmt="%.3f", padding=3, fontsize=8)
+        axis.invert_yaxis()
+        maximum = max(row["family_lofo_score"] for row in tier_rows)
+        axis.set_xlim(0, maximum * 1.25)
+        axis.set(
+            title=f"Tier {tier_number} fixed representative",
+            xlabel="Family-LOFO VUS-PR", ylabel="",
+        )
+        axis.grid(axis="x", color="#d9d9d9", linewidth=0.7, alpha=0.7)
+        axis.set_axisbelow(True)
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
+        axis.text(
+            0.98, 0.04,
+            "Only eligible representative" if len(tier_rows) == 1
+            else f"Selected: {tier_policy['selected_model']}",
+            transform=axis.transAxes, ha="right", fontsize=8, color="#555555",
+        )
         figure.tight_layout()
         figure.savefig(output_directory / f"Tier{tier_number}.png", dpi=160)
         pyplot.close(figure)
@@ -1222,22 +1225,46 @@ def write_selection_reports(
     )
     if not write_plots:
         return
-    figure, axis = pyplot.subplots(figsize=(12, max(4, len(model_summary) * 0.65)))
+    figure, axis = pyplot.subplots(figsize=(11, max(4, len(model_summary) * 0.58)))
     axis.axis("off")
-    table_rows = [[
-        row["model"], row["tier"], row["selection_status"], row["config_id"] or "-",
-        f"{row['j_fixed']:.6f}" if row["j_fixed"] is not None else "-",
-        _json(row["hyperparameters"]), row["selection_reason"],
-    ] for row in selection["model_fixed"]]
+    table_rows = []
+    for row in selection["model_fixed"]:
+        support = row["q_support"]
+        if not support:
+            support_label = "-"
+        elif len(support) == 1:
+            support_label = f"{support[0]}%"
+        else:
+            support_label = f"{min(support)}-{max(support)}% ({len(support)} levels)"
+        selected_scores = [
+            value["family_macro_vus_pr"] for value in model_tables[row["model"]]
+            if value["selected_recipe"]
+        ]
+        if row["selection_status"] == "unavailable":
+            key_point = "No full-panel recipe"
+        elif row["model"] == "PCA_LEGACY":
+            key_point = "q100 reference only"
+        elif len(selected_scores) > 1 and numpy.allclose(
+            selected_scores, selected_scores[0],
+        ):
+            key_point = "Same score reused"
+        else:
+            key_point = ""
+        table_rows.append([
+            row["tier"][1:], row["model"],
+            "Available" if row["selection_status"] == "selected" else "Unavailable",
+            f"{row['j_fixed']:.3f}" if row["j_fixed"] is not None else "-",
+            support_label, key_point,
+        ])
     table = axis.table(
         cellText=table_rows,
-        colLabels=["Model", "Tier", "Status", "Config", "VUS-PR", "Parameters", "Reason"],
-        loc="center", cellLoc="left",
+        colLabels=["Tier", "Model", "Status", "VUS-PR", "Prefix support", "Key point"],
+        colWidths=[0.07, 0.18, 0.13, 0.11, 0.21, 0.30], loc="center", cellLoc="left",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(7)
-    table.scale(1, 1.5)
-    axis.set_title("Model-fixed selection", pad=18)
+    table.set_fontsize(8)
+    table.scale(1, 1.45)
+    axis.set_title("Model-fixed recipe summary", pad=16)
     figure.tight_layout()
     figure.savefig(output_directory / "models.png", dpi=160)
     pyplot.close(figure)

@@ -9,7 +9,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.ghl_main import run_dev18_tuning
@@ -25,7 +24,6 @@ from tests.ghl_main.run_dev18_tuning import (
     _validate_primary_manifest_rows,
     build_ratio_adaptive_plot_data,
     build_final_membership_rows,
-    configure_plot_font,
     finish_selection_from_ledger,
     load_trial_score_ledger,
     select_tuning_policies,
@@ -416,66 +414,6 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertEqual(data["unavailable"], [{"tier": "t2", "ratio": 5}])
         self.assertAlmostEqual(data["pca_reference_vus_pr"], 0.283669)
 
-    def test_plot_font_resolution_prefers_malgun_and_accepts_lightning_fallback(self):
-        font_path = Path(run_dev18_tuning.font_manager.findfont("DejaVu Sans"))
-        with tempfile.TemporaryDirectory() as directory:
-            missing_path = Path(directory) / "missing.ttf"
-
-            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
-                run_dev18_tuning.os.environ,
-                {"TSAD_KOREAN_FONT_PATH": str(font_path)},
-            ), patch.object(
-                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (missing_path,),
-            ):
-                explicit = configure_plot_font()
-            self.assertEqual(explicit["source"], "environment")
-            self.assertEqual(explicit["path"], str(font_path))
-
-            with patch.dict(
-                run_dev18_tuning.os.environ,
-                {"TSAD_KOREAN_FONT_PATH": str(missing_path)},
-            ):
-                with self.assertRaisesRegex(
-                    FileNotFoundError, "TSAD_KOREAN_FONT_PATH",
-                ):
-                    configure_plot_font()
-
-            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
-                run_dev18_tuning.os.environ, {"TSAD_KOREAN_FONT_PATH": ""},
-            ), patch.object(
-                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (font_path,),
-            ):
-                malgun = configure_plot_font()
-            self.assertEqual(malgun["source"], "windows_malgun")
-
-            nanum_entry = SimpleNamespace(name="NanumGothic", fname=str(font_path))
-            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
-                run_dev18_tuning.os.environ, {"TSAD_KOREAN_FONT_PATH": ""},
-            ), patch.object(
-                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (missing_path,),
-            ), patch.object(
-                run_dev18_tuning.font_manager.fontManager, "ttflist", [nanum_entry],
-            ):
-                nanum = configure_plot_font()
-            self.assertEqual(nanum["source"], "nanum_gothic")
-
-            with run_dev18_tuning.matplotlib.rc_context(), patch.dict(
-                run_dev18_tuning.os.environ, {"TSAD_KOREAN_FONT_PATH": ""},
-            ), patch.object(
-                run_dev18_tuning, "WINDOWS_MALGUN_FONT_PATHS", (missing_path,),
-            ), patch.object(
-                run_dev18_tuning.font_manager.fontManager, "ttflist", [],
-            ):
-                before = list(run_dev18_tuning.matplotlib.rcParams["font.family"])
-                default = configure_plot_font()
-                self.assertEqual(
-                    list(run_dev18_tuning.matplotlib.rcParams["font.family"]), before,
-                )
-                self.assertFalse(
-                    run_dev18_tuning.matplotlib.rcParams["axes.unicode_minus"],
-                )
-            self.assertEqual(default["source"], "matplotlib_default")
-
     def test_final_selection_plot_keeps_one_clean_axis(self):
         figure = run_dev18_tuning.matplotlib.figure.Figure()
         axis = figure.subplots()
@@ -487,7 +425,15 @@ class TestDev18Tuning(unittest.TestCase):
                  "selection_score": 0.42},
                 {"tier": "t2", "ratio": 10, "model": "GDN",
                  "selection_score": 0.51},
+                {"tier": "t2", "ratio": 20, "model": "GDN",
+                 "selection_score": 0.53},
+                {"tier": "t2", "ratio": 40, "model": "PaAno",
+                 "selection_score": 0.55},
+                {"tier": "t2", "ratio": 60, "model": "PaAno",
+                 "selection_score": 0.54},
                 {"tier": "t3", "ratio": 5, "model": "TSPulse",
+                 "selection_score": 0.48},
+                {"tier": "t3", "ratio": 10, "model": "TSPulse",
                  "selection_score": 0.48},
             ],
             "unavailable": [{"tier": "t2", "ratio": 5}],
@@ -499,16 +445,19 @@ class TestDev18Tuning(unittest.TestCase):
         lines = {line.get_label(): line for line in axis.lines}
         self.assertEqual(
             set(lines),
-            {"Tier 1", "Tier 2", "Tier 3", "PCA_LEGACY q100 reference only"},
+            {"Tier 1", "Tier 2", "Tier 3", "PCA q100 reference"},
         )
-        self.assertEqual(lines["PCA_LEGACY q100 reference only"].get_linestyle(), "--")
+        self.assertEqual(lines["PCA q100 reference"].get_linestyle(), "--")
         self.assertEqual(list(axis.get_xticks()), [5, 10, 20, 40, 60, 80, 100])
         self.assertEqual(len(figure.axes), 1)
         self.assertEqual(len(axis.tables), 0)
         self.assertTrue(any(line.get_visible() for line in axis.get_ygridlines()))
         self.assertFalse(any(line.get_visible() for line in axis.get_xgridlines()))
         annotations = {annotation.get_text(): annotation for annotation in axis.texts}
-        self.assertEqual(set(annotations), {"MWVAR", "GDN", "TSPulse", "unavailable"})
+        self.assertEqual(
+            set(annotations),
+            {"MWVAR", "GDN", "PaAno", "TSPulse", "Tier 2 unavailable"},
+        )
         self.assertEqual(len(axis.texts), 5)
         self.assertTrue(all(text.get_fontsize() == 7 for text in axis.texts))
         self.assertGreater(annotations["MWVAR"].get_position()[1], 0)
@@ -553,7 +502,7 @@ class TestDev18Tuning(unittest.TestCase):
         self.assertEqual(len(captured[0].axes), 1)
         self.assertEqual(
             {line.get_label() for line in captured[0].axes[0].lines},
-            {"Tier 1", "Tier 2", "Tier 3", "PCA_LEGACY q100 reference only"},
+            {"Tier 1", "Tier 2", "Tier 3", "PCA q100 reference"},
         )
 
     def test_structural_block_evidence_summarizes_pair_count_series(self):
@@ -775,6 +724,82 @@ class TestDev18Tuning(unittest.TestCase):
             selected = next(row for row in tier_rows if row["selected_model"] == "True")
             self.assertTrue(selected["selected_hyperparameters"])
             self.assertTrue(selected["selection_reason"])
+
+    def test_report_images_keep_only_compact_ascii_decision_information(self):
+        selection = select_tuning_policies(
+            _rows(), self.registry, self.budget, evaluator_sha256="d" * 64,
+        )
+        captured = {}
+
+        def capture(figure, path, *_args, **_kwargs):
+            captured[Path(path).name] = figure
+
+        def visible_text(figure):
+            values = []
+            for axis in figure.axes:
+                values.extend((axis.get_title(), axis.get_xlabel(), axis.get_ylabel()))
+                values.extend(text.get_text() for text in axis.texts)
+                values.extend(text.get_text() for text in axis.get_yticklabels())
+                legend = axis.get_legend()
+                if legend is not None:
+                    values.extend(text.get_text() for text in legend.get_texts())
+                for table in axis.tables:
+                    values.extend(
+                        cell.get_text().get_text()
+                        for cell in table.get_celld().values()
+                    )
+            return [value for value in values if value]
+
+        plot_data = {
+            "points": [{"tier": "t1", "ratio": 5, "model": "M1",
+                        "selection_score": 0.8}],
+            "unavailable": [], "pca_reference_vus_pr": 0.3,
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            run_dev18_tuning.matplotlib.figure.Figure, "savefig",
+            autospec=True, side_effect=capture,
+        ), patch.object(
+            run_dev18_tuning, "build_ratio_adaptive_plot_data",
+            return_value=plot_data,
+        ):
+            output = Path(directory)
+            write_selection_reports(_rows(), selection, output)
+            model_csv = (output / "models.csv").read_text(encoding="utf-8")
+
+        self.assertEqual(
+            set(captured),
+            {"M0.png", "M1.png", "M2.png", "Tier1.png", "models.png", "selection.png"},
+        )
+        for figure in captured.values():
+            text = " ".join(visible_text(figure))
+            text.encode("ascii")
+            self.assertFalse({"c0", "c1", "c2", "c3"} & set(text.split()))
+            self.assertNotIn("{", text)
+
+        model_axis = captured["M1.png"].axes[0]
+        self.assertEqual(
+            {text.get_text() for text in model_axis.get_legend().get_texts()},
+            {"Selected recipe", "Other tested recipe"},
+        )
+        self.assertIn("Same score reused across ratios", visible_text(captured["M1.png"]))
+        self.assertLessEqual(model_axis.get_xlim()[0], 5)
+        self.assertGreaterEqual(model_axis.get_xlim()[1], 100)
+        self.assertIn(
+            "No eligible recipe covers the full tuning panel.",
+            visible_text(captured["M0.png"]),
+        )
+
+        tier_axis = captured["Tier1.png"].axes[0]
+        self.assertEqual(len(tier_axis.lines), 0)
+        self.assertEqual(tier_axis.get_xlabel(), "Family-LOFO VUS-PR")
+        self.assertGreater(len(tier_axis.patches), 0)
+
+        table = captured["models.png"].axes[0].tables[0]
+        self.assertEqual(
+            [table.get_celld()[(0, column)].get_text().get_text() for column in range(6)],
+            ["Tier", "Model", "Status", "VUS-PR", "Prefix support", "Key point"],
+        )
+        self.assertIn(selection["model_fixed"][0]["selection_reason"], model_csv)
 
     def test_reports_separate_adaptive_audit_and_transition_tables(self):
         selection = select_tuning_policies(
