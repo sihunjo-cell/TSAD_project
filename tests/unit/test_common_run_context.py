@@ -100,6 +100,38 @@ class TestVerifyRunContext(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "numpy version"):
                 context.verify_runtime_versions(environment)
 
+    def test_python_compatibility_records_the_actual_patch_version(self):
+        environment = {"python": ["3.11", "3.12"], "packages": {}}
+        for version in ("3.11.0", "3.11.15", "3.12.11"):
+            with self.subTest(version=version), patch.object(
+                context.platform, "python_version", return_value=version,
+            ):
+                self.assertEqual(context.verify_runtime_versions(environment), {"python": version})
+        for version in ("3.10.20", "3.13.0", "3.120.1"):
+            with self.subTest(version=version), patch.object(
+                context.platform, "python_version", return_value=version,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "python version"):
+                    context.verify_runtime_versions(environment)
+
+    def test_runtime_reports_all_version_and_source_errors_together(self):
+        environment = {
+            "python": ["3.11", "3.12"],
+            "packages": {"numpy": "2.3.2", "torch": "2.10.0"},
+            "sources": {"Time-RCD": "git+https://github.com/thu-sail-lab/Time-RCD.git@pinned"},
+        }
+        with (
+            patch.object(context.platform, "python_version", return_value="3.10.20"),
+            patch.object(context.metadata, "version", side_effect=[
+                "2.0.0", context.metadata.PackageNotFoundError("torch"),
+            ]),
+            patch.object(context.metadata, "distribution", side_effect=context.metadata.PackageNotFoundError("Time-RCD")),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                context.verify_runtime_versions(environment)
+        for detail in ("python version", "numpy version", "설치되지 않았다: torch", "설치 원본을 읽지 못했다: Time-RCD"):
+            self.assertIn(detail, str(raised.exception))
+
     def test_torch_build_suffix_does_not_change_public_version_contract(self):
         environment = {
             "python": "3.10.20",

@@ -2,7 +2,7 @@
 # packages와 sources는 최상위 호환 버전만 선언하며 실제 설치 결과는 pip freeze로 따로 봉인한다.
 
 profile: project_compatibility
-python: "3.11.14"
+python: ["3.11", "3.12"]
 
 dependency_declaration:
   scope: top_level_compatibility_pins

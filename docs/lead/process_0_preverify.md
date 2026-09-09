@@ -2,6 +2,22 @@
 
 갱신일: 2026-09-09
 
+## Lightning Python 호환 범위와 설치 대상 수정 — 2026-09-09
+
+감사 SHA 수정 후 Python 3.12.11이 3.11.14 고정 조건에 걸렸다. 고정 패키지와 공식 두 소스의
+Python 지원 선언에는 3.11·3.12가 포함된다. 시작 조건은 두 minor 버전의 patch 전체로 넓히고,
+실행·재개 시 실제 Python 전체 버전·설치 패키지·공식 source·CUDA의 동일성 검사는 유지한다.
+설치 스크립트는 conda의 Python을 바꾸지 않고 현재 터미널의 Python에 설치한다. torch는
+공식 cu126 wheel을 명시해 이미 설치된 다른 빌드가 같은 public version이라는 이유로 남지 않게 한다.
+공통 검사기는 지원 범위 밖 Python, 누락·불일치 패키지와 설치 원본 오류를 모아 보고한다.
+
+허용 patch 기록·미지원 minor 거절·여러 환경 오류의 동시 보고 회귀를 작성했다. 호출부와 diff만
+검토했으며 로컬 Python·테스트·YAML 파싱·모델 실행은 하지 않았다. 원격 확인 전이다.
+이번 traceback은 예산·빈 추천 DB 준비 후, Tier 3 실행과 runtime 봉인 전이다. 새 commit 설치 시
+빈 `recommendation_evidence/`와 `recommendation_contract.json`, 이전 `full_prefix_smoke.json`만
+다시 만든다. 예산·입력·공식 checkpoint cache·명령 이력은 보존한다. 호환 범위와 출처는
+[현재 결정](decisions.md)에 남겼다.
+
 ## Lightning 감사 원표 줄바꿈 호환 수정 — 2026-09-09
 
 원격 준비가 inventory SHA 불일치로 중단됐다. 감사 CSV 세 개는 Windows CRLF 바이트로

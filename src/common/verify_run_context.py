@@ -104,38 +104,50 @@ def verify_source_identity_unchanged(expected_identity: dict, project_path) -> N
 
 def verify_runtime_versions(environment: dict) -> dict[str, str]:
     actual_versions = {"python": platform.python_version()}
-    if actual_versions["python"] != environment["python"]:
-        raise RuntimeError(
-            f"python version이 고정값과 다르다: "
-            f"{actual_versions['python']} != {environment['python']}"
+    errors = []
+    supported_python = environment["python"]
+    if isinstance(supported_python, str):
+        supported_python = [supported_python]
+    if not any(
+        actual_versions["python"] == version or actual_versions["python"].startswith(version + ".")
+        for version in supported_python
+    ):
+        errors.append(
+            f"python version이 지원 범위 밖이다: "
+            f"{actual_versions['python']} (허용: {', '.join(supported_python)})"
         )
     for distribution, expected in environment["packages"].items():
         try:
             actual = metadata.version(distribution)
-        except metadata.PackageNotFoundError as error:
-            raise RuntimeError(f"고정 package가 설치되지 않았다: {distribution}") from error
+        except metadata.PackageNotFoundError:
+            errors.append(f"고정 package가 설치되지 않았다: {distribution}")
+            continue
         comparable = actual.split("+", 1)[0] if distribution == "torch" else actual
         if comparable != expected:
-            raise RuntimeError(
+            errors.append(
                 f"{distribution} version이 고정값과 다르다: {actual} != {expected}"
             )
         actual_versions[distribution] = actual
     for distribution, expected_source in environment.get("sources", {}).items():
         expected_url, separator, expected_commit = expected_source.removeprefix("git+").rpartition("@")
         if not separator or not expected_url or not expected_commit:
-            raise RuntimeError(f"고정 package 설치 원본 형식이 잘못됐다: {distribution}")
+            errors.append(f"고정 package 설치 원본 형식이 잘못됐다: {distribution}")
+            continue
         try:
             direct_url = json.loads(
                 metadata.distribution(distribution).read_text("direct_url.json") or ""
             )
             actual_url = direct_url["url"]
             actual_commit = direct_url["vcs_info"]["commit_id"]
-        except (json.JSONDecodeError, KeyError, TypeError) as error:
-            raise RuntimeError(f"고정 package 설치 원본을 읽지 못했다: {distribution}") from error
+        except (metadata.PackageNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+            errors.append(f"고정 package 설치 원본을 읽지 못했다: {distribution}")
+            continue
         if (actual_url, actual_commit) != (expected_url, expected_commit):
-            raise RuntimeError(
+            errors.append(
                 f"{distribution} 설치 원본이 고정값과 다르다: "
                 f"{actual_url}@{actual_commit} != {expected_url}@{expected_commit}"
             )
         actual_versions[f"{distribution}_source"] = f"{actual_url}@{actual_commit}"
+    if errors:
+        raise RuntimeError("실행 환경을 맞춰야 한다:\n- " + "\n- ".join(errors))
     return actual_versions

@@ -71,7 +71,7 @@ class TestModelEnvironment(unittest.TestCase):
             (REPOSITORY_ROOT / "configs" / "environment.yaml").read_text(encoding="utf-8"),
         )
 
-        self.assertEqual(environment["python"], "3.11.14")
+        self.assertEqual(environment["python"], ["3.11", "3.12"])
         self.assertEqual(
             {name.lower(): version for name, version in environment["packages"].items()},
             ACTIVE_PACKAGE_PINS,

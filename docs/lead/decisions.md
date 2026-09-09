@@ -2,6 +2,16 @@
 
 갱신일: 2026-09-09
 
+## 시작 환경은 Python 3.11·3.12를 허용
+
+2026-09-09 Lightning 준비 실패 수정 요청으로 Python 3.11.14 단일 고정을 3.11.x·3.12.x 허용으로
+바꾼다. 고정 PyPI 패키지의 지원 선언과 [Time-RCD](https://github.com/thu-sail-lab/Time-RCD/blob/372bb980426b2f67007311c6f3165ab789c79bef/pyproject.toml),
+[granite-tsfm](https://github.com/ibm-granite/granite-tsfm/blob/fe7a35697723e2a2f5246ae979474bfc554e26c0/pyproject.toml)의
+공식 Python 범위에 근거한다. 이 선언만으로 실제 GPU 실행을 검증한 것으로 보지는 않는다.
+설치 대상은 현재 터미널의 Python이며 torch는 공식 CUDA 12.6 빌드를 쓴다. 패키지 버전·공식
+source commit 고정은 유지한다. 실제 Python patch·pip freeze·CUDA·소스는 첫 실행에 봉인하고
+재개 때 같은 환경인지 검사한다. 환경 오류는 한 번에 모아 보고한다.
+
 ## 디스크 용량은 관측 정보로 기록
 
 2026-09-09 사용자 요청으로 고정 25GiB 디스크 기준을 제거한다. 현재 파일시스템 용량을
