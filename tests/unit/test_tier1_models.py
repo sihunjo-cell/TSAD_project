@@ -437,7 +437,8 @@ class TestPcaOfficial(unittest.TestCase):
 
         class ZeroCovariancePCA(PCA):
             def fit(self, values, y=None):
-                fit_inputs.append(values.copy())
+                # Preserve layout: centering roundoff affects near-zero PCA weights.
+                fit_inputs.append(values.copy(order="K"))
                 super().fit(values, y)
                 if self.svd_solver == "auto":
                     self._fit_svd_solver = "covariance_eigh"
