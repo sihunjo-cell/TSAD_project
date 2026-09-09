@@ -15,6 +15,7 @@ from src.common.model_feasibility import (
 )
 from src.common.model_registry import load_model_registry_with_sha
 from tests.ghl_main.build_dev18_feasibility import (
+    _load_approved_inventory,
     build_dev18_feasibility_artifacts,
 )
 
@@ -149,6 +150,38 @@ class TestDev18FeasibilityLedger(unittest.TestCase):
         self.assertEqual(summary["ledger_sha256"], ledger_sha256)
         self.assertEqual(summary["input_manifest_sha256"], self.manifest_sha256)
         self.assertEqual(summary["config_registry_sha256"], self.registry_sha256)
+
+    def test_audit_accepts_checkout_newlines_but_rejects_changed_table_content(self):
+        audit_root = Path("experiments/checks/datasets/dev18")
+        snapshot_path = audit_root / "snapshots/audit.json"
+        snapshot = json.loads((REPOSITORY_ROOT / snapshot_path).read_text(encoding="utf-8"))
+        table_paths = [audit_root / "logs" / name for name in snapshot["tables"]]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in (snapshot_path, Path("tests/checks/audit_dev18_inputs.py"), *table_paths):
+                destination = root / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes((REPOSITORY_ROOT / relative).read_bytes())
+            for newline in (b"\n", b"\r\n"):
+                with self.subTest(newline=newline):
+                    for relative in table_paths:
+                        content = (REPOSITORY_ROOT / relative).read_bytes().replace(b"\r\n", b"\n")
+                        (root / relative).write_bytes(content.replace(b"\n", newline))
+                    _, _, inventory_sha, _ = _load_approved_inventory(root, self.entries, self.manifest_sha256)
+                    self.assertEqual(inventory_sha, snapshot["tables"]["inventory.csv"])
+                    if newline == b"\n":
+                        self.assertNotEqual(
+                            hashlib.sha256((root / audit_root / "logs/inventory.csv").read_bytes()).hexdigest(),
+                            inventory_sha,
+                        )
+                    for relative in table_paths:
+                        with self.subTest(table=relative.name):
+                            path = root / relative
+                            content = path.read_bytes()
+                            path.write_bytes(content + b"changed")
+                            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                                _load_approved_inventory(root, self.entries, self.manifest_sha256)
+                            path.write_bytes(content)
 
 
 if __name__ == "__main__":

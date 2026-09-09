@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from src.common.execution_identity import file_sha256
+from src.common.execution_identity import file_sha256, sealed_crlf_text_sha256
 from src.common.model_feasibility import (
     FEASIBILITY_LEDGER_FIELDS,
     build_dev18_feasibility_rows,
@@ -32,7 +32,7 @@ def _load_approved_inventory(repository_root: Path, entries: list, manifest_sha:
     snapshot_path = audit_root / "snapshots" / "audit.json"
     inventory_path = audit_root / "logs" / "inventory.csv"
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    inventory_sha = file_sha256(inventory_path)
+    inventory_sha = snapshot.get("tables", {}).get("inventory.csv")
     audit_script = repository_root / "tests" / "checks" / "audit_dev18_inputs.py"
     if not str(snapshot.get("status", "")).startswith("approved"):
         raise ValueError("Dev18 Role-A audit가 승인되지 않았다")
@@ -40,8 +40,6 @@ def _load_approved_inventory(repository_root: Path, entries: list, manifest_sha:
         raise ValueError("Dev18 audit와 input manifest SHA-256이 다르다")
     if snapshot.get("audit_script_sha256") != file_sha256(audit_script):
         raise ValueError("Dev18 audit script SHA-256이 현재 코드와 다르다")
-    if snapshot.get("tables", {}).get("inventory.csv") != inventory_sha:
-        raise ValueError("Dev18 inventory SHA-256이 audit snapshot과 다르다")
     expected_tables = {
         "inventory.csv", "feature_schema_and_quality.csv",
         "high_correlation_pairs.csv",
@@ -49,9 +47,10 @@ def _load_approved_inventory(repository_root: Path, entries: list, manifest_sha:
     if set(snapshot.get("tables", {})) != expected_tables:
         raise ValueError("Dev18 audit 원표 목록이 불완전하다")
     for table_name in expected_tables:
-        if snapshot["tables"][table_name] != file_sha256(
-            audit_root / "logs" / table_name
-        ):
+        table_path = audit_root / "logs" / table_name
+        if snapshot["tables"][table_name] not in {
+            file_sha256(table_path), sealed_crlf_text_sha256(table_path),
+        }:
             raise ValueError(f"Dev18 {table_name} SHA-256이 audit snapshot과 다르다")
     role_sets = snapshot.get("role_sets", {})
     if (
