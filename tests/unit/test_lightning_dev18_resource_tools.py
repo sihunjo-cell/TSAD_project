@@ -414,9 +414,11 @@ class TestDev18ResourceCheck(unittest.TestCase):
             for seed in (0, 1)
         ] + [{
             "model": "TimeRCD", "config_id": "time", "ratio": 100,
+            "common_recipe": {"methodology_revision": "source_faithful_v3"},
             "seed": 0, "hyperparameters": {"context_length": 5000},
         }, {
             "model": "TSPulse", "config_id": "tspulse", "ratio": 100,
+            "common_recipe": {"methodology_revision": "source_faithful_v3"},
             "seed": 0, "hyperparameters": {
                 "context_length": 512, "patch_size": 8,
                 "heads": ["time", "fft", "pred", "raw_max"],
@@ -613,6 +615,16 @@ class TestDev18ResourceCheck(unittest.TestCase):
             self.assertNotIn("코드·입력·예산", message)
 
     def test_resource_report_rejects_missing_or_failed_tier3_evidence(self):
+        specs = [
+            {"model": "TimeRCD", "config_id": "c1c5aeea6f7d3", "ratio": 100, "seed": 0,
+             "common_recipe": {"methodology_revision": "source_faithful_v3"},
+             "hyperparameters": {"context_length": 5000, "checkpoint_variant": "multi", "score_head": "probability"}},
+            {"model": "TSPulse", "config_id": "c12c5e6196ea5", "ratio": 100, "seed": 0,
+             "common_recipe": {"methodology_revision": "source_faithful_v3"},
+             "hyperparameters": {"context_length": 512, "patch_size": 8, "aggregation_window": 64,
+                                 "heads": ["time", "fft", "pred", "raw_max"]}},
+        ]
+        entries = [{"series": "13", "row_count": 20000, "training_boundary": 10000, "feature_count": 3}]
         time_rcd = {
             "model": "TimeRCD", "config_id": "c1c5aeea6f7d3",
             "ratio": 100, "seed": 0, "series": "13",
@@ -667,8 +679,12 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "expected_models": {"TimeRCD", "TSPulse"},
             "environment": report["environment"], "ram_total_bytes": 1000,
         }
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tests.checks.check_dev18_resources._load_plan", return_value=(specs, entries),
+        ):
             path = Path(directory) / "resource_gate.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            self.assertEqual(validate_resource_report(path, **validation_arguments), report)
             for broken_tspulse in (
                 {key: value for key, value in tspulse.items() if key != "equivalence"},
                 {**tspulse, "equivalence": {**tspulse["equivalence"], "status": "failed"}},
@@ -752,12 +768,6 @@ class TestDev18ResourceCheck(unittest.TestCase):
                         gpu_peak_bytes=1001, gpu_peak_percent=100.1,
                     ),
                 ),
-                (
-                    "passed_at_ninety_nine_percent",
-                    lambda rows: rows[1].update(
-                        ram_peak_bytes=990, ram_peak_percent=99.0,
-                    ),
-                ),
             ):
                 broken = copy.deepcopy(report)
                 mutate(broken["results"])
@@ -765,11 +775,12 @@ class TestDev18ResourceCheck(unittest.TestCase):
                 with self.subTest(invalid_evidence=name):
                     with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
                         validate_resource_report(path, **validation_arguments)
-            path.write_text(json.dumps(report), encoding="utf-8")
-            self.assertEqual(
-                validate_resource_report(path, **validation_arguments),
-                report,
-            )
+            for peak in (990, 1000):
+                high_ram = copy.deepcopy(report)
+                high_ram["results"][1].update(ram_peak_bytes=peak, ram_peak_percent=peak / 10)
+                path.write_text(json.dumps(high_ram), encoding="utf-8")
+                with self.subTest(ram_peak_bytes=peak):
+                    self.assertEqual(validate_resource_report(path, **validation_arguments), high_ram)
             with self.assertRaisesRegex(ValueError, "GPU"):
                 validate_resource_report(
                     path,
