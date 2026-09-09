@@ -154,8 +154,22 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
     del standardized
     pca = PCA(n_components=n_components, random_state=0).fit(fitted)
     weights = pca.explained_variance_ratio_
+    initial_solver = pca._fit_svd_solver
+    initial_zero_weight_count = int(numpy.count_nonzero(weights == 0))
+    if (initial_solver == "covariance_eigh" and initial_zero_weight_count
+            and numpy.isfinite(weights).all()):
+        # Covariance eigendecomposition can round a small variance to zero.
+        pca.set_params(svd_solver="full").fit(fitted)
+        weights = pca.explained_variance_ratio_
     if not numpy.isfinite(weights).all() or numpy.any(weights == 0):
-        raise ValueError("official PCA component weights must be finite and nonzero")
+        raise ValueError(
+            "official PCA component weights must be finite and nonzero "
+            f"(solver={pca._fit_svd_solver}, shape={fitted.shape})"
+        )
+    solver_record = {
+        "requested": "auto", "initial": initial_solver, "actual": pca._fit_svd_solver,
+        "initial_zero_weight_count": initial_zero_weight_count,
+    }
     window_scores = numpy.empty(len(fitted))
     for start in range(0, len(fitted), PCA_DISTANCE_CHUNK_ROWS):
         stop = start + PCA_DISTANCE_CHUNK_ROWS
@@ -188,6 +202,7 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
         "zero_pruning": True,
         "zero_pruned_window_feature_count": int((~nonzero).sum()),
         "retained_window_feature_count": int(nonzero.sum()),
+        "pca_solver": solver_record,
         "checkpoint": {
             "model_config": {
                 "n_components": n_components, "window": PCA_WINDOW,
@@ -195,6 +210,7 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
             },
             "scaler": scaler,
             "pca": pca,
+            "pca_solver": solver_record.copy(),
             "nonzero_window_features": nonzero,
             "fit_source": "full_evaluation",
             "fit_source_range": [0, length],

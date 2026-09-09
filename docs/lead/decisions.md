@@ -2,6 +2,21 @@
 
 갱신일: 2026-09-09
 
+## PCA의 0 가중치에 한정한 full SVD 재계산
+
+2026-09-09 공식 TSB-AD 기본 브랜치의 최신 commit은 기존 봉인
+`6beac72e11d1155ade40870492c00d0d1cfdcaaf`와 같다. Apache-2.0의
+[PCA 구현](https://github.com/TheDatumOrg/TSB-AD/blob/6beac72e11d1155ade40870492c00d0d1cfdcaaf/TSB_AD/models/PCA.py)은
+기본 auto와 full SVD를 지원하며, [공식 호출부](https://github.com/TheDatumOrg/TSB-AD/blob/6beac72e11d1155ade40870492c00d0d1cfdcaaf/TSB_AD/model_wrapper.py)는 auto를 사용한다.
+[scikit-learn 1.7.1](https://github.com/scikit-learn/scikit-learn/blob/1.7.1/sklearn/decomposition/_pca.py)의
+auto가 선택한 covariance_eigh에서 작은 음의 고유값을 0으로 보정하면 공식 가중 거리의 나눗셈이
+정의되지 않는다. Lightning series 11에서는 이 방식의 0 가중치 하나가 full SVD에서 사라졌다.
+
+사용자의 원 절차 보존 수정 요청에 따라 이 경우에만 full SVD로 재계산한다. 공식 자동 복구나
+새 HPO 축으로 주장하지 않고 프로젝트 수치 보완으로 기록한다. 공개 후보·성분 수·평가 입력 fit·
+zero pruning·가중 거리식은 유지하며 작은 분산에 임의 하한을 넣지 않는다. 실제 solver와 복구 전
+0 가중치 수를 저장하고 재계산 후에도 정의되지 않는 점수는 계속 거절한다.
+
 ## GPU 메모리 여유율과 TSPulse 수치 비교 기준
 
 2026-09-09 배치 32의 Lightning 검사에서 TSPulse 세 창 모두 추론을 마쳤다. 가장 큰 head 점수

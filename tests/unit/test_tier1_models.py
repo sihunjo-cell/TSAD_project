@@ -423,12 +423,57 @@ class TestPcaOfficial(unittest.TestCase):
                     self.assertEqual(result["calibration_mode"], "none")
                     self.assertTrue(result["official_procedure"])
                     self.assertTrue(result["zero_pruning"])
+                    self.assertEqual(result["pca_solver"]["initial"], pca._fit_svd_solver)
+                    self.assertEqual(result["pca_solver"]["actual"], pca._fit_svd_solver)
                     checkpoint = result["checkpoint"]
                     numpy.testing.assert_allclose(checkpoint["scaler"].mean_, scaler.mean_)
                     numpy.testing.assert_array_equal(checkpoint["nonzero_window_features"], nonzero)
                     self.assertTrue(checkpoint["model_config"]["official_procedure"])
                     with self.assertRaisesRegex(ValueError, "official"):
                         PcaLegacy.from_checkpoint(checkpoint)
+
+    def test_zero_covariance_weight_retries_full_svd_without_changing_score_formula(self):
+        fit_inputs = []
+
+        class ZeroCovariancePCA(PCA):
+            def fit(self, values, y=None):
+                fit_inputs.append(values.copy())
+                super().fit(values, y)
+                if self.svd_solver == "auto":
+                    self._fit_svd_solver = "covariance_eigh"
+                    self.explained_variance_ratio_[-1] = 0
+                return self
+
+        values = numpy.random.default_rng(54).normal(size=(115, 3))
+        with patch("src.models.tier1.pca_legacy.PCA", ZeroCovariancePCA):
+            result = score_pca_official(values)
+        checkpoint = result["checkpoint"]
+        self.assertEqual(len(fit_inputs), 2)
+        numpy.testing.assert_array_equal(fit_inputs[0], fit_inputs[1])
+        fitted = fit_inputs[0]
+        reference = PCA(n_components=None, random_state=0, svd_solver="full").fit(fitted)
+        expected = numpy.sum(cdist(fitted, reference.components_) / reference.explained_variance_ratio_, axis=1)
+        numpy.testing.assert_allclose(result["scores"], numpy.pad(expected, (50, 49), mode="edge"))
+        self.assertEqual(checkpoint["pca"].n_components_, reference.n_components_)
+        self.assertEqual(result["pca_solver"], {
+            "requested": "auto", "initial": "covariance_eigh", "actual": "full",
+            "initial_zero_weight_count": 1,
+        })
+        self.assertEqual(checkpoint["pca_solver"], result["pca_solver"])
+
+    def test_full_svd_with_zero_weight_still_rejects_undefined_score(self):
+        class ZeroWeightPCA(PCA):
+            def fit(self, values, y=None):
+                super().fit(values, y)
+                if self.svd_solver == "auto":
+                    self._fit_svd_solver = "covariance_eigh"
+                self.explained_variance_ratio_[-1] = 0
+                return self
+
+        values = numpy.random.default_rng(55).normal(size=(115, 3))
+        with patch("src.models.tier1.pca_legacy.PCA", ZeroWeightPCA):
+            with self.assertRaisesRegex(ValueError, "finite and nonzero"):
+                score_pca_official(values)
 
     def test_official_zero_pruning_removes_zero_window_columns(self):
         values = numpy.column_stack((numpy.zeros(106), numpy.tile([-1.0, 1.0], 53)))

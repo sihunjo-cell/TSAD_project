@@ -40,7 +40,7 @@ NATIVE_METADATA_FIELDS = (
     "native_postprocessing", "official_protocol", "fit_source", "actual_fit_row_count",
     "checkpoint_selection", "training_data_scope", "rank_threshold_policy",
     "score_postprocessing", "fit_source_range", "window_normalization", "zero_pruning",
-    "zero_pruned_window_feature_count", "retained_window_feature_count",
+    "zero_pruned_window_feature_count", "retained_window_feature_count", "pca_solver",
     "native_postprocessing_recipe", "training_context_rows",
     "component_score_ranges", "score_normalization_source_start", "score_normalization_source_end_exclusive",
     "native_smoothing_window", "boundary_repeat_scope", "official_procedure",
