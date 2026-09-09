@@ -18,11 +18,14 @@ def _score_mwvar96_ensemble(values, *, difference_scorer, difference_name):
         minimum = scores.min(axis=0)
         maximum = scores.max(axis=0)
         span = maximum - minimum
-        if numpy.any(span == 0):
-            channels = numpy.flatnonzero(span == 0).tolist()
-            raise ValueError(f"{name} has zero score range in channels {channels}; official minmax is undefined")
-        normalized.append((scores - minimum) / span)
-        ranges[name] = {"minimum": minimum.tolist(), "maximum": maximum.tolist()}
+        normalized.append(numpy.divide(
+            scores - minimum, span, out=numpy.zeros_like(scores), where=span != 0,
+        ))
+        ranges[name] = {
+            "minimum": minimum.tolist(), "maximum": maximum.tolist(),
+            "zero_range_channels": numpy.flatnonzero(span == 0).tolist(),
+            "zero_range_policy": "zero_normalized_component",
+        }
 
     length = len(variance["scores"])
     return {

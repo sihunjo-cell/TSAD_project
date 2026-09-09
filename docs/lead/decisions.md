@@ -2,6 +2,19 @@
 
 갱신일: 2026-09-09
 
+## One-Liners 앙상블의 상수 성분 처리
+
+2026-09-09 공식 One-Liners의 최신 main commit은 기존 봉인
+`dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9`와 같다. MIT license의
+[앙상블 실행 코드](https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad/-/blob/dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9/scripts/evaluate_baselines_ensemble.py)는
+단변량 component min-max 뒤 두 점수의 최댓값을 사용하며 0 범위를 처리하지 않는다.
+
+다변량 채널별 확장에서 한 상수 성분 때문에 전체 실행을 중단하지 않도록, 범위가 정확히 0인
+성분·채널만 정규화 결과 0으로 둔다. 같은 채널의 다른 성분과 모든 채널을 유지한다. 양의 범위는
+기존 공식 식을 그대로 쓰고 epsilon·저분산 threshold는 추가하지 않는다. NaN·Inf는 계속 거절한다.
+이는 공식 원본에 없는 경계 조건 보완이다. `component_score_ranges`에 원래 최소·최대와 정책,
+0부터 시작하는 대상 채널 번호를 기록한다. 공개 후보·창·차분·결합 순서와 q별 선택은 유지한다.
+
 ## PCA의 0 가중치에 한정한 full SVD 재계산
 
 2026-09-09 공식 TSB-AD 기본 브랜치의 최신 commit은 기존 봉인

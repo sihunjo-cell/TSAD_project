@@ -221,11 +221,53 @@ class TestOneLinerEnsemble(unittest.TestCase):
                     numpy.testing.assert_allclose(ranges["minimum"], scores.min(axis=0))
                     numpy.testing.assert_allclose(ranges["maximum"], scores.max(axis=0))
 
-    def test_zero_range_rejects_undefined_official_minmax_without_silent_epsilon(self):
+    def test_constant_channels_remain_zero_without_changing_other_channels(self):
+        time = numpy.arange(100, dtype=float)
+        varying = (time ** 3 + 100 * numpy.sin(time))[:, None]
+        values = numpy.column_stack((numpy.zeros(100), varying, numpy.full(100, 7.0)))
         for scorer in (score_mwvar96_sqdiff_last3, score_mwvar96_sqdiff_centered5):
             with self.subTest(scorer=scorer.__name__):
-                with self.assertRaisesRegex(ValueError, "zero score range"):
-                    scorer(numpy.ones((100, 2)))
+                with numpy.errstate(divide="raise", invalid="raise"):
+                    result = scorer(values)
+                    constant = scorer(numpy.ones((100, 2)))
+                self.assertEqual(result["scores"].shape, values.shape)
+                numpy.testing.assert_array_equal(result["scores"][:, [0, 2]], numpy.zeros((100, 2)))
+                numpy.testing.assert_allclose(result["scores"][:, 1], scorer(varying)["scores"][:, 0])
+                numpy.testing.assert_array_equal(constant["scores"], numpy.zeros((100, 2)))
+                for ranges in result["component_score_ranges"].values():
+                    self.assertEqual(ranges["zero_range_channels"], [0, 2])
+                    self.assertEqual(ranges["zero_range_policy"], "zero_normalized_component")
+
+    def test_zero_component_preserves_its_partner_and_tiny_nonzero_ranges(self):
+        time = numpy.arange(100, dtype=float)
+        variance = numpy.column_stack((numpy.full(100, 5.0), time, time * 1e-30))
+        difference = numpy.column_stack((time ** 2, numpy.full(100, 7.0), time[::-1] * 1e-30))
+        template = score_mwvar(numpy.ones((100, 3)))
+        expected = numpy.column_stack((time ** 2 / 99 ** 2, time / 99,
+                                       numpy.maximum(time, time[::-1]) / 99))
+        for scorer, component_name in (
+            (score_mwvar96_sqdiff_last3, "score_sqdiff_last3"),
+            (score_mwvar96_sqdiff_centered5, "score_sqdiff_centered5"),
+        ):
+            with self.subTest(scorer=scorer.__name__), patch(
+                "src.models.tier1.one_liner_ensemble.score_mwvar",
+                return_value={**template, "scores": variance},
+            ), patch(
+                f"src.models.tier1.one_liner_ensemble.{component_name}",
+                return_value={"scores": difference},
+            ), numpy.errstate(divide="raise", invalid="raise"):
+                result = scorer(numpy.ones((100, 3)))
+            numpy.testing.assert_allclose(result["scores"], expected)
+
+    def test_nonfinite_component_scores_still_fail(self):
+        for scorer in (score_mwvar96_sqdiff_last3, score_mwvar96_sqdiff_centered5):
+            for invalid in (numpy.nan, numpy.inf):
+                with self.subTest(scorer=scorer.__name__, invalid=invalid), patch(
+                    "src.models.tier1.one_liner_ensemble.score_mwvar",
+                    return_value={"scores": numpy.full((100, 2), invalid)},
+                ):
+                    with self.assertRaisesRegex(ValueError, "scores must be finite"):
+                        scorer(numpy.ones((100, 2)))
 
 
 class TestPcaLegacy(unittest.TestCase):
