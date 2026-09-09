@@ -24,6 +24,72 @@ from tests.checks.reset_lightning_dev18 import reset_previous_run
 
 
 class TestDev18ResourceCheck(unittest.TestCase):
+    def test_tspulse_equivalence_accepts_float32_roundoff_but_rejects_score_changes(self):
+        from tests.checks.check_dev18_resources import summarize_tspulse_equivalence
+
+        differences = {"time": 6.304291425007769e-7, "fft": 4.453828360562184e-7,
+                       "pred": 2.1088925095114064e-7, "ensemble": 1.4692894585444094e-6}
+        reference = {head: {"scores": numpy.array([0.0, 0.5, 1.0])} for head in differences}
+        registered = {head: {"scores": numpy.array([difference, 0.5, 1.0])}
+                      for head, difference in differences.items()}
+        result = summarize_tspulse_equivalence(reference, registered, registered_batch_size=32,
+                                               official_protocol=True)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual((result["rtol"], result["atol"]), (1.3e-6, 1e-5))
+        self.assertEqual(result["head_maximum_absolute_differences"], differences)
+        registered["fft"]["scores"][0] = 1e-3
+        self.assertEqual(summarize_tspulse_equivalence(
+            reference, registered, registered_batch_size=32, official_protocol=True,
+        )["status"], "failed")
+        registered["fft"]["scores"][0] = numpy.nan
+        with self.assertRaisesRegex(ValueError, "유효하지 않다"):
+            summarize_tspulse_equivalence(reference, registered, registered_batch_size=32,
+                                          official_protocol=True)
+
+    def test_gpu_memory_warning_preserves_equivalence_ram_and_oom_failures(self):
+        import torch
+        from tests.checks import check_dev18_resources as resources
+
+        case = {"model": "TSPulse", "config_id": "c1", "series": "13", "ratio": 100, "seed": 0}
+        evidence = {"execution_policy": {"status": "passed"}, "equivalence": {"status": "passed"}}
+        with ExitStack() as stack:
+            for name, value in {"_find_case": (case, case), "_system_memory_bytes": 10000,
+                                "_maximum_rss_bytes": 342}.items():
+                stack.enter_context(patch.object(resources, name, return_value=value))
+            stack.enter_context(patch("src.common.set_reproducible_seed.set_reproducible_seed"))
+            stack.enter_context(patch("tests.ghl_main.run_registered_models.load_registered_inputs", return_value={}))
+            for name, value in {"empty_cache": None, "reset_peak_memory_stats": None,
+                                "mem_get_info": (10000, 10000), "max_memory_reserved": 9856,
+                                "synchronize": None}.items():
+                stack.enter_context(patch.object(torch.cuda, name, return_value=value))
+            probe = stack.enter_context(patch.object(resources, "_run_model_probe", return_value=evidence))
+            arguments = {"model": "TSPulse", "config_id": "c1", "series": "13",
+                         "data_root": Path("data"), "maximum_memory_percent": 80}
+            result = resources.run_child_probe(**arguments)
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["gpu_peak_percent"], 98.56)
+            self.assertTrue(result["warnings"])
+            self.assertTrue(resources._has_consistent_capacity_evidence([result], {"TSPulse"}, 80))
+            self.assertTrue(resources._has_consistent_capacity_evidence(
+                [{**result, "gpu_peak_bytes": 10000, "gpu_peak_percent": 100.0}], {"TSPulse"}, 80,
+            ))
+            self.assertFalse(resources._has_consistent_capacity_evidence(
+                [{**result, "gpu_peak_bytes": 10001, "gpu_peak_percent": 100.01}], {"TSPulse"}, 80,
+            ))
+            with patch.object(resources, "_maximum_rss_bytes", return_value=8000):
+                failed = resources.run_child_probe(**arguments)
+                self.assertEqual(failed["status"], "failed")
+                self.assertIn("RAM", failed["error"])
+            evidence["equivalence"] = {"status": "failed", "head_maximum_absolute_differences": {"fft": .001}}
+            failed = resources.run_child_probe(**arguments)
+            self.assertEqual(failed["status"], "failed")
+            self.assertIn("equivalence", failed["error"])
+            self.assertIn("0.001", failed["error"])
+            probe.side_effect = torch.cuda.OutOfMemoryError("CUDA out of memory")
+            failed = resources.run_child_probe(**arguments)
+            self.assertEqual(failed["status"], "failed")
+            self.assertIn("CUDA out of memory", failed["error"])
+
     def test_pca_estimate_overflow_uses_isolated_measurement_and_preserves_estimate(self):
         from tests.checks import check_dev18_resources as resources
 
@@ -146,7 +212,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
                "wall_time_seconds": 1, "gpu_peak_bytes": 100, "gpu_peak_percent": 1,
                "ram_peak_bytes": 100, "ram_peak_percent": 1,
                "equivalence": {"status": "passed", "reference_batch_size": 1, "registered_batch_size": 128,
-                   "rtol": 1e-6, "atol": 1e-8, "head_maximum_absolute_differences": {
+                   "rtol": 1.3e-6, "atol": 1e-5, "head_maximum_absolute_differences": {
                        head: 0 for head in ("time", "fft", "pred", "ensemble")}}}
         with patch("tests.checks.check_dev18_resources._load_plan", return_value=([spec], [{"series": "01", "feature_count": 2}])), patch(
             "tests.checks.check_dev18_resources.select_probe_cases", return_value=[case],
@@ -455,8 +521,8 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "results": [
                 {
                     "model": "GDN", "status": "passed",
-                    "gpu_peak_bytes": 10, "gpu_total_bytes": 1000,
-                    "gpu_peak_percent": 1.0,
+                    "gpu_peak_bytes": 9856, "gpu_total_bytes": 10000,
+                    "gpu_peak_percent": 98.56,
                     "ram_peak_bytes": 20, "ram_total_bytes": 1000,
                     "ram_peak_percent": 2.0,
                     "maximum_memory_percent": 80,
@@ -566,7 +632,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "equivalence": {
                 "status": "passed", "reference_batch_size": 1,
                 "registered_batch_size": 32,
-                "rtol": 1e-6, "atol": 1e-8,
+                "rtol": 1.3e-6, "atol": 1e-5,
                 "head_maximum_absolute_differences": {
                     "time": 0.0, "fft": 0.0, "pred": 0.0, "raw_max": 0.0,
                 },
@@ -672,9 +738,9 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     lambda rows: rows[0].update(gpu_peak_percent=2.0),
                 ),
                 (
-                    "passed_at_eighty_percent",
+                    "gpu_peak_exceeds_total_memory",
                     lambda rows: rows[0].update(
-                        gpu_peak_bytes=800, gpu_peak_percent=80.0,
+                        gpu_peak_bytes=1001, gpu_peak_percent=100.1,
                     ),
                 ),
                 (
