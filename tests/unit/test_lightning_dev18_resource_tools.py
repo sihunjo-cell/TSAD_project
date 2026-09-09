@@ -4,15 +4,18 @@ import copy
 import json
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy
 
 from tests.checks.check_dev18_resources import (
+    _run_resource_probe,
     _run_model_probe,
+    _system_memory_bytes,
     capacity_status,
-    disk_status,
     select_probe_cases,
     validate_resource_report,
     verify_input_files,
@@ -21,6 +24,221 @@ from tests.checks.reset_lightning_dev18 import reset_previous_run
 
 
 class TestDev18ResourceCheck(unittest.TestCase):
+    def test_pca_estimate_overflow_uses_isolated_measurement_and_preserves_estimate(self):
+        from tests.checks import check_dev18_resources as resources
+
+        specs = [{"model": "PCA_LEGACY", "config_id": name, "ratio": 100, "seed": 0,
+                  "target_use": "training_free", "hyperparameters": {"window": 100, "n_components": components}}
+                 for name, components in (("fraction", .25), ("all", None))]
+        entries = [{"series": "01", "row_count": 300, "training_boundary": 100, "feature_count": 2},
+                   {"series": "14", "row_count": 400000, "training_boundary": 28307, "feature_count": 17}]
+        case = {"model": "PCA_LEGACY", "config_id": "all", "ratio": 100, "seed": 0, "series": "14"}
+        with patch.object(resources, "_system_memory_bytes", return_value=32 * 1024 ** 3), patch.object(
+            resources, "_run_resource_probe", return_value={**case, "status": "passed", "ram_peak_bytes": 20 * 1024 ** 3},
+        ) as measure:
+            estimate = resources._pca_static_check(specs, entries, 80)
+            result = resources._check_pca_resources(
+                specs, entries, 80, data_root=Path("data"), history_directory=Path("history"), identity={"budget_id": "b1"},
+            )
+        self.assertEqual(estimate["status"], "requires_measurement")
+        self.assertEqual(result["status"], "passed")
+        self.assertGreater(estimate["estimated_ram_bytes"], 32 * 1024 ** 3 * .8)
+        self.assertEqual(measure.call_args.args[0], case)
+        command = measure.call_args.args[1]
+        self.assertEqual(command[command.index("--model") + 1], "PCA_LEGACY")
+        self.assertEqual(measure.call_args.args[3]["pca_estimate"], estimate)
+        with patch.object(resources, "_system_memory_bytes", return_value=64 * 1024 ** 3), patch.object(
+            resources, "_run_resource_probe", side_effect=AssertionError("safe estimate must not run PCA"),
+        ):
+            result = resources._check_pca_resources(
+                specs, entries, 80, data_root=Path("data"), history_directory=Path("history"), identity={},
+            )
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["measurement_kind"], "static_estimate")
+
+    def test_pca_child_requires_remote_gate_and_measures_cpu_execution(self):
+        from tests.checks import check_dev18_resources as resources
+
+        case = {"model": "PCA_LEGACY", "config_id": "all", "ratio": 100, "seed": 0, "series": "14"}
+        values = numpy.zeros((110, 2), dtype=numpy.float32)
+        with patch("tests.checks.run_lightning_dev18.require_lightning_cuda", side_effect=RuntimeError("remote gate")), patch(
+            "tests.ghl_main.run_registered_models.load_registered_inputs",
+        ) as load:
+            with self.assertRaisesRegex(RuntimeError, "remote gate"):
+                resources.run_child_probe(model="PCA_LEGACY", config_id="all", series="14",
+                                          data_root=Path("data"), maximum_memory_percent=80)
+            load.assert_not_called()
+        with patch("tests.checks.run_lightning_dev18.require_lightning_cuda"), patch.object(
+            resources, "_find_case", return_value=(case, case),
+        ), patch("src.common.set_reproducible_seed.set_reproducible_seed"), patch(
+            "tests.ghl_main.run_registered_models.load_registered_inputs", return_value={"test_sessions": (values,)},
+        ), patch("src.common.run_registered_model.execute_registered_model", return_value={}) as execute, patch.object(
+            resources, "_maximum_rss_bytes", return_value=600,
+        ), patch.object(resources, "_system_memory_bytes", return_value=1000):
+            result = resources.run_child_probe(model="PCA_LEGACY", config_id="all", series="14",
+                                              data_root=Path("data"), maximum_memory_percent=80)
+            self.assertEqual(execute.call_args.kwargs["device"], "cpu")
+            self.assertIs(execute.call_args.kwargs["test_sessions"][0], values)
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["ram_peak_percent"], 60)
+            self.assertEqual(result["measurement_kind"], "process_rss")
+            execute.side_effect = MemoryError("allocation failed")
+            failed = resources.run_child_probe(model="PCA_LEGACY", config_id="all", series="14",
+                                              data_root=Path("data"), maximum_memory_percent=80)
+            self.assertEqual(failed["status"], "failed")
+            self.assertIn("MemoryError", failed["error"])
+
+    def test_pca_capacity_evidence_rejects_unmeasured_or_inconsistent_success(self):
+        from tests.checks.check_dev18_resources import _has_consistent_capacity_evidence
+
+        static = {"model": "PCA_LEGACY", "measurement_kind": "static_estimate", "estimated_ram_bytes": 700,
+                  "ram_total_bytes": 1000, "maximum_memory_percent": 80}
+        measured = {**static, "measurement_kind": "process_rss", "estimated_ram_bytes": 900,
+                    "ram_peak_bytes": 600, "ram_peak_percent": 60, "wall_time_seconds": 2, "actual_backend": "cpu"}
+        for row in (static, measured):
+            self.assertTrue(_has_consistent_capacity_evidence([row], {"PCA_LEGACY"}, 80))
+        for row in ({**static, "estimated_ram_bytes": 900}, {**measured, "ram_peak_bytes": 800, "ram_peak_percent": 80},
+                    {**measured, "ram_peak_percent": 1}, {**measured, "measurement_kind": "unknown"}):
+            with self.subTest(row=row):
+                self.assertFalse(_has_consistent_capacity_evidence([row], {"PCA_LEGACY"}, 80))
+        self.assertFalse(_has_consistent_capacity_evidence([], {"PCA_LEGACY"}, 80))
+
+    def test_pca_probe_reuse_and_report_keep_the_same_representative_and_estimate(self):
+        from tests.checks import check_dev18_resources as resources
+
+        case = {"model": "PCA_LEGACY", "config_id": "all", "ratio": 100, "seed": 0, "series": "14"}
+        estimate = {**case, "status": "requires_measurement", "measurement_kind": "static_estimate",
+                    "estimated_ram_bytes": 900, "ram_total_bytes": 1000, "maximum_memory_percent": 80}
+        identity = {"budget_id": "b1", "environment": {"runtime": "sealed"}, "maximum_memory_percent": 80,
+                    "ram_total_bytes": 1000, "pca_estimate": estimate}
+        result = {**case, "status": "passed", "measurement_kind": "process_rss", "actual_backend": "cpu",
+                  "ram_peak_bytes": 600, "ram_total_bytes": 1000, "ram_peak_percent": 60,
+                  "maximum_memory_percent": 80, "wall_time_seconds": 2}
+        with tempfile.TemporaryDirectory() as directory, patch.object(resources.subprocess, "Popen") as launch:
+            process = launch.return_value.__enter__.return_value
+            process.pid, process.returncode = 42, 0
+            process.communicate.return_value = (resources.RESULT_PREFIX + json.dumps(result), "")
+            first = resources._run_resource_probe(case, ["probe"], directory, identity)
+            self.assertEqual(first["pca_estimate"], estimate)
+            self.assertEqual(resources._run_resource_probe(case, ["probe"], directory, identity), first)
+            self.assertEqual(launch.call_count, 1)
+            history = json.loads(Path(first["probe_history"]["file"]).read_text(encoding="utf-8"))
+            self.assertEqual(history["result"]["pca_estimate"], estimate)
+            with patch.object(resources, "_load_plan", return_value=([], [])), patch.object(
+                resources, "_pca_static_check", return_value=estimate,
+            ):
+                self.assertTrue(resources._has_required_pca_evidence([first], {"PCA_LEGACY"}, 80))
+                for changed in ({"series": "01"}, {"config_id": "fraction"}, {"ratio": 5}, {"pca_estimate": {}},
+                                {"probe_history": None}):
+                    self.assertFalse(resources._has_required_pca_evidence([{**first, **changed}], {"PCA_LEGACY"}, 80))
+            history["result"]["ram_peak_percent"] = 1
+            Path(first["probe_history"]["file"]).write_text(json.dumps(history), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "근거"):
+                resources._run_resource_probe(case, ["probe"], directory, identity)
+
+    def test_paper_tspulse_gate_accepts_native_head_and_batch_evidence(self):
+        from tests.checks.check_dev18_resources import _has_required_tier3_evidence
+
+        case = {"model": "TSPulse", "config_id": "pulse", "ratio": 100, "seed": 0, "series": "01"}
+        spec = {**case, "common_recipe": {"methodology_revision": "paper_tuning_v4"}}
+        arguments = {"batch_size": 128, "context_length": 512, "aggregation_window": 64}
+        row = {**case, "execution_policy": {"status": "passed", **arguments, "official_protocol": True},
+               "wall_time_seconds": 1, "gpu_peak_bytes": 100, "gpu_peak_percent": 1,
+               "ram_peak_bytes": 100, "ram_peak_percent": 1,
+               "equivalence": {"status": "passed", "reference_batch_size": 1, "registered_batch_size": 128,
+                   "rtol": 1e-6, "atol": 1e-8, "head_maximum_absolute_differences": {
+                       head: 0 for head in ("time", "fft", "pred", "ensemble")}}}
+        with patch("tests.checks.check_dev18_resources._load_plan", return_value=([spec], [{"series": "01", "feature_count": 2}])), patch(
+            "tests.checks.check_dev18_resources.select_probe_cases", return_value=[case],
+        ), patch("src.common.run_registered_model.build_entrypoint_arguments", return_value=arguments):
+            self.assertTrue(_has_required_tier3_evidence([row], {"TSPulse"}))
+            differences = row["equivalence"]["head_maximum_absolute_differences"]
+            differences["raw_max"] = differences.pop("ensemble")
+            self.assertFalse(_has_required_tier3_evidence([row], {"TSPulse"}))
+
+    def test_paper_resource_cases_keep_independent_gdn_configs_and_feasible_inputs(self):
+        specs = [{"model": "GDN", "config_id": f"gdn{epoch}", "ratio": 100,
+                  "seed": 0, "target_use": "fit_full_prefix",
+                  "common_recipe": {"methodology_revision": "paper_tuning_v4"},
+                  "hyperparameters": {"window": 20, "epochs": epoch, "validation_ratio": .1,
+                                      "batch_size": 128, "embedding": 64, "topk": 5}}
+                 for epoch in (3, 10)]
+        entries = [{"series": "01", "row_count": 200, "training_boundary": 100, "feature_count": 2},
+                   {"series": "02", "row_count": 200, "training_boundary": 100, "feature_count": 19}]
+        cases = select_probe_cases(specs, entries)
+        self.assertEqual({case["config_id"] for case in cases}, {"gdn3", "gdn10"})
+        self.assertEqual({case["series"] for case in cases}, {"02"})
+
+    def test_child_probe_sets_seed_before_loading_model_inputs(self):
+        from tests.checks.check_dev18_resources import run_child_probe
+
+        events = []
+        def stop_at_input(**arguments):
+            events.append("inputs")
+            raise ValueError("stop before model execution")
+
+        with patch("tests.checks.check_dev18_resources._find_case", return_value=({}, {"seed": 7})), patch(
+            "src.common.set_reproducible_seed.set_reproducible_seed",
+            side_effect=lambda seed: events.append(("seed", seed)),
+        ), patch("tests.ghl_main.run_registered_models.load_registered_inputs", side_effect=stop_at_input):
+            with self.assertRaisesRegex(ValueError, "stop before"):
+                run_child_probe(model="GDN", config_id="c1", series="01", data_root=Path("."),
+                                maximum_memory_percent=80)
+        self.assertEqual(events, [("seed", 7), "inputs"])
+
+    def test_probe_resume_preserves_completed_interrupted_and_changed_environment(self):
+        case = {"model": "GDN", "config_id": "c1", "series": "01", "ratio": 100, "seed": 0}
+        identity = {"budget_id": "b1", "environment": {"torch": "pinned"},
+                    "maximum_memory_percent": 80, "ram_total_bytes": 1000}
+        result = {**case, "status": "passed", "maximum_memory_percent": 80,
+                  "gpu_peak_bytes": 10, "gpu_total_bytes": 1000, "gpu_peak_percent": 1.0,
+                  "ram_peak_bytes": 20, "ram_total_bytes": 1000, "ram_peak_percent": 2.0}
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tests.checks.check_dev18_resources.subprocess.Popen",
+        ) as launch:
+            process = launch.return_value.__enter__.return_value
+            process.pid, process.returncode = 42, 0
+            process.communicate.return_value = (
+                "DEV18_RESOURCE_RESULT=" + json.dumps(result), "",
+            )
+            first = _run_resource_probe(case, ["probe"], directory, identity)
+            original = Path(first["probe_history"]["file"]).read_bytes()
+            self.assertEqual(_run_resource_probe(case, ["probe"], directory, identity), first)
+            self.assertEqual(launch.call_count, 1)
+            process.communicate.side_effect = KeyboardInterrupt()
+            changed = {**identity, "environment": {"torch": "changed"}}
+            with self.assertRaises(KeyboardInterrupt):
+                _run_resource_probe(case, ["probe"], directory, changed)
+            process.kill.assert_called_once()
+            process.wait.assert_called_once()
+            records = [json.loads(path.read_text(encoding="utf-8")) for path in Path(directory).glob("*.json")]
+            self.assertEqual(sorted(row["status"] for row in records), ["complete", "interrupted"])
+            process.communicate.side_effect = None
+            resumed = _run_resource_probe(case, ["probe"], directory, changed)
+            self.assertNotEqual(resumed["probe_history"], first["probe_history"])
+            self.assertEqual(Path(first["probe_history"]["file"]).read_bytes(), original)
+            self.assertEqual(launch.call_count, 3)
+
+    def test_full_prefix_probes_never_pass_validation_to_session_models(self):
+        values = numpy.arange(500, dtype=numpy.float32).reshape(100, 5)
+        for model in ("GDN",):
+            captured = {}
+
+            def entrypoint(fit_sessions, validation_sessions, test_sessions, **arguments):
+                captured.update(fit=fit_sessions, validation=validation_sessions, tests=test_sessions, arguments=arguments)
+
+            with self.subTest(model=model), patch(
+                "src.common.run_registered_model.build_entrypoint_arguments",
+                return_value={"window_size": 5, "batch_size": 4, "full_prefix": True},
+            ), patch("src.common.run_registered_model.load_model_entrypoint", return_value=entrypoint):
+                _run_model_probe(
+                    {"model": model, "tier": "t2", "ratio": 100, "target_use": "fit_full_prefix"},
+                    {"normal_training": values, "test_sessions": (values,)}, device="cuda",
+                )
+            self.assertEqual(captured["validation"], ())
+            self.assertTrue(captured["arguments"]["full_prefix"])
+            self.assertEqual(captured["arguments"]["epochs"], 1)
+
     def test_gdn_probe_runs_eight_consecutive_training_batches(self):
         fit = numpy.zeros((50, 3), dtype=numpy.float32)
         captured = {}
@@ -42,10 +260,11 @@ class TestDev18ResourceCheck(unittest.TestCase):
             return_value={
                 "fit_sessions": (fit,),
                 "validation_sessions": (fit,),
+                "test_sessions": (fit,),
             },
         ):
             result = _run_model_probe(
-                {"model": "GDN", "ratio": 100},
+                {"model": "GDN", "tier": "t2", "ratio": 100},
                 {"normal_training": fit, "test_sessions": (fit,)},
                 device="cuda",
             )
@@ -58,6 +277,55 @@ class TestDev18ResourceCheck(unittest.TestCase):
             result.get("probe_scope"),
             "exact maximum batch; eight consecutive training updates",
         )
+
+    def test_official_gdn_probe_keeps_eight_full_training_batches_after_holdout(self):
+        values = numpy.zeros((500, 3), dtype=numpy.float32)
+        for validation_ratio in (0.1, 0.2):
+            arguments = {"window_size": 5, "batch_size": 32, "validation_ratio": validation_ratio,
+                         "official_procedure": True, "full_prefix": True}
+            with self.subTest(validation_ratio=validation_ratio), patch(
+                "src.common.run_registered_model.build_entrypoint_arguments", return_value=arguments,
+            ), patch("src.common.run_registered_model.load_model_entrypoint") as load, patch(
+                "src.common.run_registered_model.prepare_session_inputs", return_value={
+                    "fit_sessions": (values,), "validation_sessions": (), "test_sessions": (values,),
+                },
+            ):
+                result = _run_model_probe(
+                    {"model": "GDN", "tier": "t2", "ratio": 100, "target_use": "fit_full_prefix",
+                     "common_recipe": {"methodology_revision": "paper_tuning_v4"}},
+                    {"normal_training": values, "test_sessions": (values,)}, device="cuda",
+                )
+            call = load.return_value.call_args
+            windows = len(call.args[0][0]) - 5
+            training_windows = windows - int(windows * validation_ratio)
+            self.assertGreaterEqual(training_windows // 32, 8)
+            self.assertLessEqual(training_windows, 8 * 32 + 1)
+            self.assertEqual(call.args[1], ())
+            self.assertEqual(call.kwargs["batch_size"], 32)
+            self.assertEqual(call.kwargs["validation_ratio"], validation_ratio)
+            self.assertEqual(result["training_full_batch_count"], training_windows // 32)
+
+    def test_ram_capacity_respects_cgroup_limits_without_using_current_consumption(self):
+        host_memory = 64 * 1024 ** 3
+        paths = ("/sys/fs/cgroup/memory.max",
+                 "/sys/fs/cgroup/memory/memory.limit_in_bytes")
+        for limits, expected in (
+            ({paths[0]: str(16 * 1024 ** 3)}, 16 * 1024 ** 3),
+            ({paths[0]: "max", paths[1]: str(32 * 1024 ** 3)}, 32 * 1024 ** 3),
+            ({paths[0]: "max", paths[1]: str(2 ** 63 - 4096)}, host_memory),
+            ({paths[0]: "invalid", paths[1]: "0"}, host_memory),
+        ):
+            def read_limit(path, **arguments):
+                if str(path) not in limits:
+                    raise FileNotFoundError(path)
+                return limits[str(path)]
+
+            with self.subTest(limits=limits), patch(
+                "tests.checks.check_dev18_resources.os.sysconf", create=True,
+                side_effect=lambda name: {"SC_PAGE_SIZE": 4096,
+                                          "SC_PHYS_PAGES": host_memory // 4096}[name],
+            ), patch.object(Path, "read_text", autospec=True, side_effect=read_limit):
+                self.assertEqual(_system_memory_bytes(), expected)
 
     def test_selects_highest_ratio_and_largest_model_specific_case(self):
         specs = [
@@ -106,8 +374,48 @@ class TestDev18ResourceCheck(unittest.TestCase):
     def test_capacity_requires_configured_headroom(self):
         self.assertEqual(capacity_status(79, 100, 80), "passed")
         self.assertEqual(capacity_status(80, 100, 80), "failed")
-        self.assertEqual(disk_status(25, 25), "passed")
-        self.assertEqual(disk_status(24, 25), "failed")
+
+    def test_disk_space_is_observed_without_blocking_the_resource_gate(self):
+        from tests.checks import check_dev18_resources as resources
+
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            stack.enter_context(patch.object(resources, "REPOSITORY_ROOT", root))
+            for target in ("tests.checks.run_lightning_dev18.require_lightning_cuda",
+                           "tests.ghl_main.run_dev18_tuning._require_clean_worktree",
+                           "src.common.set_reproducible_seed.set_reproducible_seed"):
+                stack.enter_context(patch(target))
+            stack.enter_context(patch("tests.checks.seal_runtime_environment.collect_runtime_environment_identity",
+                                      return_value={"cuda_device": {"name": "test"}}))
+            stack.enter_context(patch.object(resources, "_git_head", return_value="a" * 40))
+            stack.enter_context(patch("src.common.execution_identity.file_sha256", return_value="b" * 64))
+            stack.enter_context(patch.object(resources, "_system_memory_bytes", return_value=1000))
+            stack.enter_context(patch.object(resources, "_load_plan", return_value=([], [])))
+            stack.enter_context(patch.object(resources, "_load_resource_budget",
+                                      return_value={"budget_id": "b1", "experiment_mode": "full_prefix_v2"}))
+            stack.enter_context(patch.object(resources, "verify_input_files", return_value={"status": "passed"}))
+            stack.enter_context(patch.object(resources, "_check_pca_resources",
+                                      return_value={"model": "PCA_LEGACY", "status": "passed"}))
+            disk = stack.enter_context(patch.object(resources.shutil, "disk_usage"))
+            for reading in (SimpleNamespace(total=1000, used=1000, free=0), OSError("disk query failed")):
+                with self.subTest(reading=reading):
+                    disk.side_effect = reading if isinstance(reading, Exception) else None
+                    disk.return_value = reading
+                    report = resources.run_resource_check(data_root=root, output_path=root / "resource.json")
+                    saved = json.loads((root / "resource.json").read_text(encoding="utf-8"))
+                    self.assertEqual(report["status"], "passed")
+                    self.assertEqual(saved["disk_observation"], report["disk_observation"])
+                    self.assertFalse(any(row.get("resource") == "disk" for row in report["results"]))
+                    observation = report["disk_observation"]
+                    self.assertEqual(observation["policy"], "informational_only")
+                    if isinstance(reading, Exception):
+                        self.assertEqual(observation["status"], "unavailable")
+                        self.assertIsNone(observation["free_bytes"])
+                        self.assertIn("disk query failed", observation["reason"])
+                    else:
+                        self.assertEqual(observation["status"], "observed")
+                        self.assertEqual(observation["free_bytes"], 0)
+                        self.assertEqual(observation["total_bytes"], 1000)
 
     def test_verifies_every_manifest_input_without_loading_models(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -142,6 +450,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "pytorch_alloc_conf": "expandable_segments:True",
             "maximum_memory_percent": 80,
             "cuda_device": {"name": "NVIDIA L4", "total_memory_bytes": 24},
+            "environment": {"packages": {"torch": "pinned"}}, "ram_total_bytes": 1000,
             "checked_models": ["GDN", "MWVAR"],
             "results": [
                 {
@@ -166,8 +475,18 @@ class TestDev18ResourceCheck(unittest.TestCase):
                 budget_id="b123456789abc",
                 cuda_device=report["cuda_device"],
                 expected_models={"GDN", "MWVAR"},
+                environment=report["environment"], ram_total_bytes=1000,
             )
             self.assertEqual(validated, report)
+            for changed in ({"environment": {"packages": {"torch": "changed"}}},
+                            {"ram_total_bytes": 500}):
+                with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "코드·입력·예산"):
+                    validate_resource_report(path, **{
+                        "project_commit": "a" * 40, "gate_code_sha256": "b" * 64,
+                        "input_manifest_sha256": "c" * 64, "budget_id": "b123456789abc",
+                        "cuda_device": report["cuda_device"], "expected_models": {"GDN", "MWVAR"},
+                        "environment": report["environment"], "ram_total_bytes": 1000, **changed,
+                    })
             path.write_text(json.dumps({
                 **report, "pytorch_alloc_conf": "max_split_size_mb:64",
             }), encoding="utf-8")
@@ -180,6 +499,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     budget_id="b123456789abc",
                     cuda_device=report["cuda_device"],
                     expected_models={"GDN", "MWVAR"},
+                    environment=report["environment"], ram_total_bytes=1000,
                 )
             path.write_text(json.dumps({**report, "results": []}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "코드·입력·예산"):
@@ -191,6 +511,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     budget_id="b123456789abc",
                     cuda_device=report["cuda_device"],
                     expected_models={"GDN", "MWVAR"},
+                    environment=report["environment"], ram_total_bytes=1000,
                 )
 
     def test_resource_report_rejects_missing_or_failed_tier3_evidence(self):
@@ -235,6 +556,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "pytorch_alloc_conf": "expandable_segments:True",
             "maximum_memory_percent": 80,
             "cuda_device": {"name": "NVIDIA L4", "total_memory_bytes": 24},
+            "environment": {"packages": {"torch": "pinned"}}, "ram_total_bytes": 1000,
             "checked_models": ["TimeRCD", "TSPulse"],
             "results": [time_rcd, tspulse],
         }
@@ -245,6 +567,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             "budget_id": "b123456789abc",
             "cuda_device": report["cuda_device"],
             "expected_models": {"TimeRCD", "TSPulse"},
+            "environment": report["environment"], "ram_total_bytes": 1000,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "resource_gate.json"

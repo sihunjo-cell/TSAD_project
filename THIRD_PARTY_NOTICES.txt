@@ -2,7 +2,7 @@ THIRD-PARTY MODEL NOTICES
 
 Active models
 
-MWVAR and SQDIFF_LAST3
+MWVAR, SQDIFF_LAST1, SQDIFF_LAST3, SQDIFF_CENTERED5, and both MWVAR96 ensembles
 Official source: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
 Commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
 Licence: MIT
@@ -11,24 +11,17 @@ Main local change: channel-wise scoring with project max aggregation.
 
 PCA_LEGACY
 Official source: https://github.com/TheDatumOrg/TSB-AD
-Commit: e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48
+Commit: 6beac72e11d1155ade40870492c00d0d1cfdcaaf
 Licence: Apache-2.0
 Relationship: adapted from official source.
-Main local change: fit-only preprocessing and project score handling.
+Main local change: continuous-score adapter with official full-evaluation fit and zero pruning.
 
 PaAno
 Official source: https://github.com/jinnnju/PaAno
 Commit: d4c67116190efa4592dc6a8a157ced0def68b6af
 Licence: MIT
 Relationship: adapted from official source.
-Main local change: leakage-free split and continuous-score adapter.
-
-ALoRa
-Official source: https://github.com/CharisShimillas/ALoRa
-Commit: 97dcc4a337710e6dc72c1a67893717c9538bae1a
-Licence: EUPL-1.2
-Relationship: adapted from official source.
-Main local change: fit-only pair selection and continuous-score adapter.
+Main local change: q-prefix input and continuous-score adapter with native RevIN and official minimum-count memory construction.
 
 GDN
 Official source: https://github.com/d-ailin/GDN
@@ -42,11 +35,11 @@ Official source: https://github.com/thu-sail-lab/Time-RCD
 Commit: 372bb980426b2f67007311c6f3165ab789c79bef
 Source licence: Apache-2.0; checkpoint licence: Apache-2.0.
 Relationship: package-backed adapter.
-Main local change: strict target-free score extraction and alignment.
+Main local change: frozen-weight continuous-score extraction and alignment with official full-evaluation normalization.
 
 TSPulse
 Official source: https://github.com/ibm-granite/granite-tsfm
-Commit: 9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d
+Commit: fe7a35697723e2a2f5246ae979474bfc554e26c0
 Source licence: Apache-2.0; checkpoint licence: Apache-2.0.
 Relationship: package-backed adapter.
-Main local change: raw score-head extraction and project alignment.
+Main local change: continuous-score adapter preserving native head postprocessing and alignment.

@@ -1,4 +1,4 @@
-"""Strict target-free TimeRCD anomaly-head adapter."""
+"""Frozen TimeRCD anomaly-head adapter."""
 
 import hashlib
 import math
@@ -192,14 +192,19 @@ def build_time_rcd_official_scorer(
     *, channel_count, context_length=TIME_RCD_CONTEXT_LENGTH,
     query_chunk_size=TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE, device="cpu",
     component_loader=load_time_rcd_components,
+    inference_context_normalization=False,
+    official_protocol=False,
 ) -> Callable:
     """Load and patch one official model, then return its session scorer."""
+    _validate_normalization_protocol(official_protocol, inference_context_normalization)
     _, model = component_loader(channel_count=channel_count, device=device)
     install_time_rcd_chunked_attention(model, query_chunk_size=query_chunk_size)
 
     def scorer(session):
         return score_time_rcd(
             model, session, context_length=context_length, device=device,
+            inference_context_normalization=inference_context_normalization,
+            official_protocol=official_protocol,
         )
 
     return scorer
@@ -223,13 +228,20 @@ def get_time_rcd_status(
     }
 
 
-def _validate_session(session):
-    values = numpy.asarray(session, dtype=numpy.float32)
+def _validate_session(session, *, dtype=numpy.float32):
+    values = numpy.asarray(session, dtype=dtype)
     if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError("TimeRCD input must be a nonempty time-by-channel matrix")
     if not numpy.isfinite(values).all():
         raise ValueError("TimeRCD input must contain only finite values")
     return values
+
+
+def _validate_normalization_protocol(official_protocol, inference_context_normalization):
+    if not isinstance(official_protocol, bool):
+        raise ValueError("official_protocol must be a boolean")
+    if official_protocol and inference_context_normalization:
+        raise ValueError("official_protocol cannot use per-context normalization")
 
 
 def _resolve_device(device):
@@ -254,11 +266,21 @@ def _extract_logits(model, time_series, mask):
 
 def score_time_rcd(
     model, session, *, context_length=TIME_RCD_CONTEXT_LENGTH, device="cpu",
+    inference_context_normalization=False,
+    official_protocol=False,
 ):
-    """Score independent, unnormalized contexts with the official anomaly head."""
-    values = _validate_session(session)
+    """Score independent contexts, optionally standardizing their valid observations."""
+    _validate_normalization_protocol(official_protocol, inference_context_normalization)
+    values = _validate_session(session, dtype=numpy.float64 if official_protocol else numpy.float32)
     if not isinstance(context_length, int) or context_length < 1:
         raise ValueError("context_length must be a positive integer")
+    if not isinstance(inference_context_normalization, bool):
+        raise ValueError("inference_context_normalization must be a boolean")
+    if official_protocol:
+        channel_mean = numpy.mean(values, axis=0)
+        channel_scale = numpy.std(values, axis=0)
+        channel_scale = numpy.where(channel_scale == 0, 1e-8, channel_scale)
+        values = ((values - channel_mean) / channel_scale).astype(numpy.float32)
     resolved_device = _resolve_device(device)
     model.to(resolved_device).eval()
     score_parts = []
@@ -267,6 +289,11 @@ def score_time_rcd(
         for start in range(0, len(values), context_length):
             fragment = values[start:start + context_length]
             valid_length = len(fragment)
+            if inference_context_normalization:
+                channel_mean = fragment.mean(axis=0, keepdims=True, dtype=numpy.float64)
+                channel_scale = fragment.std(axis=0, keepdims=True, dtype=numpy.float64, ddof=0)
+                channel_scale = numpy.where(channel_scale == 0, 1e-8, channel_scale)
+                fragment = ((fragment - channel_mean) / channel_scale).astype(numpy.float32)
             if len(values) > context_length and valid_length < context_length:
                 fragment = numpy.concatenate([
                     fragment,
@@ -291,9 +318,23 @@ def score_time_rcd(
         "primitive": "probability",
         "calibration_mode": "none",
         "normalization_scope": "none",
+        **({
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "valid_inference_block",
+            "persistent_target_fit": False,
+        } if inference_context_normalization else {}),
         "evaluation_mode": "offline_noncausal",
         "lookahead": min(context_length, len(values)) - 1,
-        "maximum_effective_lookahead": min(context_length, len(values)) - 1,
+        "maximum_effective_lookahead": len(values) - 1 if official_protocol else min(context_length, len(values)) - 1,
+        **({
+            "official_protocol": "paper_tuning_v4",
+            "native_postprocessing": True,
+            "input_normalization": "full_evaluation_zscore",
+            "input_normalization_scope": "full_evaluation",
+            "normalization_scope": "full_evaluation",
+            "persistent_target_fit": False,
+            "score_postprocessing": "model_native_probability",
+        } if official_protocol else {}),
     }
 
 
@@ -301,11 +342,16 @@ def score_time_rcd_official(
     session, *, context_length=TIME_RCD_CONTEXT_LENGTH, device="cpu",
     query_chunk_size=TIME_RCD_ATTENTION_QUERY_CHUNK_SIZE,
     component_loader=load_time_rcd_components,
+    inference_context_normalization=False,
+    official_protocol=False,
 ):
-    """봉인 download·config·model load와 strict 점수 생성을 잇는다."""
-    values = _validate_session(session)
+    """봉인 checkpoint와 선택한 문맥 전처리로 점수를 만든다."""
+    _validate_normalization_protocol(official_protocol, inference_context_normalization)
+    values = _validate_session(session, dtype=numpy.float64 if official_protocol else numpy.float32)
     return build_time_rcd_official_scorer(
         channel_count=values.shape[1], context_length=context_length,
         query_chunk_size=query_chunk_size, device=device,
         component_loader=component_loader,
+        inference_context_normalization=inference_context_normalization,
+        official_protocol=official_protocol,
     )(values)

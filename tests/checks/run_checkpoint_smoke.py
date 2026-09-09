@@ -1,12 +1,13 @@
 """봉인한 TimeRCD·TSPulse checkpoint를 합성·Dev18 소입력으로 감사한다."""
 
 import gc
+import hashlib
 import argparse
 import json
 import platform
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from importlib import import_module
 from pathlib import Path
 from unittest.mock import patch
@@ -19,7 +20,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from src.common.set_reproducible_seed import set_reproducible_seed
-from src.common.equal_trial_budget import registry_space_sha256
+from src.common.equal_trial_budget import _canonical_bytes, registry_space_sha256
 from src.common.execution_identity import file_sha256
 from src.common.model_registry import load_model_registry_with_sha
 from src.common.verify_run_context import verify_runtime_versions
@@ -45,6 +46,8 @@ DEV18_BUDGET_PATH = (
     REPOSITORY_ROOT / "experiments" / "01_ghl_main" / "snapshots"
     / "dev18_selection" / "dev18_budget_manifest.json"
 )
+FULL_PREFIX_BUDGET_PATH = DEV18_BUDGET_PATH.parent / "full_prefix_v2" / "budget.json"
+FULL_PREFIX_OUTPUT_ROOT = OUTPUT_ROOT / "active_models" / "full_prefix_v2" / "checkpoints"
 
 
 class CheckpointProbeError(RuntimeError):
@@ -225,6 +228,8 @@ def _probe_time_rcd(
     *, channel_count, session,
     context_length=time_rcd_adapter.TIME_RCD_CONTEXT_LENGTH,
     downloader=None,
+    inference_context_normalization=False,
+    official_protocol=False,
 ):
     recorder = _VerifiedFileRecorder(
         downloader or _download_from_local_cache,
@@ -241,10 +246,14 @@ def _probe_time_rcd(
             first = time_rcd_adapter.score_time_rcd(
                 model, session, context_length=context_length,
                 device="cpu",
+                inference_context_normalization=inference_context_normalization,
+                official_protocol=official_protocol,
             )["scores"].copy()
             second = time_rcd_adapter.score_time_rcd(
                 model, session, context_length=context_length,
                 device="cpu",
+                inference_context_normalization=inference_context_normalization,
+                official_protocol=official_protocol,
             )["scores"].copy()
     except Exception as error:
         raise CheckpointProbeError(
@@ -271,37 +280,45 @@ def _probe_tspulse(
     context_length=tspulse_adapter.TSPULSE_CONTEXT_LENGTH,
     aggregation_window=TSPULSE_SMOKE_AGGREGATION_WINDOW,
     downloader=None,
+    inference_context_normalization=False,
+    official_protocol=False,
 ):
     recorder = _VerifiedFileRecorder(
         downloader or _download_from_local_cache,
         tspulse_adapter.verify_tspulse_checkpoint,
     )
     try:
-        with forbid_project_scaler_fit():
+        with (nullcontext() if official_protocol else forbid_project_scaler_fit()):
             model, utility = tspulse_adapter.load_tspulse_components(
                 aggregation_window=aggregation_window,
                 channel_count=channel_count,
                 device="cpu",
                 hub_download=recorder.download,
                 file_verifier=recorder.verify,
+                **({"official_protocol": True} if official_protocol else {}),
             )
             raw_head_function = tspulse_adapter.build_tspulse_raw_head_function(
                 utility,
                 aggregation_window=aggregation_window,
                 context_length=context_length,
                 device="cpu",
+                inference_context_normalization=inference_context_normalization,
+                **({"batch_size": 128} if official_protocol else {}),
             )
-            first = tspulse_adapter.score_tspulse(
+            scorer = tspulse_adapter.score_tspulse_paper if official_protocol else tspulse_adapter.score_tspulse
+            first = scorer(
                 session,
                 raw_head_function=raw_head_function,
                 aggregation_window=aggregation_window,
                 context_length=context_length,
+                **({"utility": utility} if official_protocol else {}),
             )
-            second = tspulse_adapter.score_tspulse(
+            second = scorer(
                 session,
                 raw_head_function=raw_head_function,
                 aggregation_window=aggregation_window,
                 context_length=context_length,
+                **({"utility": utility} if official_protocol else {}),
             )
     except Exception as error:
         raise CheckpointProbeError(
@@ -317,17 +334,18 @@ def _probe_tspulse(
         raise RuntimeError("TSPulse verified files are not in one local snapshot")
     score_pairs = {
         head: (first[head]["scores"].copy(), second[head]["scores"].copy())
-        for head in ("time", "fft", "pred", "raw_max")
+        for head in (("time", "fft", "pred", "ensemble") if official_protocol
+                     else ("time", "fft", "pred", "raw_max"))
     }
     del model, utility, raw_head_function
     gc.collect()
     return {
         "score_pairs": score_pairs,
         "files": files,
-        "forbidden_calls": {
-            "standard_scaler_fit": False,
-            "minmax_scaler_fit": False,
-        },
+        **({"native_preprocessing": "full_input_standardscaler_head_minmax_smoothing_ensemble"}
+           if official_protocol else {"forbidden_calls": {
+               "standard_scaler_fit": False, "minmax_scaler_fit": False,
+           }}),
         "loader": {
             "from_pretrained_source": "verified_local_snapshot",
             "snapshot_directory": str(checkpoint_parent),
@@ -408,15 +426,20 @@ def _merge_probe_identity(report, payload):
         raise ValueError("checkpoint or config verified identity is missing")
     _merge_verified_files(report, files)
 
-    evidence = payload.get("forbidden_calls")
-    required = {"standard_scaler_fit", "minmax_scaler_fit"}
-    if report["model"] == "TimeRCD":
-        required.add("time_rcd_window_dataset")
-    if not isinstance(evidence, dict) or any(evidence.get(name) is not False for name in required):
-        raise ValueError("forbidden preprocessing evidence is incomplete")
-    if "forbidden_calls" in report and report["forbidden_calls"] != evidence:
-        raise ValueError("forbidden preprocessing evidence changed across channels")
-    report["forbidden_calls"] = dict(evidence)
+    if report.get("official_protocol") and report["model"] == "TSPulse":
+        if payload.get("native_preprocessing") != "full_input_standardscaler_head_minmax_smoothing_ensemble":
+            raise ValueError("official TSPulse preprocessing evidence is incomplete")
+        report["native_preprocessing"] = payload["native_preprocessing"]
+    else:
+        evidence = payload.get("forbidden_calls")
+        required = {"standard_scaler_fit", "minmax_scaler_fit"}
+        if report["model"] == "TimeRCD":
+            required.add("time_rcd_window_dataset")
+        if not isinstance(evidence, dict) or any(evidence.get(name) is not False for name in required):
+            raise ValueError("forbidden preprocessing evidence is incomplete")
+        if "forbidden_calls" in report and report["forbidden_calls"] != evidence:
+            raise ValueError("forbidden preprocessing evidence changed across channels")
+        report["forbidden_calls"] = dict(evidence)
 
     if report["model"] == "TSPulse":
         loader = payload.get("loader")
@@ -576,10 +599,21 @@ def run_tspulse_checkpoint_smoke(
     )
 
 
-def _dev18_budget_specs(budget_path=DEV18_BUDGET_PATH):
-    budget = json.loads(Path(budget_path).read_text(encoding="utf-8"))
+def _dev18_budget_specs(budget_path=None):
     registry, registry_sha = load_model_registry_with_sha()
-    if budget.get("budget_id") != registry["selection"].get("budget_id"):
+    if budget_path is None:
+        budget_path = FULL_PREFIX_BUDGET_PATH if registry["common_recipe"].get("input_dispatch") == "registered_executor_full_prefix_v2" else DEV18_BUDGET_PATH
+    artifact = json.loads(Path(budget_path).read_text(encoding="utf-8"))
+    budget = artifact.get("budget", artifact)
+    full_prefix = budget.get("experiment_mode") == "full_prefix_v2"
+    if full_prefix:
+        core = {key: value for key, value in budget.items() if key not in {"budget_id", "budget_sha256"}}
+        digest = hashlib.sha256(_canonical_bytes(core)).hexdigest()
+        if budget.get("budget_sha256") != digest or budget.get("budget_id") != "b" + digest[:12]:
+            raise ValueError("full-prefix budget digest가 다르다")
+        if artifact.get("attestation", {}).get("config_registry_sha256") != registry_sha:
+            raise ValueError("full-prefix budget registry SHA가 다르다")
+    elif budget.get("budget_id") != registry["selection"].get("budget_id"):
         raise ValueError("Dev18 budget ID가 registry와 다르다")
     if budget.get("registry_space_sha256") != registry_space_sha256(registry):
         raise ValueError("Dev18 budget 후보 공간이 registry와 다르다")
@@ -588,19 +622,21 @@ def _dev18_budget_specs(budget_path=DEV18_BUDGET_PATH):
     selected = {}
     for model in MODEL_DIRECTORIES:
         rows = [row for row in budget["execution_panel"] if row["model"] == model]
-        if len(rows) != 1:
+        eligible = [row for row in rows if not full_prefix or DEV18_QUICK_SERIES in row.get("series_ids", [])]
+        if not eligible or (not full_prefix and len(rows) != 1):
             raise ValueError(f"Dev18 quick smoke의 {model} budget 행이 유일하지 않다")
-        row = rows[0]
-        matches = [
-            spec for spec in specs
-            if spec["model"] == model
-            and spec["config_id"] == row["config_id"]
-            and spec["ratio"] == row["physical_ratio"]
-            and spec["seed"] == row["seed"]
-        ]
-        if len(matches) != 1:
-            raise ValueError(f"Dev18 quick smoke의 {model} spec이 유일하지 않다")
-        selected[model] = matches[0]
+        for row in rows:
+            matches = [
+                spec for spec in specs
+                if spec["model"] == model
+                and spec["config_id"] == row["config_id"]
+                and spec["ratio"] == row["physical_ratio"]
+                and spec["seed"] == row["seed"]
+            ]
+            if len(matches) != 1:
+                raise ValueError(f"Dev18 quick smoke의 {model} spec이 유일하지 않다")
+            if row in eligible:
+                selected.setdefault(model, matches[0])
     return budget, registry_sha, selected
 
 
@@ -614,13 +650,18 @@ def _download_from_local_cache(*, repo_id, filename, revision):
 
 
 def run_dev18_checkpoint_smoke(
-    *, data_root, output_root=DEV18_OUTPUT_ROOT, budget_path=DEV18_BUDGET_PATH,
+    *, data_root, output_root=None, budget_path=None,
+    models=("TimeRCD", "TSPulse"), downloader=None,
     input_loader=load_registered_inputs, probes=None,
     environment_collector=collect_environment_identity,
     seed_setter=set_reproducible_seed,
 ):
     """Dev18 series 03의 정상 prefix 일부로 exact Tier 3 checkpoint를 확인한다."""
+    if not models or not set(models) <= {"TimeRCD", "TSPulse"} or len(set(models)) != len(models):
+        raise ValueError("checkpoint 검사 모델은 중복 없는 TimeRCD·TSPulse여야 한다")
     budget, registry_sha, specs = _dev18_budget_specs(budget_path)
+    if output_root is None:
+        output_root = FULL_PREFIX_OUTPUT_ROOT if budget.get("experiment_mode") == "full_prefix_v2" else DEV18_OUTPUT_ROOT
     inputs = input_loader(
         spec=specs["TimeRCD"], data_root=data_root, series=DEV18_QUICK_SERIES,
     )
@@ -646,12 +687,13 @@ def run_dev18_checkpoint_smoke(
     }
     seed_state = seed_setter(SYNTHETIC_SEED)
     environment = environment_collector()
+    downloader = downloader or _download_from_local_cache
     probes = probes or {
         "TimeRCD": lambda **arguments: _probe_time_rcd(
-            **arguments, downloader=_download_from_local_cache,
+            **arguments, downloader=downloader,
         ),
         "TSPulse": lambda **arguments: _probe_tspulse(
-            **arguments, downloader=_download_from_local_cache,
+            **arguments, downloader=downloader,
         ),
     }
     reports = {}
@@ -659,17 +701,27 @@ def run_dev18_checkpoint_smoke(
         ("TimeRCD", ("score",)),
         ("TSPulse", ("time", "fft", "pred", "raw_max")),
     ):
+        if model not in models:
+            continue
         spec = specs[model]
         parameters = spec["hyperparameters"]
+        normalize_context = spec["common_recipe"].get("methodology_revision") == "source_faithful_v3"
+        official_protocol = spec["common_recipe"].get("methodology_revision") == "paper_tuning_v4"
+        if model == "TSPulse" and official_protocol:
+            expected_heads = ("time", "fft", "pred", "ensemble")
         if model == "TimeRCD":
             probe = lambda **arguments: probes[model](
                 **arguments, context_length=parameters["context_length"],
+                inference_context_normalization=normalize_context,
+                **({"official_protocol": True} if official_protocol else {}),
             )
         else:
             probe = lambda **arguments: probes[model](
                 **arguments,
                 context_length=parameters["context_length"],
                 aggregation_window=parameters["aggregation_window"],
+                inference_context_normalization=normalize_context,
+                **({"official_protocol": True} if official_protocol else {}),
             )
         report = _run_model_checkpoint_smoke(
             model,
@@ -682,7 +734,13 @@ def run_dev18_checkpoint_smoke(
             input_metadata=input_metadata,
             model_identity={
                 "config_id": spec["config_id"],
+                "probe_config_id": spec["config_id"],
+                "source_compatible_config_ids": list(dict.fromkeys(
+                    row["config_id"] for row in budget["execution_panel"] if row["model"] == model
+                )),
                 "hyperparameters": parameters,
+                "inference_context_normalization": normalize_context,
+                "official_protocol": official_protocol,
                 "budget_id": budget["budget_id"],
                 "budget_sha256": budget["budget_sha256"],
                 "registry_space_sha256": budget["registry_space_sha256"],
@@ -711,10 +769,12 @@ def _write_model_report(output_root, model, report, scope):
         / f"{scope}_checkpoint_smoke.json"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
+    temporary.replace(path)
 
 
 def run_checkpoint_smoke(
@@ -791,9 +851,10 @@ def require_checkpoint_smoke_success(report):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dev18-data-root", type=Path)
+    parser.add_argument("--budget-path", type=Path)
     arguments = parser.parse_args()
     report = (
-        run_dev18_checkpoint_smoke(data_root=arguments.dev18_data_root)
+        run_dev18_checkpoint_smoke(data_root=arguments.dev18_data_root, budget_path=arguments.budget_path)
         if arguments.dev18_data_root else run_checkpoint_smoke()
     )
     require_checkpoint_smoke_success(report)

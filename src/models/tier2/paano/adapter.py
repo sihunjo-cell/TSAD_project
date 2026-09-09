@@ -2,12 +2,14 @@
 
 import numpy
 import torch
+from torch.utils.data import DataLoader, TensorDataset
 
 from .official import (
     PatchEncoder,
     choose_training_batch_size,
     encode_patches,
     score_embeddings,
+    score_patches,
     select_memory_bank,
     train_encoder,
 )
@@ -26,12 +28,12 @@ def stitch_patch_scores(patch_scores, patch_size: int, length: int):
     patch_scores = numpy.asarray(patch_scores, dtype=numpy.float32)
     if patch_scores.ndim != 1 or len(patch_scores) != length - patch_size + 1:
         raise ValueError("PaAno patch 점수와 원시 길이가 맞지 않는다")
-    sums = numpy.zeros(length, dtype=numpy.float32)
-    coverage = numpy.zeros(length, dtype=numpy.int64)
-    for start, score in enumerate(patch_scores):
-        sums[start:start + patch_size] += score
-        coverage[start:start + patch_size] += 1
-    return sums / coverage
+    patch_scores = numpy.nan_to_num(patch_scores, nan=0.0, posinf=0.0, neginf=0.0)
+    kernel = numpy.ones(patch_size, dtype=numpy.float32)
+    sums = numpy.convolve(patch_scores, kernel, mode="full")[:length]
+    coverage = numpy.convolve(numpy.ones_like(patch_scores), kernel, mode="full")[:length]
+    scores = numpy.divide(sums, coverage, out=numpy.zeros(length, dtype=numpy.float32), where=coverage != 0)
+    return numpy.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 class PaAnoAdapter:
@@ -48,6 +50,9 @@ class PaAnoAdapter:
         neighbors: int = 3,
         use_revin: bool = True,
         memory_seed: int = 42,
+        memory_policy: str | None = None,
+        full_prefix: bool = False,
+        official_procedure: bool = False,
         encoder_factory=None,
         trainer=None,
     ):
@@ -61,6 +66,16 @@ class PaAnoAdapter:
         self.top_k = neighbors
         self.use_revin = use_revin
         self.memory_seed = memory_seed
+        if memory_policy is None:
+            memory_policy = "official_minimum" if official_procedure else "legacy_fraction"
+        if memory_policy not in {"legacy_fraction", "official_minimum", "paper_fraction"}:
+            raise ValueError(f"알 수 없는 PaAno memory_policy: {memory_policy}")
+        if official_procedure and memory_policy == "legacy_fraction":
+            raise ValueError("PaAno official procedure requires rounded memory selection")
+        self.memory_policy = memory_policy
+        self.full_prefix = full_prefix
+        self.official_procedure = official_procedure
+        self.training_context = None
         self.encoder_factory = encoder_factory or (
             lambda channel_count: PatchEncoder(
                 in_channels=channel_count, use_revin=use_revin,
@@ -85,7 +100,24 @@ class PaAnoAdapter:
         fit_patches = make_patch_tensor(fit_values, self.patch_size)
         if len(fit_patches) <= self.patch_size:
             raise ValueError("PaAno fit patch가 pretext 간격보다 길어야 한다")
+        if self.official_procedure:
+            if self.model is not None:
+                raise ValueError("PaAno official fit must initialize its encoder after the source loader warmup")
+            if self.batch_size < 2 or (
+                len(fit_patches) % self.batch_size == 1
+                and self.iterations >= (len(fit_patches) + self.batch_size - 1) // self.batch_size
+            ):
+                raise ValueError("PaAno official batches cannot contain a singleton; the requested batch size is preserved")
+            # The source inspects a shuffled batch before constructing the encoder.
+            next(iter(DataLoader(
+                TensorDataset(fit_patches, torch.arange(len(fit_patches)).unsqueeze(1)),
+                batch_size=self.batch_size, shuffle=True,
+            )))
         self.prepare_model(fit_patches.shape[1])
+        if self.official_procedure:
+            self.training_context = numpy.asarray(fit_values, dtype=numpy.float32)[
+                -(self.patch_size - 1):
+            ].copy() if self.patch_size > 1 else numpy.empty((0, self.channel_count), dtype=numpy.float32)
         training_log = self.trainer(
             self.model,
             fit_patches,
@@ -94,24 +126,42 @@ class PaAnoAdapter:
             learning_rate=self.learning_rate,
             weight_decay=self.weight_decay,
             device=self.device,
+            **({"official_procedure": True} if self.official_procedure else {}),
         )
         training_log = dict(training_log)
         update_count = int(training_log["optimizer_updates"])
-        effective_batch_size = choose_training_batch_size(
+        effective_batch_size = self.batch_size if self.official_procedure else choose_training_batch_size(
             len(fit_patches), self.batch_size,
         )
+        training_log["effective_batch_size"] = effective_batch_size
+        training_log["training_patch_count"] = len(fit_patches)
         batches_per_epoch = (len(fit_patches) + effective_batch_size - 1) // effective_batch_size
         complete_epochs, remaining_batches = divmod(update_count, batches_per_epoch)
         training_log["training_examples_seen"] = complete_epochs * len(fit_patches) + sum(
             min(effective_batch_size, len(fit_patches) - batch * effective_batch_size)
             for batch in range(remaining_batches)
         )
-        fit_embeddings = encode_patches(self.model, fit_patches, self.device)
+        fit_embeddings = encode_patches(
+            self.model, fit_patches, self.device,
+            **({"batch_size": self.batch_size, "shuffle": True} if self.official_procedure else {}),
+        )
         self.memory_bank = select_memory_bank(
             fit_embeddings,
             fraction=self.memory_fraction,
             random_seed=self.memory_seed,
+            memory_policy=self.memory_policy,
         )
+        training_log["memory_policy"] = self.memory_policy
+        training_log["memory_count"] = len(self.memory_bank)
+        if self.official_procedure:
+            training_log.update(
+                official_protocol="paper_tuning_v4",
+                checkpoint_selection="minimum_training_iteration_loss",
+                training_scope="current_prefix",
+                model_internal_validation=None,
+                memory_embedding_order="shuffled_training_loader",
+                initialization_order="shuffled_loader_warmup_then_encoder",
+            )
         return training_log
 
     def checkpoint(self):
@@ -123,6 +173,7 @@ class PaAnoAdapter:
                 for name, value in self.model.state_dict().items()
             },
             "memory_bank": self.memory_bank.detach().cpu(),
+            **({"training_context": self.training_context.copy()} if self.official_procedure else {}),
             "model_config": {
                 "channel_count": self.channel_count,
                 "patch_size": self.patch_size,
@@ -134,6 +185,9 @@ class PaAnoAdapter:
                 "neighbors": self.top_k,
                 "use_revin": self.use_revin,
                 "memory_seed": self.memory_seed,
+                "memory_policy": self.memory_policy,
+                "full_prefix": self.full_prefix,
+                "official_procedure": self.official_procedure,
             },
         }
 
@@ -159,25 +213,51 @@ class PaAnoAdapter:
         adapter.memory_bank = torch.as_tensor(
             checkpoint["memory_bank"], dtype=torch.float32,
         ).detach().cpu()
+        if adapter.official_procedure:
+            context = numpy.asarray(checkpoint["training_context"], dtype=numpy.float32)
+            if context.shape != (adapter.patch_size - 1, channel_count) or not numpy.isfinite(context).all():
+                raise ValueError("PaAno official checkpoint training context is invalid")
+            adapter.training_context = context.copy()
         return adapter
 
     def score(self, values):
         if self.model is None or self.memory_bank is None:
             raise RuntimeError("PaAno fit을 먼저 실행해야 한다")
         values = numpy.asarray(values, dtype=numpy.float32)
+        source_length = len(values)
+        context_length = 0
+        if self.official_procedure:
+            if self.training_context is None:
+                raise RuntimeError("PaAno official score needs its fitted training context")
+            context_length = len(self.training_context)
+            values = numpy.concatenate((self.training_context, values), axis=0)
         patches = make_patch_tensor(values, self.patch_size)
-        embeddings = encode_patches(self.model, patches, self.device)
-        patch_scores = score_embeddings(embeddings, self.memory_bank, self.top_k)
+        if self.official_procedure:
+            patch_scores = score_patches(
+                self.model, patches, self.memory_bank, device=self.device,
+                top_k=self.top_k, batch_size=self.batch_size,
+            )
+        else:
+            embeddings = encode_patches(self.model, patches, self.device)
+            patch_scores = score_embeddings(embeddings, self.memory_bank, self.top_k)
         scores = stitch_patch_scores(patch_scores.numpy(), self.patch_size, len(values))
         return {
-            "scores": scores,
+            "scores": scores[context_length:],
             "source_start": 0,
-            "source_end_exclusive": len(values),
+            "source_end_exclusive": source_length,
             "alignment": "overlap_mean",
             "primitive": "top3_cosine_distance",
-            "calibration_mode": "validation_median_iqr",
+            "calibration_mode": "none" if self.full_prefix else "validation_median_iqr",
             "evaluation_mode": "offline_noncausal",
             "lookahead": self.patch_size - 1,
             "maximum_effective_lookahead": self.patch_size - 1,
-            "normalization_scope": "current_prefix_validation",
+            "normalization_scope": "none" if self.full_prefix else "current_prefix_validation",
+            **({
+                "calibration_mode": "none",
+                "normalization_scope": "none",
+                "native_postprocessing": True,
+                "official_protocol": "paper_tuning_v4",
+                "native_postprocessing_recipe": "top3_cosine_overlap_mean",
+                "training_context_rows": context_length,
+            } if self.official_procedure else {}),
         }

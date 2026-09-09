@@ -43,12 +43,41 @@ def _evenly_spaced(values: list[str], count: int) -> list[str]:
     return [values[index * (len(values) - 1) // (count - 1)] for index in range(count)]
 
 
-def _score_variants(selection: dict, model_name: str) -> tuple[list[str], list[str]]:
+def _score_variants(
+    selection: dict, model_name: str, hyperparameters=None,
+) -> tuple[list[str], list[str]]:
+    """설정이 없으면 모델 전체 head를, 있으면 해당 설정의 선택·진단 head를 반환한다."""
     if model_name == "TSPulse":
         primary = selection.get("primary_score_variants", {}).get(model_name)
         diagnostic = selection.get("diagnostic_score_variants", {}).get(model_name)
-        if primary != ["raw_max"] or diagnostic != ["time", "fft", "pred"]:
+        full_prefix = selection.get("primary_hpo_regime") == "full_prefix_per_ratio"
+        prediction_window = selection.get("tspulse_prediction_aggregation_window")
+        if full_prefix and primary == ["time", "fft", "pred", "ensemble"]:
+            if prediction_window is not None:
+                raise ValueError("공식 TSPulse는 모든 aggregation에서 네 head를 선택한다")
+            diagnostic = selection.get("diagnostic_score_variants", {}).get(model_name, [])
+            expected = (["time", "fft", "pred", "ensemble"], [])
+            if hyperparameters is not None and (
+                type(hyperparameters.get("aggregation_window")) is not int
+                or hyperparameters["aggregation_window"] not in (64, 96, 128)
+            ):
+                raise ValueError("TSPulse 후보의 aggregation window가 등록 범위와 다르다")
+        elif full_prefix and prediction_window is not None:
+            if type(prediction_window) is not int or prediction_window != 96:
+                raise ValueError("TSPulse pred의 대표 aggregation window는 96이어야 한다")
+            expected = (["time", "fft", "pred"], ["raw_max"])
+        else:
+            expected = (["time", "fft", "pred", "raw_max"], []) if full_prefix else (
+                ["raw_max"], ["time", "fft", "pred"],
+            )
+        if (primary, diagnostic) != expected:
             raise ValueError("TSPulse primary·diagnostic score variant 봉인이 잘못됐다")
+        if full_prefix and prediction_window is not None and hyperparameters is not None:
+            window = hyperparameters.get("aggregation_window")
+            if type(window) is not int or window not in (64, 96, 128):
+                raise ValueError("TSPulse 후보의 aggregation window가 등록 범위와 다르다")
+            if window != prediction_window:
+                return ["time", "fft"], ["pred", "raw_max"]
         return list(primary), list(diagnostic)
     return [""], []
 

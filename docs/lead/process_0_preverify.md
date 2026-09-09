@@ -1,8 +1,850 @@
 # 사전 점검 결과
 
-갱신일: 2026-09-01
+갱신일: 2026-09-09
 
-## 현재 판정
+## 디스크 고정 기준 제거와 저장 오류의 재시도 보완 — 2026-09-09
+
+고정 25GiB 검사를 제거했다. 디스크 전체·사용·여유 용량은 자원 보고서의 `disk_observation`에
+관측 시각·경로와 함께 남기며 합격 판정에는 넣지 않는다. 사전 검사 재사용 때도 현재 값을
+명령 이력에 새로 기록한다. 조회 실패는 NULL과 사유로 남긴다. 전체 산출물의 저장 가능성을
+보장하지 않으며 추정 용량·안전 배수·여유율을 새 차단 조건으로 추가하지 않았다.
+실제 checkpoint·점수·DB 저장 실패의 중단·보존 처리는 유지한다.
+
+학습 증거 저장 뒤 종료 이력 저장까지 실패해 원래 예외가 가려져도 재학습하지 않도록
+즉시 재시도와 재기동이 같은 저장 실패 상태를 확인한다. 일반 학습·추론 실패의 trial 재시도는 유지한다.
+낮은 여유 공간·조회 실패·재개 시 관측 갱신과 두 저장 오류의 연속 발생 회귀를 작성했다.
+호출부·인수 연결·변경 diff를 정적으로 검토했으며 로컬 테스트·Python·SQL·YAML·데이터·모델은
+실행하지 않았다. 다음은 관련 원격 회귀와 작은 저장·재개·인수 검사이며 본 튜닝은 시작하지 않는다.
+
+## 사전 검사·저장 실패 재기동·채점 근거 인수 보완 — 2026-09-09
+
+마지막 전면 감사에서 확인한 세 항목을 수정했다. GDN 사전 검사는 scalar·채널별 점수의
+raw·smoothed 네 파일을 구분하고 각 쌍의 동일성과 채널 max를 확인한다. PaAno의 scalar
+두 파일 검사도 유지한다.
+
+학습 증거 저장 실패·중단은 기존 오류 종류와 저장 단계 상태를 이력에서 다시 읽어
+재기동에서도 자동 재학습을 막는다. 부분 파일·시도 이력을 보존하며, 일반 학습·추론 실패의
+trial 재시도와 검증된 완료 출력의 영수증·DB 연결 복구는 유지했다.
+
+인수 묶음에 실제 `dev18_ell_max.json`과 `official_tsb_ad_comparison.json`을 추가했다.
+기존 검증기로 두 근거를 확인하고 SHA로 봉인한 채점 원표의 모든 행과 식별자를 대조한다.
+누락·불일치·빈 원표는 완료로 처리하지 않는다. 후보 36개·head 45개·q별 선택·채점식과
+DB schema 3은 바꾸지 않았다.
+
+실제 smoke 저장 경로, 저장 callback 실패 뒤 재기동, 정상 재시도 유지와 채점 근거의
+인수·거절 회귀를 작성했다. 호출부·수정 diff를 교차 검토했으며 정적 diff 검사에서 오류는
+없었다. 로컬 테스트·Python·SQL·YAML·데이터·모델은 실행하지 않았다.
+현재 게이트는 구현·정적 검토 완료, 원격 검증 전이다. 다음은 관련 원격 회귀와 작은
+저장·재개·인수 및 L4 검사다. 통과한 코드·환경·새 예산을 봉인하고 본 튜닝은 시작하지 않는다.
+
+## 최종 감사 세 항목 보완 — 2026-09-09
+
+사용자 요청으로 TSPulse의 실제 정규화 계수, 학습 파일의 부분 저장 인수 연결,
+PCA RAM 추정 초과 시 원격 실측 경로를 보완했다. 공식 학습·점수 계산, 후보 36개·head
+45개, q별 선택과 DB schema 3은 유지한다.
+
+TSPulse는 입력 StandardScaler의 실제 상태, 내부 head의 min/max/range와 공식 교정값,
+출력 최대값·나눗수와 fitted MinMaxScaler 상태를 native_calibration에 남긴다. head·평가
+범위·채널 수를 완료 검사와 DB 파일 검증에 연결하며 기존 metadata·SHA 참조로 전달한다.
+내부 head는 봉인한 sklearn의 MinMaxScaler로 복원한다. 상수·극소 범위를 단순 range 나눗셈으로
+해석하지 않으며 공식 utility와 대조하는 회귀에 이 경우를 포함했다.
+학습 파일은 각 저장 직후 경로·SHA·크기를 시도 이력에 남긴다. 다음 파일의 저장이 실패해도
+앞서 기록한 파일은 인수 목록에 남는다. PCA를 포함한 실행 후 결과 저장도 같은 기록 방식을 쓴다.
+파일 교체와 이력 저장 사이의 강제 종료까지 하나의 원자적 작업으로 보장하지는 않는다.
+
+PCA는 기존 보수적 추정이 합격선 미만이면 그대로 통과하고, 그렇지 않으면 등록된 n_components=None
+설정과 최대 작업 배열 입력을 별도 원격 CPU 프로세스에서 실행한다. Linux·CUDA 환경 확인은
+유지한다. 프로세스 생애 RSS에는 입력 로딩과 실제 fit·score가 포함되며 RAM 80% 미만일 때만
+통과한다. 대표 한 건의 측정이며 전체 후보나 서비스 범위의 상한 보장은 아니다. 추정값·측정값·
+설정·입력 신원을 기존 자원 이력에 함께 남기고 재사용과 인수에서도 검사한다.
+
+저장·검증 연결과 각 실패 경계의 회귀를 작성했다. 호출부·저장 순서·인수 경로를 교차 검토했고
+정적 diff 검사에서 오류는 없었다. 현재 게이트는 구현·정적 검토 완료, 원격 검증 전이다.
+로컬 테스트·Python·SQL·YAML·데이터·모델은 실행하지 않았다. 다음은 관련
+원격 회귀와 작은 저장·실패·재개·인수 및 L4 자원 검사다. 통과한 코드·환경·새 예산을 봉인하며
+본 튜닝은 시작하지 않는다.
+
+## 학습 완료 증거·실제 채점 자원 보완 — 2026-09-09
+
+최종 검토에서 확인한 두 기록 누락을 수정했다. PaAno·GDN은 학습을 마치면 추론 전에
+checkpoint·scaler·loss 이력·선택 시점·학습 시간을 시도별 경로에 보존한다. 이후 추론이
+실패해도 당시 학습 증거가 남고 재시도가 이전 파일을 덮어쓰지 않는다. 정상 완료 때는
+먼저 저장한 checkpoint·scaler·loss를 재사용하며 최종 timing을 따로 연결한다. 같은 예산의
+실패 시도도 작은 학습 기록과 큰 checkpoint의 경로·SHA·크기를 인수 목록에 포함한다.
+이는 완료한 학습의 증거 보존이며 epoch·optimizer 재개나 추론만 재시작하는 경로는 아니다.
+
+학습 증거 저장 시간은 시도 이력의 별도 단계에 기록한다. 모델별 학습·추론 timing에는
+이 저장 시간을 넣지 않으며, 전체 실행 시간과 자원 관측 범위에는 포함됐음을 명시한다.
+채점 이력에는 요청 worker 수와 실제 worker 수, CPU 모델·논리 CPU 수·affinity·cgroup 할당
+정보를 남긴다. 확인하지 못한 CPU 정보는 NULL과 사유로 보존하고 새 차단 조건으로 쓰지 않는다.
+기존 worker 결정식·후보 36개·head 45개·학습식·q별 선택·SQLite schema 3은 유지한다.
+
+학습 성공 후 추론 실패, 재시도의 증거 보존, checkpoint 중복 저장 방지와 실제 DB·백업·인수
+연결, 자동·제한 채점 병렬 수의 기록 회귀를 추가했다. 로컬 테스트·Python·구문 검사·SQL·
+YAML 파싱·데이터·모델은 실행하지 않았다. 현재 게이트는 구현·정적 검토이며 원격 검증 전이다.
+다음은 관련 원격 회귀와 작은 저장·실패·재개·인수 검사다. 통과한 코드·환경·새 예산을 봉인하며
+본 튜닝은 시작하지 않는다.
+
+## GDN 보조 점수·실행별 RAM·저장 복구 보완 — 2026-09-09
+
+사용자 요청으로 최종 검토의 저장 누락과 계측 한계를 보완했다. GDN은 공식 최종 scalar를
+유지하고 정규화·trailing4 뒤 집계 직전 채널 점수를 `__channels` 두 파일로 보존한다.
+실제 median·IQR·epsilon과 교정 범위는 metadata에 남긴다. 채널 max와 기존 scalar가
+같은지 확인하고 완료 검사·DB 파일 검증·인수 목록에 보조 파일을 연결했다.
+
+모델 실행 구간의 현재 프로세스 RSS를 시작·종료와 50ms 간격으로 관측한다. 최고 관측값,
+간격·표본 수·오류·측정 범위를 성공·실패의 resource_usage에 함께 저장한다. 이 값은
+표본 사이의 순간 peak와 자식 프로세스를 포함하지 않는 관측 하한이다. 기존 프로세스
+생애 peak·Python 할당량·CUDA peak는 별도 의미로 유지하며 정확한 실행별 RAM 상한으로
+표현하지 않는다. 원격에서 수집 동작과 실제 L4 환경을 확인한다.
+
+각 점수 파일의 SHA·크기를 metadata에 먼저 기록한다. 계산 완료 이력과 모든 출력 파일은
+남았지만 완료 행·영수증 기록이 끊겼으면 같은 시도인지 확인하고 기존 출력·snapshot·학습
+파일을 검증해 manifest·DB 연결을 복구한다. 실제 출력이 덜 저장됐거나 지문이 다르면
+보존하고 중단한다. 자동 재학습·실패 점수 대체·재시도 한도 변경은 추가하지 않았다.
+
+실제 저장기·완료 검사·DB verifier·SQLite 백업·CSV·인수를 합성 결과 한 건으로 잇는 회귀,
+GDN 보조 점수·RAM 관측·완료 행 복구·다른 시도 및 파일 변조 거절 회귀를 작성했다.
+로컬 테스트·Python·구문 검사·SQL·YAML 파싱·데이터·모델은 실행하지 않았다. 현재 게이트는
+구현·정적 검토이며 원격 검증 전이다. 후보 36개·head 45개·q별 선택·SQLite schema 3은
+유지한다. 원격 검증 뒤 새 코드·환경·예산을 봉인하며 본 튜닝은 시작하지 않는다.
+
+## 튜닝 실행 증거와 저장 실패 복구 보완 — 2026-09-09
+
+사용자 요청으로 최종 검토에서 찾은 결함을 수정했다. 모델 계산이 끝났다는 사실을 먼저
+시도 이력에 저장하고, 출력 검증을 마친 행도 완료 영수증보다 앞서 기록한다. 재실행 때
+계산 완료 이력이 있으면 재학습하지 않는다. 저장된 행과 파일·신원·SHA가 맞으면 영수증과
+manifest·DB 연결을 복구하고, 출력이 덜 저장됐으면 기존 파일을 보존한 채 중단한다.
+
+모델 실행 실패 때 CPU RSS·Python peak와 측정 가능한 요청 장치의 CUDA peak를 남긴다.
+실제 backend를 확인하지 못한 실패는 미확정으로 표시하고 측정 범위·NULL 사유를 기록한다.
+계측 오류가 원래 모델 예외를 가리지 않으며 강제 종료 뒤 미측정 구간을 복원하지는 않는다.
+
+Tier 3 인수는 실제 source 신원이 있는 snapshot.spec를 읽는다. checkpoint smoke와 공식
+checkpoint·config의 경로·SHA·크기를 대조하고 필수 신원이 없으면 중단한다. 현재 예산의
+통과한 resource_gate와 참조 probe 원본, 같은 예산의 실패·중단·종료 미확인 probe 이력도
+인수한다. 큰 원본은 외부 참조로 남기고 이력 시간을 다시 합산하지 않는다.
+
+PaAno의 selected_iteration과 iteration별 loss·가중치·학습률, GDN의 epoch별 학습 batch
+MSE 합·평균·검증 loss를 기존 training_log.json에 보존한다. 최적 checkpoint 선택식과
+학습식은 유지한다. 정상 종료한 학습의 기록이며 실패한 학습의 부분 곡선 복구는 포함하지 않는다.
+
+저장 실패 후 재기동·영수증 복구·점수 변조 거부·실패 계측·실제 Tier 3 metadata 구조·자원
+이력 인수·선택 시점과 loss 로그 보존 회귀를 작성하고 호출부와 저장 순서를 교차 검토했다.
+로컬 테스트·Python·SQL·YAML·데이터·모델은 실행하지 않았다. SQLite schema 3, 특징 산식,
+공식 source·recipe·36개 설정·45개 head와 q별 선택은 그대로다. 프로젝트 코드 신원이
+바뀌므로 원격 검증을 통과한 코드·환경과 새 예산을 봉인한다.
+
+현재 게이트는 결함 수정·정적 검토 완료, 원격 검증 전이다. 다음은 Lightning의 관련 회귀와
+작은 저장 실패·중단 재개·인수·L4 검사다. 본 튜닝은 시작하지 않는다.
+
+## 감사에서 발견한 저장·인수 보완 반영 — 2026-09-09
+
+사용자 요청에 따라 아래 감사의 구현 보완만 반영했다. 두 실험의 scores 아래 숨김
+`.npy.tmp`·`.npz.tmp`·`.json.tmp`만 Git 검사에서 제외한다. 완료 영수증은 실패 때 임시파일을
+정리하고 metadata는 기존 원자적 저장 함수를 재사용한다. 원본 보존·오류·중단 후 재시도
+회귀를 작성했으며 실제 경로와 제외하면 안 되는 대조 경로를 Git 규칙으로 확인했다.
+
+예산 미배정 명령 이력을 별도 종류로 전달 묶음에 넣고 현재 예산 비용에는 합산하지 않는다.
+인수 검증·압축·파일 해시는 기존 명령 이력과 분리해 `handoff/run_history/`에 기록한다.
+이전 실패·중단·종료시간 미확인 이력도 같은 예산이면 함께 묶는다. 현재 인수 이력은 압축에서
+제외하고 닫힌 뒤 반환하므로 압축파일과 함께 전달한다. 이력 안의 archive·manifest SHA와
+크기가 해당 인수본을 식별하며, 기존 선택 영수증·닫힌 명령·비용 요약은 바꾸지 않는다.
+
+유한 절대 상관값은 [0, 1] 범위로 제한하며 동일·반대 부호·일반 상관 회귀를 작성했다.
+extractor v2·DB schema 3은 유지하지만 계약 내용과 source SHA가 바뀌므로 기존 DB와
+섞지 않고 새로 봉인한다. SQLite·모델·후보·q별 선택·다른 특징은 그대로다.
+
+현재 게이트는 발견사항 구현·정적 검토 완료, 원격 검증 전이다. 로컬 테스트·Python·SQL·
+YAML·데이터·모델은 실행하지 않았다. 다음은 관련 특징·저장·인수 회귀와 작은 중단 재개·
+L4 검증이며 본 튜닝은 시작하지 않는다.
+
+## 튜닝 적재와 후속 추천 활용 전면 검토 — 2026-09-09
+
+현행 schema 3의 특징 수집·실행 결과 연결·채점·백업·인수를 정적으로 검토했다.
+한 부모 프로세스가 로컬 파일에 쓰는 현재 규모에는 SQLite가 맞다. MySQL 14표 SQL은
+ERD 설계이며 자동 적재기는 아니다. 다중 사용자 서비스나 동시 쓰기가 필요해질 때 별도로
+이관한다. DB 종류만으로 교수의 평가를 예측하지 않으며 재현성·자료 완전성·검증을 우선한다.
+
+특징은 현재 q-prefix만 읽고 모델마다 복제하지 않는다. 모든 후보 결과가 같은 prefix 키를
+참조하며 설정·seed·head·물리 실행을 구분한다. 실패와 구조적 제외를 0점으로 바꾸지 않는다.
+트랜잭션, 채점값 변경 방지, 예상 키 대조와 일관된 백업 경로에서 새 누락·중복 결함은
+찾지 못했다. 이는 정적 판정이며 실제 SQLite·원격 실행 성공을 뜻하지 않는다.
+
+본 튜닝 전에 중단 재개를 보완한다. metadata·완료 영수증의 숨김 `.json.tmp`와 점수의
+`.npy.tmp`는 현재 Git 제외 대상이 아니다. 쓰기 도중 종료하거나 파일 교체에 실패하면
+다음 실행의 clean 검사에서 멈춰 복구 경로에 진입하지 못한다. 실제 출력 경로를 파일 생성
+없이 Git 제외 규칙과 대조했다. 산출물 임시 경로만 좁게 제외하고 일반 실패 시 정리하며,
+중단 후 같은 명령으로 재개하는 원격 회귀가 필요하다. 이 검토에서는 코드를 수정하지 않았다.
+
+비용·전달 범위도 보완할 부분이 있다. 예산 확정 전 실패의 `unassigned_command_wall`은
+비용 JSON에 남지만 그 `history_files`는 전달 묶음에서 빠진다. 현재 예산에 합산하지 않는
+원칙을 유지하면서 참조 원본의 별도 보관 여부를 정한다. 인수 압축·해시는 명령 이력이 닫힌
+뒤 실행하므로 그 시간과 실패를 기존 명령 이력이 대표하지 않는다. 절대 상관값은 반올림으로
+1을 미세하게 넘을 수 있어 유한값 확인 뒤 [0, 1] 경계 처리와 관련 회귀를 권고한다.
+
+튜닝 때 고정된 prefix 특징·전체 후보 점수·실행 시 관측한 비용과 학습 증거를 보존하고,
+seed 평균·변동·추천 학습표·추가 파생값은 나중에 계산하는 구성이 적합하다. 새로운 시간
+특징에는 원본 CSV가, 다른 지표의 재채점에는 점수 배열·라벨이 필요하다. SQLite나 작은
+인수 묶음만으로 이를 복원하지 못하므로 큰 산출물과 원입력 실물도 보존한다.
+
+126개 prefix는 18파일·10family의 중첩 관측이다. 후속 추천 검증은 같은 family의 모든
+파일·q를 묶고 전처리·특징 선택을 학습 fold 안에서만 맞춘다. 기존 선택기의 LOFO를 아직
+없는 추천기의 검증으로 해석하지 않는다. 단위 불변 특징과 원시 단위에 민감한 모델 순위의
+차이, 표본 간격 미확인·float32 정밀도·TAO prefix 오염·공식 오프라인 평가 범위는 유지한다.
+현재 Dev18 loader는 비유한 입력을 거절하므로 특징 함수의 NULL 표현을 실제 결측 지원으로
+설명하지 않는다. 새 특징을 더 넣어도 독립 family 수와 온라인 검증의 부족은 해소되지 않는다.
+
+현재 게이트는 정적 감사 완료, 중단 재개 보완·원격 검증 전이다. 테스트·Python·SQL·YAML·
+데이터·모델은 로컬에서 실행하지 않았다. 다음은 위 재개 경로와 전달 이력 범위를 정리한 뒤
+관련 저장·특징·인수 회귀와 L4 검증을 수행하는 작업이며, 본 튜닝은 시작하지 않는다.
+
+## 추천 특징의 단위와 단일 진입점 적재 보완 — 2026-09-09
+
+원시 mean·median·std·IQR은 센서 단위의 영향을 받으므로 기본 추천 입력에서 제외했다.
+추천 DB schema 3의 `recommendation_inputs` VIEW·CSV는 n·d와 무차원 특징을 담는다.
+저장된 채널별 IQR/std의 중앙값을 추가 계산하고 상수 비율·유한값 비율·유효 채널/쌍 비율과
+NULL 사유를 보존한다. 원시 수집 산식 `prefix_features.v2`와 모델의 전처리·선택식은 유지한다.
+
+기존 기본 명령의 특징 저장→튜닝→VUS 적재→DB 백업·CSV→인수 경로에 새 조회와 열 계약을
+연결했다. CSV는 prefix마다 한 행이어야 하며 VIEW 산식이나 봉인 신원이 바뀌면 중단한다.
+독립적인 채널 단위 변환·미정의 값·VIEW 변조와 실제 SQLite를 쓰는 단일 명령 회귀를 작성했다.
+준비 계약의 JSON 재사용, 내보내기 실패 후 재개, 모델·채점 중복 방지도 검사 범위에 넣었다.
+
+호출부·SQL 산식·조회/내보내기 열·문서를 정적으로 대조했다. 로컬 테스트·Python·SQL·YAML·
+데이터·모델은 실행하지 않았다. 현재 게이트는 구현·정적 검토 완료, 원격 검증 전이다.
+다음은 관련 특징·저장·단일 명령·인수 회귀의 원격 검증이며 본 튜닝은 시작하지 않는다.
+
+## Lightning 실행과 SQLite 자동 적재 연결 점검 — 2026-09-09
+
+현행 `run_ratio_tuning.py` 기본 실행은 SQLite 생성·prefix 특징·trial 완료 기록·VUS 채점
+결과 적재와 일관된 백업·전달 묶음 생성을 연결한다. DB 주소·계정·별도 SQL 실행은 필요 없다.
+`--prepare`는 준비만, `--execute-only`는 채점 전까지이며 전체 인수 완료로 보지 않는다.
+현재 ERD SQL은 MySQL 설계이고 실제 SQLite 생성문과 별개다. 추천 입력 VIEW·CSV 연결까지
+반영했으며 최종 변경을 합친 같은 commit에서 원격 검증 후 실행한다.
+
+사용자는 최신 코드와 봉인에 맞는 Dev18 CSV 18개, 설치 환경·L4·서버 저장공간을 준비한다.
+입력 감사 원표·VUS 검증·ell_max는 Git 추적 대상이다. 결과는 프로젝트의
+`experiments/01_ghl_main/results/dev18_tuning/full_prefix_v2/`에 저장하며 DB는 그 아래
+`recommendation_evidence/recommendation.sqlite3`다. 현재 디스크 여유 공간은 관측 정보이며
+고정 최소값이나 전체 산출물의 저장 가능 판정으로 쓰지 않는다.
+
+완료 후 `handoff/recommendation_handoff.tar.gz`와 인수 목록을 전달한다. 큰 점수 배열과
+checkpoint는 묶음에 넣지 않고 경로·SHA·크기만 남기므로 서버의 실물도 보존한다.
+코드·문서·추적 파일만 확인했다. 실제 Lightning 접속·설치·DB 실행·적재 검증은 하지 않았다.
+
+## 최신 공식 저장소 대조와 수정 — 2026-09-09 추가 지시
+
+공식 저장소의 최신 기본 브랜치를 기준으로 삼으라는 추가 지시에 따라 여섯 저장소의
+HEAD·관련 실행 코드·후보·license를 확인했다. 아래 이전 감사의 논문 우선 판정은 이 지시로
+대체한다. GDN graph·후처리와 PaAno negative 식은 최신 공식 코드와 같아 유지했다.
+
+| 공식 저장소 | 확인한 최신 commit | 반영 |
+| --- | --- | --- |
+| [One-Liners](https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad/-/commit/dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9) | dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9 | 기존과 같아 유지 |
+| [TSB-AD](https://github.com/TheDatumOrg/TSB-AD/commit/6beac72e11d1155ade40870492c00d0d1cfdcaaf) | 6beac72e11d1155ade40870492c00d0d1cfdcaaf | PCA source pin 갱신. PCA·전처리·license는 동일 |
+| [PaAno](https://github.com/jinnnju/PaAno/commit/d4c67116190efa4592dc6a8a157ced0def68b6af) | d4c67116190efa4592dc6a8a157ced0def68b6af | source 동일, 공식 memory 최소값 복원 |
+| [GDN](https://github.com/d-ailin/GDN/commit/9853899da860682669a134e4af315d036aab4eca) | 9853899da860682669a134e4af315d036aab4eca | source 동일, 두 보완 후보의 patience·Adam beta 복원 |
+| [Time-RCD](https://github.com/thu-sail-lab/Time-RCD/commit/372bb980426b2f67007311c6f3165ab789c79bef) | 372bb980426b2f67007311c6f3165ab789c79bef | 기존과 같아 유지 |
+| [granite-tsfm](https://github.com/ibm-granite/granite-tsfm/commit/fe7a35697723e2a2f5246ae979474bfc554e26c0) | fe7a35697723e2a2f5246ae979474bfc554e26c0 | source pin 갱신. TSPulse·AD helper·license는 동일 |
+
+PaAno는 공식 10%·최소 500개·patch 상한·반올림 식을 실제 memory와 feasibility에 함께
+복원했다. `paano_official_minimum_v5`로 식별하며 역사 `paper_fraction`은 명시한 adapter와
+checkpoint에서만 보존한다. GDN은 세 후보 모두 patience15·Adam betas 0.9·0.999를 쓴다.
+TSPulse source 갱신은 설치 명세·adapter·실행 신원·관련 회귀에도 반영했다. 두 HF revision과
+checkpoint SHA는 그대로다. 기존 의존성은 최신 소스의 허용 범위에 들어 추가 업그레이드하지 않았다.
+
+36개 설정·45개 head 점수와 모든 입력 채널의 전달을 유지한다. PCA 공식 zero pruning은
+예외다. q·모델·실행 가능한 후보 집합이 같은 파일 집단마다 독립 선택하며, r100 물리 점수도
+각 논리 q 원표에 연결된다. LOFO는 holdout family를 뺀 파일로 창·head를 다시 고른다.
+센서별 또는 수집 특징별로 별도 recipe를 고르는 설계는 아니다.
+
+공개 범위의 공백도 구분했다. One-Liners는 비교 구성이고 PaAno·GDN에는 완결 HPO loop가
+없다. PaAno는 연결 논문의 9개 풀, GDN은 기존 세 조합을 유지하되 코드 고정값을 맞췄다.
+PCA 공식 HPO는 파일별 후보 점수만 저장하고 전체 선택 집계를 정의하지 않는다. 따라서 기존
+family 동일 가중 selector, TSPulse 공통 창 집계·고정 동률 순서는 프로젝트 보완으로 남는다.
+VUS 검증 보고의 `e0975a5…`는 평가기 출처이며 PCA 모델의 최신 source와 구분해 보존한다.
+최신 commit에서도 평가 폴더 전체와 실제 oracle의 Git blob이 같음을 확인했다. 새 VUS
+실행이나 재검증으로 기록하지 않는다.
+
+호출부·memory 경계·checkpoint 호환·후보 인자·환경 pin의 회귀를 갱신하고 source·recipe·
+설정 변경이 config_id와 새 예산에 반영되는 경로를 정적으로 확인했다. 기존 license 원문과
+고지는 보존했고 관련 Git diff 공백 검사는 통과했다. 로컬 테스트·Python·YAML 파싱·
+데이터 스캔·모델 실행은 하지 않았다.
+현재 게이트는 최신 공식 소스 반영·정적 검토 완료, 원격 검증 전이다. 다음은 최신 source를
+설치한 원격의 관련 회귀·저장·재개·Tier 1 입력·L4 검사와 새 예산 봉인이다. 본 튜닝은 시작하지 않았다.
+
+## 추천 DB SQL 점검과 핵심 특징 추가 — 2026-09-09
+
+사용자 첨부본에서 지적한 status 기본키·분리된 실행 외래키 오류는 저장소의 원래 SQL과
+실제 SQLite 저장 코드에 없었다. 기존 결과 키·복합 외래키를 유지하고 MySQL 설계의
+q별 관측량 상한과 완료 증거의 빈 문자열·SHA 형식 검사를 보강했다. SQLite에도 빈 완료
+증거를 거부하는 제약을 넣었다. MySQL 14표 ERD와 실제 SQLite 6표는 별도 구조로 유지한다.
+
+IQR, 차분 절댓값 Q90/IQR, 전후반 중앙값 이동/IQR, spectral entropy 네 특징을 현재
+prefix에서만 계산한다. 채널별 값·사유와 유효 채널 중앙값·개수를 저장하고 지문 검사·재개·
+CSV 내보내기에 연결했다. 산식은 `prefix_features.v2`, 추천 DB schema는 2다. 기존 CSV
+기본 열과 성능표 11열은 유지하며 이전 DB의 자동 이관은 하지 않는다.
+
+상수·IQR 0·짧은 입력·비유한값·수치 범위·입력 비개입, 저장·재개·지문 손상·내보내기와
+이전 schema 거절의 회귀를 작성했다. 계산·저장·조회 열과 호출부를 정적으로 대조했으며
+테스트·Python·YAML·DB·데이터·모델은 실행하지 않았다. 현재 변경은 원격 검증 전이다.
+다음은 관련 특징·저장 회귀와 기존 재개·인수 검증이며, 공식 소스 대조와 본 튜닝 게이트는
+그대로 유지한다.
+
+## 튜닝 전 후보·feature·q별 선택 전면 감사 — 2026-09-09
+
+활성 11개 모델 항목의 registry 확장부터 실행 인자·모델 내부·저장·완료 판정·recipe 선택을
+공식 봉인 source와 대조했다. 아래 36개 설정·45개 head 점수에서 후보 누락이나 호출 시
+값 덮어쓰기는 찾지 못했다. 공개 HPO, 비교 실행값, 논문·코드 보완 tuple은 구분한다.
+
+| 모델 | 보존된 후보·고정값 | 판정 |
+| --- | --- | --- |
+| MWVAR | window 5·10·32·50·60·64·96·100·256·512·1024, centered=true·ddof=1 | 공식 비교 창 11개. 닫힌 HPO grid는 아니다. |
+| SQDIFF_LAST1·LAST3·CENTERED5 | window 2·4·5, correction 2·4/3·5/4 | 고정 차분 3개와 공식 경계 처리를 유지한다. |
+| 두 Var96 앙상블 | Var96+Last3·Var96+Centered5, component min-max 후 max | 공식 비교 2개. 채널별 적용 후 max는 프로젝트 확장이다. |
+| PCA_LEGACY | window 100, n_components 0.25·0.5·0.75·None | 공식 multivariate HPO 4개, 평가 입력 fit·zero pruning을 유지한다. |
+| PaAno | patch 32·64·96 × LR 0.001·0.0001·0.00001 | 논문 B.1의 9개. batch 512·100 iterations·memory 10%를 유지한다. |
+| GDN | k5·k15·k30의 embedding·epoch·validation·patience·Adam beta tuple | 공식 run.sh 1개와 논문 주요 값에 코드 세부를 보완한 2개. hidden은 out_layer_num=1에서 쓰이지 않는다. |
+| TimeRCD | multi checkpoint·context 5000 | 공식 주실험 1개. 문맥 민감도 실험을 HPO로 확장하지 않았다. |
+| TSPulse | aggregation 64·96·128 × time·fft·pred·ensemble | 3개 설정·12개 점수. 모든 창에서 네 head를 보존한다. |
+
+모든 인자가 별도 탐색 축은 아니다. PaAno encoder·loss 상수와 Tier 3 checkpoint 구조 등은
+공식 고정값이며 source·checkpoint 신원에 묶인다. 설정 저장은 전체 hyperparameters와
+전후처리 recipe·source 신원을 보존한다. 입력 feature는 Label만 제외하고 순서와 개수를
+검증한다. PCA의 공식 zero pruning 외에 저분산·고상관을 이유로 입력 센서를 삭제하지 않는다.
+GDN은 채널 수보다 큰 top-k를 줄이지 않고 해당 조합을 구조상 불가능으로 기록한다.
+
+선택 단위는 `(모델, q, 실행 가능한 후보 집합이 같은 파일 집단)`이다. 센서별 recipe를 따로
+고르는 구조는 아니다. 후보는 `(모델, 설정, q, 파일)`마다 판정하고 q 전체·Dev18 전체의
+교집합으로 줄이지 않는다. seed 평균 뒤 family 안 파일 평균, family 동일 가중 평균으로
+선택하며 다른 q·모델의 우승값을 재사용하지 않는다. Tier 선택도 같은 q의 동일 파일에서
+모델과 설정을 함께 고른다. 누락·중복·실패 trial은 완전 원표 검사에서 거부한다.
+
+Tier 1·3의 r100 점수는 일곱 q에서 참조하지만 선택 계산은 q별로 분리한다. 입력 점수가
+같으므로 여러 q의 recipe가 같아도 독립 선택 위반은 아니다. TSPulse는 승인한 공통 창 집계
+후 데이터셋별 head를 고르며 세 LOFO 경로 모두 holdout을 뺀 해당 q의 학습 파일만 쓴다.
+time·fft·pred·ensemble 동률 순서는 프로젝트가 고정한 순서다. 공식 선택기는 비정렬 파일
+목록에 argmax를 적용하므로 같은 순서를 항상 보장하지 않는다.
+
+논문 우선 계약의 최종 통과를 막는 GDN 출처 충돌은 두 가지다. [논문 §3.4](https://ojs.aaai.org/index.php/AAAI/article/download/16523/16330)는
+자신을 제외한 센서에서 top-k를 고른다. 현재는 [공식 모델 코드](https://github.com/d-ailin/GDN/blob/9853899da860682669a134e4af315d036aab4eca/models/GDN.py)처럼
+자기 자신도 후보에 넣으므로 보통 k15·k30이 외부 이웃 14·29개가 된다. 논문 §3.6은
+채널 max 후 SMA를 설명하지만 현재는 [공식 evaluate.py](https://github.com/d-ailin/GDN/blob/9853899da860682669a134e4af315d036aab4eca/evaluate.py)처럼
+채널별 SMA4 후 max를 적용한다. 두 순서는 일반적으로 다른 점수를 만든다. 후보 수가
+맞다는 사실만으로 실제 graph·후처리까지 논문과 같다고 판정하지 않는다.
+
+PaAno도 [논문 §3.3](https://arxiv.org/html/2602.01359v3#S3.SS3)은 anchor minibatch의 embedding에서
+negative를 고르지만, 현재는 [공식 train.py](https://github.com/jinnnju/PaAno/blob/d4c67116190efa4592dc6a8a157ced0def68b6af/train.py)처럼
+shifted positive들의 projection에서 고른다. 이는 새 구현 오류가 아니라 논문·공식 코드의
+차이다. 2026-09-08의 나머지 학습식 유지 지시가 있으므로 이번 감사에서 바꾸지 않았다.
+PaAno memory의 최소 500 제거, TSPulse 공통 창 집계, Dev18·q·seed 0·1·2와 고정 평가
+tail은 기존 승인 설계다. 원논문의 모든 실험 조건을 그대로 복제했다고 표현하지 않는다.
+
+실행값에 따른 중단 경계도 남는다. 두 Var96 앙상블은 어느 채널이든 component 점수 범위가
+0이면 전체 trial을 거부한다. PCA는 zero pruning 후 열이 없거나 component weight가
+0·비유한 값이면 중단한다. 길이·채널 수만 보는 feasibility와 대표 합성 검사는 이 조건을
+모든 평가 입력에서 보장하지 않는다. 실패를 0점으로 메우거나 후보를 조용히 빼지 않으므로
+원격에서 Tier 1의 실제 평가 입력을 먼저 확인한다. 기존 Dev18 상수 채널 원표는 학습
+prefix 기준이며, 그 값만으로 평가 tail에서 반드시 실패한다고 단정하지 않는다.
+
+공식 원문·봉인 코드·호출부·기존 회귀의 검사 내용을 정적으로 대조하고 관련 diff의 공백을
+확인했다. One-Liners는 공식 README·두 실행 스크립트·비교 목록을 직접 확인했으나 논문
+본문은 접근 실패로 완전 대조하지 못했다. 테스트·Python 구문 검사·YAML 파싱·원본 데이터
+스캔·모델·checkpoint 실행은 하지 않았다. 현재 게이트는 후보·독립 선택 감사 완료,
+GDN 출처 충돌 미해결·원격 검증 전이다. 코드·후보·기존 산출물은 바꾸지 않았다.
+다음 작업은 GDN 적용 계약 정리이며 이후 원격 회귀·Tier 1 평가 입력·저장·재개·L4 검증과
+새 코드·환경·예산 봉인을 진행한다. 본 튜닝은 아직 시작하지 않는다.
+
+## 엑셀 중심 ERD 간소화 — 2026-09-09
+
+사용자 요청으로 과하게 나눈 35개 테이블 설계를 [핵심 6개·모델 상세 8개](erdcloud_schema.sql)로
+교체하고 [안내](erdcloud_schema_guide.md)도 다시 썼다. 실험당 DB 하나를 기준으로 입력·채널
+특징, 설정, 실제 실행, 결과를 연결한다. 모델 파라미터는 개별 열을 유지하고, 추가 관리 표와
+반복된 실험 키를 제거했다. 검증 세부와 파일 증거는 원본 JSON·CSV 참조로 보존한다.
+결과의 head별 복합키와 같은 CSV·config·seed의 실제 실행 참조, 미채점·실패의 NULL은 유지했다.
+14개 테이블·13개 외래키의 키·자료형·참조와 엑셀 항목을 정적으로 대조했다. DB·튜닝 코드·
+원본 엑셀은 바꾸지 않았고 로컬 DB·테스트·Python·YAML·데이터·모델은 실행하지 않았다. 다음은
+간소화한 ERD 화면 검토다. 아래 35개 표 설계 기록은 이전안이다.
+
+## 첨부 저장 양식의 ERD 설계 — 2026-09-08
+
+모델별 파라미터 상세 엑셀과 현재 저장 경로를 반영한 [ERDCloud SQL](erdcloud_schema.sql)과
+[대응 안내](erdcloud_schema_guide.md)를 추가했다. 실험 범위의 복합키, 실제 시도와 q·head별
+결과 재사용, HAI 세션별 prefix, 선택·LOFO와 최종 실행 요청을 구분했다. 실패 합성 ID는
+실제 run_id의 FK로 쓰지 않고 출처값으로 보존한다. SQL 참조 열·키·자료형을 정적으로 대조했다.
+현재 SQLite·튜닝 코드는 변경하지 않았으며 DB·테스트·Python·YAML·데이터·모델 실행도 하지
+않았다. ERDCloud는 로그인 단계여서 가져오기와 배치를 확인하지 못했다. 다음은 ERD 화면 검토이며
+저장 구현·원격 검증과 본실험 실행 게이트는 그대로 유지한다.
+
+## TSPulse 두 단계 선택 반영·후보 풀 최종 검토 — 2026-09-08
+
+사용자가 승인한 창 집계식을 TSPulse의 주 정책과 저장·조회에 반영했다. q별로 완전한
+세 창·네 head 원표를 검사한 뒤, 파일별 time·fft 평균의 파일 동일 가중 평균으로 공통 창을
+고른다. 창 점수는 반올림하지 않고 동률 허용 1e-6 안에서 작은 창을 택한다. 이후 공식
+CSV의 파일별 5자리 점수로 데이터셋별 평균 head를 고른다. 미관측 데이터셋은 time을 쓴다.
+이 집계식은 논문의 미공개 원식이 아니라 사용자 승인 보완으로 결과에 기록한다.
+
+LOFO의 모델·계층·공통 파일 비교는 holdout을 제외한 학습 파일에서 창과 head를 모두
+다시 선택한다. 주 정책의 데이터셋별 head 표와 fallback을 저장하고 실제 native 점수·실행
+증거에 연결한다. 세 창·네 head 점수를 보존하며 새 물리 head를 추가하지 않았다.
+
+| 모델 | 최종 풀 | 대조 결과 |
+| --- | --- | --- |
+| One-Liners | 16개 | MWVAR 창 11개·고정 차분 3개·앙상블 2개. [봉인한 공식 비교 구현](https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad/-/tree/dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9/results/baselines)의 풀이며 닫힌 논문 HPO 목록은 아니다. |
+| PCA_LEGACY | 4개 | [TSB-AD 공식 HPO 목록](https://github.com/TheDatumOrg/TSB-AD/blob/e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48/TSB_AD/HP_list.py)의 n_components 0.25·0.5·0.75·None과 window 100을 유지한다. |
+| PaAno | 9개 | [논문 B.1](https://arxiv.org/html/2602.01359v3#A2.SS1)의 patch 32·64·96 × LR 0.001·0.0001·0.00001. memory는 논문의 10%로 맞췄다. |
+| GDN | 3개 | [공식 run.sh](https://github.com/d-ailin/GDN/blob/9853899da860682669a134e4af315d036aab4eca/run.sh) 한 조합과 [논문 4.4](https://ojs.aaai.org/index.php/AAAI/article/download/16523/16330)의 주요 값에 공개 코드 값을 보완한 두 조합이다. hidden은 out_layer_num=1에서 쓰이지 않는다. |
+| TimeRCD | 1개 | [봉인한 공식 detector](https://github.com/thu-sail-lab/Time-RCD/blob/372bb980426b2f67007311c6f3165ab789c79bef/time_rcd/detector.py)의 multi checkpoint·context 5000 경로를 유지한다. |
+| TSPulse | 3개 설정·12개 head 점수 | [논문 A.11.3](https://arxiv.org/html/2505.13033v3#A11.SS3)의 64·96·128 창을 유지하고, [공식 head 선택](https://github.com/ibm-granite/granite-tsfm/blob/9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d/notebooks/hfdemo/tspulse/anomaly_detection/triangulation_scoring.py) 앞에 승인한 창 집계를 연결했다. |
+
+총 36개 설정·45개 head별 점수이며 ALoRa는 제외 상태다. PaAno의 [공식 최소 500개 규칙](https://github.com/jinnnju/PaAno/blob/d4c67116190efa4592dc6a8a157ced0def68b6af/utils/utils.py#L33)은
+논문 10%와 충돌하므로 현행 경로에서 제거했다. patch 1,000개면 memory는 100개다.
+반올림·KMeans·나머지 학습식을 유지하며 실제 memory 개수와 정책을 학습 로그에 기록한다.
+실행 가능성 판정·checkpoint도 맞췄고, 과거 official_minimum checkpoint 호환은 남겼다.
+
+q별 창 선택, head별 기여와 반올림, 불완전 원표 거부, 세 LOFO 경로의 holdout 비개입,
+정책·native 점수 연결과 PaAno memory 경계·복원 회귀를 작성했다. 호출부와 변경 내용을
+독립적으로 교차 검토했다. 로컬 테스트·Python 구문 검사·YAML 파싱·데이터·모델은 실행하지
+않았다. L4 배치·거리 분할과 CPU 8개 제한은 유지하며 실제 실행 가능성은 원격 검증 전이다.
+
+현재 게이트는 구현·정적 검토 완료다. 다음은 Lightning 안내의 관련 원격 회귀와 작은
+합성·저장·재개·자원 검사이며, 통과 후 새 코드·환경·예산을 봉인한다. 아래의 평균식 승인
+대기는 당시 이력이다. 이번 승인으로 해제됐으며 본 튜닝은 아직 시작하지 않았다.
+
+## 논문 우선·L4 실행 보완 — 2026-09-07
+
+논문에 명시된 방법을 우선하고 생략된 세부만 공개 코드로 보완한다. 후보 36개와 학습
+설정은 유지했다. PaAno는 공식 batch 512의 GPU 추론·비유한값 처리·float32 overlap 평균을
+반영하고, memory 대표 탐색을 작은 거리 행렬로 나눴다. 같은 거리에서는 첫 원본 index를
+유지한다. fit 말미의 문맥을 붙이는 공식 추론에 맞춰 짧은 평가 입력의 feasibility도 고쳤다.
+
+PCA는 공식 전체 평가 fit과 점수식을 유지하면서 거리 행렬을 1,024행씩 계산하고 중간 배열을
+해제한다. GDN·TSPulse 실행 결과의 교정 범위를 실제 전체 평가 교정과 맞췄다. CPU 채점은
+최대 8 worker·각 thread 1이며, 자원 gate는 컨테이너 RAM 한도를 반영한다. GDN probe는
+내부 validation 이후 학습 배치를 점검하도록 prefix 길이를 보충하고 실제 배치 수를 기록한다.
+
+TSPulse [논문 A.11.3](https://arxiv.org/html/2505.13033v3#A11.SS3)의 공통 창 선택식은
+[공식 선택 코드](https://github.com/ibm-granite/granite-tsfm/blob/9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d/notebooks/hfdemo/tspulse/anomaly_detection/triangulation_scoring.py)와
+[TSB-AD 통합](https://github.com/TheDatumOrg/TSB-AD/blob/e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48/tutorials/TSPulse.py)에도 없다.
+다른 공개 구현에서도 논문과 같은 공통 창 선택의 집계 근거를 확보하지 못했다. 세 창의
+점수 풀은 보존하되 공통 창 집계는 사용자에게 제시한 프로젝트 보완안의 답을 기다린다.
+현재 공동 창·head 선택을 논문 두 단계 선택의 재현으로 표시하지 않는다.
+
+배치·거리 분할의 원식 대조, 동률·마지막 짧은 블록, 교정 metadata, 짧은 평가 입력,
+GDN 내부 검증 후 배치 수와 RAM 한도의 회귀를 작성했다. 호출부와 변경 내용을 교차 검토했고
+git diff --check는 통과했다. 테스트·Python·YAML 파싱·데이터·모델 실행은 하지 않았다.
+L4 실측과 원격 회귀가 남았으며, 최대 배치 probe만으로 전체 KMeans·PCA fit의 RAM이나
+전체 튜닝 시간을 보장하지 않는다.
+
+## ALoRa 제거와 남은 공식 풀 점검 — 2026-09-07
+
+사용자 지시로 ALoRa의 registry·입력 전처리·모델 폴더·전용 테스트·캐시를 삭제했다.
+공통 실행기·feasibility·공식 source 목록·합성 및 자원 점검, Dev18의 공유 학습·재개·subset
+실행 옵션과 비용 집계 연결도 제거했다. 남은 Tier 2는 PaAno·GDN이며 대체 모델은 추가하지 않았다.
+SQLite 저장 schema와 일반 실행의 실패·중단·완료·재개 기록은 유지한다.
+
+남은 후보 선언부터 실제 호출 인자, adapter의 학습·추론과 저장·완료 검사, q별 선택까지
+정적으로 대조했다. 후보는 36개 설정·45개 head별 선택 항목이며 추가 축소하지 않았다.
+
+| 모델 | 유지한 풀 | 근거 |
+| --- | --- | --- |
+| One-Liners | MWVAR 창 11개와 고정 차분·앙상블 5개 | 봉인한 [공식 비교 구현](https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad). 닫힌 논문 HPO 목록으로 부르지 않는다. |
+| PCA_LEGACY | n_components 0.25·0.5·0.75·None, window 100 | [공식 multivariate HPO 목록](https://github.com/TheDatumOrg/TSB-AD/blob/e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48/TSB_AD/HP_list.py). 최종 0.25 하나로 줄이지 않았다. |
+| PaAno | patch 32·64·96 × 학습률 0.001·0.0001·0.00001 | [논문 B.1](https://arxiv.org/html/2602.01359v3#A2.SS1). 100 iterations·batch 512·native RevIN·memory 구축을 유지한다. |
+| GDN | run.sh 1개와 논문 주요 값에 공개 코드 기본값을 보완한 2개 | [공식 코드](https://github.com/d-ailin/GDN), [논문 4.4](https://ojs.aaai.org/index.php/AAAI/article/download/16523/16330). topk 5·15·30과 각 embedding·hidden·epoch·validation·patience·Adam beta를 묶어 전달한다. |
+| TimeRCD | multi checkpoint·context 5000 하나 | [논문 주실험](https://arxiv.org/html/2509.21190v5). context 민감도나 다른 벤치마크의 값을 후보로 추가하지 않았다. |
+| TSPulse | aggregation 64·96·128 × time·fft·pred·ensemble | [논문 A.11.3](https://arxiv.org/html/2505.13033v3#A11.SS3). 3개 설정의 12개 head별 점수이며 context 512·patch 8·추론 batch 128을 유지한다. |
+
+GDN의 calibration 선언과 두 One-Liner 앙상블 선언이 실제 출력·저장기의 이름과 달라
+완료 검사를 막는 불일치를 수정했다. GDN은 official_full_evaluation, 앙상블은 none으로
+맞추고 실제 전체 평가 median/IQR·component min-max는 별도 recipe 항목으로 보존한다.
+후처리 계산은 바꾸지 않았다. 완료 검사 회귀가 가짜 calibration 선언 대신 실제 registry를
+읽도록 고쳤고, 남은 모든 후보의 주요 인자가 실행기에 전달되는 검사도 보강했다.
+
+새 Tier 1 변형 네 개의 source 신원·smoke 등록 누락을 보완했다. ALoRa 제거로 깨지는
+과거 고정 행 수와 폐기 예산 의존 검사는 현재 registry 또는 독립된 과거 규약 fixture를 쓰도록
+고쳤다. PaAno·GDN의 q60/q80별 다른 설정이 최종 실행 요청까지 전달되는 회귀는 유지했다.
+
+q별 가능 후보를 따로 구성하며 전체 q·CSV의 교집합으로 줄이지 않는다. 입력 조건을 만족하지
+못한 후보는 unavailable로 남기고 batch·window·topk를 임의로 바꾸지 않는다. TSPulse의
+공통 aggregation 선택 세부식은 공개 근거가 없으므로 Dev18 조건·q별 선택과 원문 재현을 구분한다.
+
+코드·설정에서 ALoRa와 제거 API의 잔여 참조를 확인했고 git diff --check는 통과했다.
+모델·테스트·Python·YAML 파싱·원본 데이터 스캔은 실행하지 않았다. 현재 게이트는 제거·풀 점검의
+정적 검토 완료이며, 다음은 Lightning 안내의 관련 원격 회귀와 작은 합성·저장·재개 점검이다.
+기존 inventory에서 계산한 4,092회는 예상값이며 검증 후 새 예산을 봉인한다. 본 튜닝은 아직 시작하지 않는다.
+
+아래는 이전 점검 이력이다. ALoRa·과거 후보 수·예산·실행 판정은 현행 계약으로 사용하지 않는다.
+
+## 튜닝 SQLite 저장·중단 재개 점검 — 2026-09-07
+
+사용자 요청으로 튜닝의 SQLite 적재와 중단 후 재개만 다시 확인했다. schema·실험 신원,
+prefix·채널 특징, 결과 갱신의 transaction과 완료 파일에서 DB 연결을 복구하는 경로를 유지한다.
+기존 저장 계약의 내부 검증 없음 문구는 실제 학습·검증·평가 범위를 실행 metadata에 기록한다는
+설명으로 고쳤다. 후보·학습·채점·선택식과 저장 위치는 바꾸지 않았다.
+
+`test_recommendation_evidence`에 채널 SQL 삽입 중 실패한 prefix의 롤백, 결과 SQL 갱신 중
+실패한 미채점 행의 보존, 재연결 뒤 중복 없는 적재와 완료값 유지 검사를 추가했다. 내보내기
+실패 뒤 다시 연결해 백업·CSV를 완성하는 검사도 보강했다. 호출부·변경 내용·공백·충돌 표식은
+정적으로 확인했으며 로컬 테스트·Python 구문 검사·YAML 파싱·데이터·모델 실행은 하지 않았다.
+현재 게이트는 저장 계약 수정·재개 회귀 보강과 정적 검토 완료다. 다음 시작점은 원격의
+`test_recommendation_evidence`·`test_feature_capture_execution` 실행이다.
+
+## ALoRa 공식 조합 5개로 축소 — 2026-09-07
+
+사용자 지시로 ALoRa의 추가 창 후보 20개를 제거했다. SMD·HAI·SWaT·MSL은 window 20,
+PSM은 100이며 각 공식 조합의 학습·추론 batch, epoch와 수동 h1을 함께 유지한다.
+현재 registry는 41개 설정·50개 주 선택 항목이다. 내부 학습 절차·q별 독립 선택·seed 3회는 유지한다.
+
+기존 inventory의 길이·채널 수와 현행 구조 조건으로 계산하면 ALoRa는
+`(4×70+66)×3=1,038`회다. 축소 전 5,100회보다 실행 횟수가 약 79.6% 줄고,
+다른 모델 4,092회를 합치면 총 5,130회다. 사전 점검·재시도는 제외한 계산이며 실측 시간이나
+봉인된 실행 예산이 아니다. 모델별 비용이 달라 실행 횟수 감소율을 시간 감소율로 쓰지 않는다.
+
+후보 원조합·예산·q별 다른 조합 선택의 회귀를 수정했다. 후보 선언 5개와 추가 창 후보 부재를
+텍스트로 대조했고 정적 diff·공백·충돌 표식 검사도 통과했다. 로컬 테스트·Python 구문 검사·
+YAML 파싱·원본 데이터 스캔·모델 실행은 하지 않았다.
+현재 게이트는 후보 축소 반영·정적 검토이며 다음 시작점은 원격 회귀와 새 예산 봉인이다.
+
+## 튜닝 CSV별 VUS-PR 집계 보완 — 2026-09-07
+
+튜닝의 파일별 채점·seed 평균·family 평균·선택·저장 호출부를 확인했다. 기존 주선택은
+각 CSV의 VUS-PR를 seed 평균한 뒤 family 안 파일 평균과 family 동일 가중 평균을 계산한다.
+누락·중복·미완료 점수를 거부하고 같은 q·조건 집단의 후보끼리 비교하는 경로를 유지했다.
+
+후보 원표의 모델별·Tier별 행에 같은 파일의 동일 가중 보조 평균 `series_macro_vus_pr`와
+`file_count`·`family_count`를 추가했다. 기존 `family_macro_vus_pr`로 설정을 고르며,
+새 열은 기존 후보 원표·모델별 CSV·선택 JSON에 함께 저장된다. CSV의 원시 점수를 합쳐
+VUS-PR를 다시 계산하거나 파일별 최고 설정의 점수만 모으지 않는다.
+
+family별 파일 수와 seed 점수가 다를 때 두 평균이 다른 우승 설정을 가리키는 회귀를 작성했다.
+모델별 전체 집단과 Tier별 공통 파일 집단의 집계값·파일 수·CSV 저장을 검사한다. 로컬
+테스트·Python 구문 검사·YAML 파싱·데이터 스캔·채점·모델·그림은 실행하지 않았다.
+독립 정적 검토에서 집계 범위와 CSV 열 전달의 추가 결함은 찾지 못했고 공백·충돌 표식 검사도 통과했다.
+현재 게이트는 튜닝 집계 보완·정적 검토이며 다음 시작점은 원격의 해당 회귀 실행이다.
+
+## 공식 튜닝 절차 전면 수정 — 2026-09-07
+
+사용자의 폐기·전면 수정 지시에 따라 공개 원논문 코드의 후보와 모델별 절차를 반영했다.
+축소 전 registry는 61개 설정, TSPulse head를 구분하면 70개 주 선택 항목이었다. One-Liners의
+공개 창·차분·앙상블과 PCA 전체 평가 fit·zero pruning을 포함한다. PaAno는 9개 HPO 후보와
+원본 batch·memory·초기화 순서를 유지한다. ALoRa는 공개 실행 tuple 5개와 검증 창 5개를
+결합한 25개를 독립 실행한다. GDN은 코드·논문의 3개 tuple과 각 검증 비율·조기 종료를 쓴다.
+
+ALoRa의 원본 batch축 loss와 평가 loader checkpoint 상태 전이, GDN의 prefix window
+검증 분할과 전체 평가 오차 교정, TimeRCD·TSPulse의 전체 평가 입력 통계를 복원했다.
+TSPulse는 공식 경계 복원·정규화·smoothing 후 ensemble을 만들고 네 head 모두 선택 후보로
+남긴다. 공통 저장기는 native 점수에 보정·평활화를 중복 적용하지 않는다. 같은 native 점수를
+raw·smoothed 두 파일로 저장하고 실제 내부 검증·통계 범위와 학습 문맥을 metadata에 남긴다.
+
+모델·q별 설정 선택은 독립이다. 공개 TSPulse의 aggregation 96·데이터셋별 파일평균 head
+선택과 미관측 데이터셋의 time 기본값도 계산해 별도 원표로 저장한다. 공식 파일 열거 순서에
+의존하던 동률은 README의 실행 순서를 명시해 고정했다. q별 다른 데이터셋 이전·계층 선택은
+사용자 연구 설계로 구분한다. ALoRa h1 자동식과 TSPulse 공통 aggregation 선택의 세부식은
+공개 구현이 없어 임의로 만들지 않았다.
+
+저장소의 과거 dev18_tuning 결과와 ratio_tuned_v1 선택 snapshot, 이전 budget·feasibility
+원표·요약을 삭제했다. 점수 폴더에는 보존용 .gitkeep만 있었고 원본 데이터·감사·ell_max·
+공식 소스·사전학습 가중치는 유지했다. Downloads 결과를 복구하거나 새 실행에 연결하지 않는다.
+
+회귀와 원격 합성 점검 경로를 작성하고 호출부·반환값·저장 및 재개 계약을 정적으로 대조했다.
+로컬 테스트·Python 구문 검사·YAML 파싱·원본 데이터 스캔·학습·checkpoint·채점·그림은
+실행하지 않았다. 이전 테스트 통과 기록을 이번 변경의 검증 결과로 사용하지 않는다.
+정적 diff 검사와 폐기 대상 5개 경로의 부재 확인은 통과했다. 현재 게이트는 코드 반영·정적 검토
+완료이며 원격 검증 전이다. 시간 단축 방안은 후속 요청에서 다룬다.
+
+## 수정 전 공식 후보 범위와 q별 독립 선택 감사 — 2026-09-07
+
+사용자 요청으로 활성 8개 모델의 registry, 실제 인자 전달과 공식 논문·봉인 코드를 읽었다.
+공식 주 튜닝 범위, 기본 실행값, 별도 민감도·비교 실험은 구분한다. 현재 152개 설정과
+156개 주 선택 항목을 공식 비교 범위 전체의 상위 집합이라고 부르지는 않는다.
+
+| 모델 | 현재 후보와 공식 근거의 관계 |
+| --- | --- |
+| MWVAR | window 64·96은 공식 예시에 맞는다. 공식 비교 실행의 5·10·32·50·60·100·256·512·1024는 빠져 있다. 공식 CLI에는 닫힌 HPO grid가 없다. |
+| SQDIFF_LAST3 | 공식 Last-3의 고정식과 일치한다. Last-1, 별도 Centered-5와 앙상블은 현행 범위에 없다. |
+| PCA_LEGACY | 공식 multivariate PCA의 n_components 0.25·0.5·0.75·None 네 후보와 window 100을 포함한다. prefix fit과 zero_pruning=False는 프로젝트 적응이다. |
+| PaAno | 최신 논문 주 HPO의 patch 32·64·96 × LR 0.001·0.0001·0.00001을 모두 포함한다. 학습 100회는 최신 논문과 봉인 multivariate 실행 스크립트에 맞는다. 민감도 분석의 다른 값은 주 HPO와 구분한다. |
+| ALoRa | 공개 데이터셋 학습 설정을 포함하는 batch 2종 × window 5종 × epoch 3종 × h1 4종의 120개 프로젝트 조합이다. 논문의 h1 자동 결정과 원 코드의 평가 loss checkpoint 선택은 재현하지 않는다. |
+| GDN | 공식 실행값과 논문의 embedding/topk 조합·최대 50 epoch를 포함한다. 논문 Adam beta2=0.99와 현행 공식 코드 기본 0.999, 조기 종료와 전체 cap 학습은 다르다. 단일 출력층에서 쓰이지 않는 hidden 64를 별도 후보로 늘리지는 않는다. |
+| TimeRCD | multi·context 5000은 공식 주실험과 맞는다. 별도 문맥 길이 민감도 전체를 탐색하는 구성은 아니다. |
+| TSPulse | aggregation 64·96·128은 공식 HPO 범위다. time·fft와 중복 제거한 pred는 포함하지만 공식 ensemble은 주후보에 없다. 보조 raw_max는 공식 ensemble과 전처리·후처리가 달라 같은 출력으로 취급하지 않는다. |
+
+MWVAR의 범위는 [공식 비교 실행과 소스](https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad/-/tree/dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9/results/baselines),
+PCA는 [봉인 HP 목록](https://github.com/TheDatumOrg/TSB-AD/blob/e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48/TSB_AD/HP_list.py)을 기준으로 확인했다.
+[PaAno 최신 논문](https://arxiv.org/html/2602.01359v3),
+[ALoRa 논문](https://arxiv.org/html/2602.08467v1)과 [봉인 실행 예시](https://github.com/CharisShimillas/ALoRa/blob/97dcc4a337710e6dc72c1a67893717c9538bae1a/How_to_run.sh),
+[GDN 논문](https://ojs.aaai.org/index.php/AAAI/article/download/16523/16330),
+[TimeRCD 논문](https://arxiv.org/html/2509.21190v5),
+[TSPulse 논문](https://arxiv.org/html/2505.13033v3)의 주실험과 민감도 범위도 대조했다.
+과거 기록의 TSPulse 64·128을 공식 96 주변의 프로젝트 확장으로 부른 설명은 이 판정으로 정정한다.
+
+현행 선택 단위는 모델·q·실행 가능 후보 집합이 같은 파일 집단이다. 후보 예산과 채점 원표를
+q별로 분리하고, 해당 q 점수만으로 설정을 선택한다. 계층 대표도 같은 q 안에서 모델과 설정을
+함께 고른다. 선택표·최종 실행 요청·실행 합집합은 q와 config를 함께 유지하며 ALoRa 학습 공유도
+q를 넘지 않는다. q60의 PaAno patch 64와 q80의 patch 96을 별도로 전달하는 기존 회귀를 읽었다.
+training-free·strict zero-shot은 점수를 q 사이에서 공유하므로 같은 설정이 반복되는 것이 정상이다.
+
+실행 코드와 후보 값은 바꾸지 않았다. 로컬 테스트·Python·YAML 파싱·원본 데이터 스캔·모델 실행은
+하지 않았고 문서 diff만 검사했다. 현재 게이트는 원격 검증 전으로 유지한다. 전면 튜닝 전에
+공식 비교 범위의 미포함 항목과 의도된 적응을 구분해 후보 범위를 확정해야 한다.
+
+## 추천용 특징·SQLite 저장 코드 반영 — 2026-09-07
+
+현재 게이트는 수집·저장 코드 반영·정적 검토 완료이며 원격 실행 검증 전이다. 첨부 저장 양식의
+네 묶음과 성능표 11열을 반영했다. 성능표는 CSV/head별로 나누고 실제 전체 설정을 내보낸다.
+특징은 CSV/q당 한 번 계산해 재개 때도 검증한 저장값을 사용한다. 정상 준비의 논리 prefix는
+126개이며 채널 기록은 `7×각 CSV의 d 합계`다. 계산 descriptor는 최소 목록으로 줄였다.
+
+주요 수정은 `src/common/compute_prefix_features.py`,
+`tests/ghl_main/store_recommendation_evidence.py`, 두 튜닝 진입점과
+`tests/ghl_main/package_recommendation_handoff.py`다. 공통 실행 증거·저장 writer·checker,
+예산·선택 근거 reader도 새 schema에 맞췄다. 새 feasibility 원표도 관측 행 수만 저장하며
+내부 분할 검증 변수는 유지한다. 중복 fit/validation 행 수와 과거 baseline
+봉인 연결을 없앴고, 실제 실행 backend·메모리 범위·공유 비용 이력을 보존한다.
+
+파일·호출부·diff를 검토하고 관련 회귀를 작성했다. Git 공백 검사와 문서·회귀 파일 경로,
+새 산출물의 ignore 범위를 확인했다. Windows 줄 끝은 기존 CRLF 설정대로 검사했다.
+독립 정적 검토에서 보조 head 누락 시
+실행 완료 판정과 전달 묶음 생성 전 전체 완료 표시를 찾아 수정했다. 모델 실행·채점/선택·
+추천 자료와 전달 인수를 구분한다. 저장 실패 때 남은 배치를 멈추고 완료 파일에서 DB 연결을
+복구하며, 내보내기는 일관된 DB 백업에서 만든다.
+
+로컬 테스트·Python 구문 검사·YAML 파싱·원본 CSV 스캔·모델·checkpoint·VUS·그림은
+실행하지 않았다. 회귀 통과나 추천 성능 검증을 완료했다는 판정은 아니다. 다음 시작점은
+관련 원격 회귀와 작은 저장 경로 검증이다. 통과한 코드·계약·예산을 봉인한 뒤 별도 명령으로
+전면 튜닝하며 GHL·HAI 게이트는 유지한다.
+
+## 사용자 저장 양식과 SQLite 연결 프롬프트 반영 — 2026-09-06
+
+사용자 엑셀의 Sheet1에서 성능 결과·입력 특징·채널별 특징·모델 설정 네 묶음을 확인하고
+[첨부본](tuning_storage_format.xlsx)과 [수정 프롬프트](tuning_feature_capture_prompt.md)에 반영했다.
+새 저장의 중복 fit/validation 행 수를 제거하고 기존 strict schema의 관련 writer/reader를
+함께 수정하도록 했다. CSV/q별 특징은 한 번 계산해 재사용하며 다른 q로 복사하지 않는다.
+필수 통계는 첨부 항목과 유효 수·미정의 사유로 줄이고, 추가 descriptor는 후속 계산으로 미룬다.
+SQLite 키·head별 11열 출력·제외 기록·중단 재개·원표 대조·일관된 백업을 계약에 포함했다.
+
+작은 XLSX의 셀 내용과 원본/첨부 해시 일치, 문서 경로·열 이름·변경 내용을 확인했다.
+원본 엑셀은 변경하지 않았다. 튜닝 코드·DB를 구현하거나 모델·테스트를 실행하지 않았다.
+현재 게이트는 프롬프트 개정 완료·구현 전이며 다음 시작점은 이 프롬프트에 따른 수집 코드 수정이다.
+
+## 전면 재튜닝 전 수집 프롬프트 개정 — 2026-09-06
+
+사용자가 과거 80/20·후보 풀·스케일러의 결과를 폐기하고 모두 다시 실행한다고 명확히 했다.
+앞선 감사는 현재 코드에 CSV/q별 prefix feature와 전체 후보 연결이 부족함을 확인했지만,
+프롬프트를 과거 자료 보완 중심으로 작성한 부분은 잘못이었다. [수정 프롬프트](tuning_feature_capture_prompt.md)를
+새 실행 전 수집 구현, 입력 feature 사전 검사, 전체 결과 인수 기준으로 전면 교체했다.
+
+full-prefix 준비·종료에 남은 과거 baseline 지문 연결, 실행 계측·필수 저장, 새 실험 안의
+중단 재개, 전달 묶음 검증을 수정 요구에 포함했다. 코드·원본 데이터·다운로드 파일은 건드리지
+않았다. 문서 경로·핵심 조건·공백만 검증하며 Python·YAML·테스트·모델은 실행하지 않는다.
+현재 게이트는 프롬프트 개정 완료·수집 구현 전이다. 다음 시작점은 별도 구현 명령이다.
+
+## 공식 변형 재검토 반영 — 2026-09-06
+
+사용자 승인에 따라 `source_faithful_v3`를 설정·adapter·실행·저장·선택 계약에 반영했다.
+PaAno 외부 MinMax를 제거하고 ALoRa fit StandardScaler를 복원했다. GDN은 여섯 그래프
+묶음과 cap30·50의 12개 후보를 독립 학습하고 최저 학습 loss checkpoint를 복원한다. 비용은
+선택 epoch가 아닌 실제 cap 실행량이다. ALoRa의 표본별 특잇값 절단은 논문 식으로 유지한다.
+
+TimeRCD는 padding 전 유효 블록, TSPulse는 과거 문맥 통계만 사용한다. TSPulse 미래 1점은
+같은 과거 통계로 변환한다. 입력 통계 범위는 score calibration 범위와 다른 metadata에 남긴다.
+TSPulse는 time·fft 여섯 개와 pred 한 개를 주후보로 쓰며 raw_max는 보조로 보존한다. 전체
+설정은 152개, 주 선택 항목은 156개다. 실제 실행 예산과 config ID는 새로 봉인해야 한다.
+
+공식 후보를 유지한 부분, 누수 때문에 바꾼 부분, 프로젝트 확장과 한계는 `decisions.md`와
+`plan_v5.md`에 기록했다. q별 model_ratio와 tier_adaptive 선택 및 전체 후보 원자료 보존을
+유지하고 기업 조회에도 두 정책의 별도 설정을 연결했다. matched LOFO에는 양쪽 선택 head를
+기록한다. 비용 목적과 제약이 정해지기 전에 VUS·개발 Pareto로 후보를 삭제하지 않는다.
+
+등록 실행·ALoRa 공유 학습·checkpoint/resource smoke·저장·재개·head 선택 호출부를 정적으로
+대조했다. 문맥 밖 입력 비개입, pred 중복 불변성, scaler fit 경계, GDN checkpoint와 실제 비용,
+ALoRa 수식, Tier 후보 누락 방지 회귀를 작성했다. 테스트·Python 구문 검사·YAML 파싱·모델·
+원본 CSV 스캔·그림은 실행하지 않았다. 현재 게이트는 수정·정적 검토 완료이며 원격 검증 전이다.
+Git diff 공백 검사는 통과했고 두 설정 파일의 입력 전처리 선언이 일치함을 텍스트로 확인했다.
+GDN 명시 후보는 12행이며 cap30·50이 각각 6행이다. 과거 equal-trial 고정 ID를 읽는 역사
+검사는 현행 registry의 검증 결과로 쓰지 않으며 이번 원격 검증은 관련 full-prefix 회귀가 대상이다.
+
+## 이전 설계 제안 — 2026-09-06
+
+이번 재검토는 제안이며 현행 registry·실행 계약을 바꾸지 않았다. q별 전체 prefix·독립 선택,
+Dev18과 최종 평가의 격리, label 비개입·전체 후보 원자료 보존은 유지한다. 모델별 입력 처리를
+일괄 MinMax로 통일하거나 zero-shot을 이유로 필요한 입력 정규화를 전부 제거할 필요는 없다.
+PaAno는 공식 multivariate의 RevIN, ALoRa는 fit-only StandardScaler를 기본으로 제안한다.
+
+ALoRa 논문의 h1 결정 설명만으로는 그대로 호출할 공식 자동 추정기를 재현하기 어렵다. 앞선
+감사에서 지적한 자동 절차 누락만으로 현재 풀을 부적합하다고 판정하지 않는다. 네 발표값의
+탐색을 명시한 적응 설계로 유지하되 임의 추정식을 공식 절차로 추가하지 않는다. 논문에 맞춘
+손실의 절단 축 수정은 유지하고 근거와 최소 검증을 남긴다.
+
+제안한 주후보는 MWVAR 2개, SQDIFF_LAST3 1개, PCA 4개, PaAno 9개, ALoRa 120개,
+GDN 12개, TimeRCD 1개, TSPulse 7개다. GDN은 기존 네 graph recipe에 논문 근거의
+64/k15·128/k30(batch32)을 더한 여섯 recipe와 학습 상한 30·50을 조합한다. source의
+no-validation 분기를 따라 각 상한 안의 학습 loss 최저 checkpoint를 쓴다. 이 설정도 원본
+default validation 절차와 구분한다. 선택 epoch가 이르더라도 비용은 전체 상한까지 계산한다.
+
+Tier 3에는 선언한 추론 문맥 안의 일시적 정규화를 허용하고 전체 평가 파일에 scaler나 score
+교정기를 맞추지 않는 계약을 제안한다. TimeRCD는 5,000 block, TSPulse는 512 past context의
+통계만 쓰며 prediction target에도 past 통계를 적용한다. 이는 현재 strict 규칙의 변경 제안이며
+원본 전체 파일 정규화의 수치 재현이 아니다. 문맥 대기·미래 참조와 block별 수준 변화 손실을
+별도 기록한다. MWVAR에 자기 window 표준화를 적용하면 분산 탐지가 사라지므로 이 규칙을
+모든 Tier에 일괄 적용하지 않는다.
+
+TSPulse는 time·fft별 64·96·128과 중복 없는 pred 하나를 주후보로 제안하고 raw_max 세 개는
+보조로 남긴다. 64·128은 프로젝트 확장값이다. 합계 156개는 feasibility·q·CSV·seed 전의
+논리 후보 수이며 실제 실행 예산이 아니다. 공유 학습·추론 비용과 개별 배포 비용을 구분한다.
+
+후속 비용 최적화의 행동 집합을 VUS 우승표나 개발 Pareto 표만으로 제한하지 않는다. 현재 q에서
+알 수 있는 입력 특성과 전체 후보의 점수·실행 근거를 보존한다. 최종 데이터에서 일부 후보만
+실행한다면 사전에 정한 메뉴 안의 최적으로 범위를 제한한다. 아직 모르는 현장 비용·운영 기간·
+전환비는 0으로 채우지 않는다. 모델·테스트·구문 검사·원본 CSV 계산은 실행하지 않았다.
+
+## 튜닝 목적 적합성 감사 — 2026-09-06
+
+q별 model_ratio와 Tier별 model·config·head 공동 선택, 같은 파일 비교, family-LOFO 및 전체
+후보 원표 보존은 요청한 방향과 맞는다. q마다 선택과 학습을 분리하지만 prefix와 평가 구간은
+겹치므로 통계적으로 독립된 표본은 아니다. 판정은 구조 부합·변형 근거 보완 필요다. 공식 후보
+포함만으로 원본 튜닝 절차를 보존했거나 모든 변형을 정당화했다고 보지 않는다.
+
+ALoRa 원본의 test loss checkpoint 선택을 없앤 이유는 분명하다. 다만 train-fit StandardScaler를
+MinMax로 바꾼 결정과 학습 singular spectrum에서 h1을 정하는 논문 절차를 네 값의 탐색으로
+바꾼 결정은 별도 적응 설계다. 현재 TNN-Geman 손실은 각 표본의 첫 특잇값을 제외하지만 봉인
+코드는 첫 batch 표본을 제외한다. 현재 방식은 논문 식 (7)로 설명되나 이 변경의 명시적 근거와
+작은 수식 검증이 빠져 있다. 공식 코드와 수치가 같은 구현으로 쓰지 않는다.
+
+TimeRCD 공식 zero_shot은 입력 채널을 표준화한다. 이를 제거한 현재 경로는 프로젝트의 추가
+제약이며 zero-shot 자체가 요구하는 변경은 아니다. TSPulse의 외부 scaling·head 정규화 제거와
+raw_max도 별도 점수 정책이다. TSPulse 64·128은 공식 기본 96 주변의 프로젝트 추가 후보로
+구분한다. 유한·비상수 출력 검사는 이 변경들의 탐지 성능 근거가 아니다. GDN의 30 epoch 마지막
+checkpoint도 원본 validation 최저 loss 선택과 다르며 q 전체 fit만으로 최적 일정이 되지는 않는다.
+
+최적 조합은 등록한 유한 후보와 조건 집단 안의 VUS-PR 최적을 뜻한다. 같은 후보가 실행된다는
+조건은 주기·단위·센서 의미·오염률이 비슷하다는 근거가 아니다. 기존 EDA와 조건별 파일·family
+수를 함께 해석하고 근거가 부족한 집단을 일반화 검증으로 올리지 않는다.
+
+전체 ledger·candidate_audit·점수·metadata와 공유 실행 이력은 후속 비용 최적화의 출발 자료다.
+현재 규모표는 model_ratio·tier_adaptive의 성능 우승 후보를 담지만 기업 조회는 model_ratio만
+소비해 별도 Tier 우승 설정이 빠질 수 있다. 비용 후보를 이 조회 결과로 제한하지 않고 비선택
+후보 원자료도 소비해야 한다. matched model comparison의 LOFO 기록에는 선택 head가 빠져
+TSPulse recipe 추적을 보완해야 한다. TSPulse 추론 시간은 모든 head를 함께 계산한 현재 실행
+비용이며 head 하나만 배포할 때의 최소 비용으로 쓰지 않는다.
+
+이번에는 문서·설정·호출부·봉인 공개 source와 기존 inventory만 대조했다. 코드와 후보 풀은
+바꾸지 않았고 모델·테스트·구문 검사·원본 CSV 스캔·점수 재계산은 실행하지 않았다. 다음 설계
+시작점은 위 변경들의 유지 근거와 필요한 최소 검증을 정리하는 일이다. 원격 실행 검증 전 상태를
+유지한다. 운영 threshold·현장 단가·수집속도·전환비와 시간순 운영 검증은 기존 후속 범위다.
+
+## 직전 게이트 판정
+
+중단·재개를 다시 검토해 채점 worker의 잔여 작업, 보고서 CSV 중간 덮어쓰기, 저장 실패 후
+자동 재학습을 막았다. 자원 검사는 probe별 이력을 저장하며 코드·입력·예산·환경·GPU·RAM이
+같은 완료 근거만 재사용한다. 부모와 자식 probe의 seed·결정론 설정도 맞췄다. 일반 모델과
+ALoRa의 당시 snapshot 내용과 반환된 timing은 별도 UUID 이력에 남긴다. 관련 회귀는
+작성만 했으며 이번 판정도 정적 검토 완료·원격 검증 전이다. 후보·선택식은 바꾸지 않았다.
+
+2026-09-06 최신 요청으로 모든 활성 모델의 봉인 원본 후보를 대조했다. MWVAR의 README
+예시 64·96, ALoRa 공식 batch 128·256, GDN 공식 코드의 topk 5·batch 32를 현재 풀에 포함한다.
+GDN topk 2는 저채널 비교용 추가 후보다. 공식 코드와 논문 본문의 설정 차이 및 전체 prefix·
+q별 선택·strict 후처리의 차이는 `plan_v5.md`에 남겼다. 원본 수치 재현이나 기업 성능 보장은 아니다.
+
+단일 진입 파일에 사전 검사·환경 봉인을 연결하고 시작 이력 기반 재시도 횟수 복구, 실패 검사
+보존, 동시 실행 잠금, 미측정 비용을 구분한 이력 요약을 추가했다. 선택 근거는 model_ratio와
+tier_adaptive를 함께 보존한다. 테스트는 작성만 했고 코드·호출부·diff의 정적 대조만 수행했다.
+현재 게이트는 수정·정적 검토 완료이며 원격 검증 전이다. GHL·HAI 내부는 이번에 수정하지 않았다.
+
+## 이전 판정 기록
+
+추가 요청으로 완료 튜닝의 모델별 규모 근거를 추출하고 기업 조회를 정확한 관측 조합으로 제한하는
+코드를 수정했다. q별 설정 선택과 실행 예산은 유지한다. 입력 manifest·설정·snapshot·실제 학습량·
+평가 길이와 모든 예정 seed를 대조하며 선택 JSON과 규모 JSON도 완료 영수증에 포함한다.
+독립 코드 검토에서 다른 시계열의 snapshot이 연결될 여지를 찾아 원본 파일과 recipe 신원까지
+대조하도록 보완했다. 실제 저장 경로와 fixture를 다시 읽은 정적 검토에서 추가 결함은 찾지 못했다.
+
+신원 불일치·누락 seed·미관측 조합·q 누락·공유 head·저장 후 조회·완료 영수증을 다루는 회귀 검사를
+작성했다. 테스트·구문 검사·모델·VUS·원본 CSV 스캔은 실행하지 않았다. 이번 변경의 게이트는
+코드 수정·정적 검토 완료이며 원격 실행 검증 전이다. 수치 상한을 인증하는 운영 검증도 남아 있다.
+
+Tier 3 후보 확대를 공식 튜닝 코드와 재대조했다. 예산이 seed 1, 실행 목록이 seed 0을 써서
+deterministic 후보가 실행 전 대조에서 빠지는 오류를 고쳤다. 예산도 registry의 development
+seed를 읽고 첫 값 0을 쓴다. TSPulse 보고서 범례에는 head를 표시한다. 최신 요청 이후에는
+실행 없이 파일·호출부·diff와 독립 검토만 수행했으며 현재 게이트는 정적 검토 완료·원격 검증 전이다.
+
+직전 튜닝 보완에서는 실행 보고에서 전체 계획량과 이번
+미완료 수를 구분하고 완료 확인 시간과 계산·저장 시도 시간을 따로 기록한다. ALoRa 공유 시도는
+한 번만 합산하며 재개 checkpoint 원본은 CPU로 읽는다. 기존 상태 저장과 영수증 보존은 유지한다.
+
+관련 순수·모킹 검증 10개가 통과했다. 이력 보존 3개, 완료 확인·공유 재개 계약 5개, 명령 보고 1개,
+scaler 저장 1개다. CUDA와 모델 실행은 모킹했고 실제 학습·forward·전체 테스트·CSV 스캔은 하지 않았다.
+기존 원표 재집계나 상한·규모 매칭용 추가 실험도 하지 않았다.
+
+기업 규모 근거는 이번 요청으로 튜닝 완료 보고에 연결한다. 최종 채점기의 threshold 의존은
+GHL·HAI 평가 연결 때 다룬다. 현재 튜닝 채점은 validation threshold를 요구하지 않는 VUS-PR 경로다.
+실제 모델 저장/복원과 자원 검증은 원격에서 남아 있다.
+
+## Tier 3 공식 튜닝 대조 — 2026-09-06
+
+2026-09-06 Tier 3 공식 튜닝을 대조해 TimeRCD의 고정 문맥 5,000은 유지하고 TSPulse의
+time·fft·pred·raw_max 네 점수를 선택 후보로 확대한다. 공식의 family별 선택과 전체 CSV
+평가·정규화는 이번 외부 이전·strict zero-shot 계약에 맞지 않아 도입하지 않는다. raw_max는
+정규화를 생략한 프로젝트 앙상블이다. 모델 출력과 지우의 선택식을 유지하고 후보 목록과
+예산 검증을 고쳤다. 후속 정적 검토에서는 seed 일치와 보고서 범례도 보완했다.
+
+이번 대조 초반에 기존 manifest의 shape만 읽어 수정 전 결과 조합 16,691건, 공유 학습
+5,363건과 논리 원표 17,339행을 확인했다. TSPulse는 54회 추론에서 378행을 만들던 계약이다.
+네 head를 모두 채점하면 54×7×4=1,512행으로 늘어 전체 설계 예산은 18,473행이다.
+기존 로컬 full_prefix_v2 budget은 아직 없었다. 이미 다른 환경에서 봉인한 budget·manifest가
+있다면 자동 승계하지 않으며, 삭제하거나 덮어쓰지 않는다.
+
+수정 전 작은 순수 회귀 검사 1개에서 네 head를 등록하면 기존 validator가 거부하는 실패를
+확인했다. 실행이 허용됐던 후속 시점에는 후보·예산 검사 5개가 통과했으며 모델은 실행하지 않았다.
+사용자의 최신 실행 금지 요청 뒤에는 seed·범례를 수정하고 회귀 검사를 추가·보완했지만
+실행하지 않았다. 이전 5개 통과는 이 최종 수정의 실행 증거가 아니다. 후보 봉인과 legacy 분기,
+같은 추론의 head 선택, final membership 전달을 공식 코드와 로컬 호출부를 읽으며 다시 확인했다.
+로컬 모델·테스트·Python 구문 검사·실데이터·그림은 실행하지 않고 원격 검증으로 남긴다.
+
+## 학습 상태·재개 이력 수정 기록 — 2026-09-06
+
+학습 상태 저장과 실행 이력 보존을 수정했다. PCA의 fitted scaler·PCA를 checkpoint로 저장하고
+재학습 없이 복원하는 경로를 추가했다. Tier 2 입력 scaler는 training 파일로 저장하고 metadata의
+SHA·바이트 수에 연결했다. 새 학습형 산출물은 checkpoint와 필요한 scaler가 있어야 완료로 인정한다.
+모델 artifact 크기에는 입력 scaler도 포함하며 과거 산출물은 다시 쓰지 않는다.
+
+명령 시작부터 고유 이력을 남기고 정상 종료·예외·사용자 중단을 기록한다. 모델별 시도와 ALoRa
+공유 batch 이력도 보존한다. 완료 결과는 기존 영수증으로 복구하고 이전 명령 영수증은 따로 보존한다.
+강제 종료의 미확정 시간은 0으로 채우지 않으며 명령 시간과 내부 모델 시간을 중복 합산하지 않는다.
+이력 저장이 실패하면 완료한 결과를 다시 학습하지 않고 다음 재개 때 영수증을 확인한다.
+
+사용자 요청으로 이번 수정은 파일과 diff만 눈으로 검토했다. 회귀 검사는 작성만 했으며 모델·테스트·
+구문 검사·실데이터 실행은 하지 않았다. 다음 원격 검증은 사용자가 실행을 허용한 뒤 수행한다.
+기업의 100%는 계획 정상 학습량 N으로 유지하고 서비스 상한은 자원 한도와 모델·센서 조건별 성능
+근거를 함께 확인해 정한다. 원본 CSV를 읽거나 상한 수치를 실행으로 검증하지 않았다.
+
+## 직전 통합 검증 기록 — 2026-09-05
+
+`full_prefix_v2`의 전체 prefix 분할, 모델별 교정 출처, ALoRa 공유 학습과 checkpoint 재개,
+파일별 가능 후보·동일 패널 선택, 조건부 final 실행과 기업 입력 범위 검사를 연결했다.
+관련 순수·모킹 검증 102개가 통과했다. q별 다른 설정 선택, 완료 결과 보존, 누락 h1만 채점,
+다른 CSV 실행 거부와 상한 초과 차단을 확인했다. 변경 Python 40개 구문·YAML 2개 파싱과
+diff 검사도 통과했다. ALoRa window는 전체 복사 대신 현재 batch만 복사하며 작은 NumPy 배열로
+기존 순서와 같음을 확인했다. 실제 모델·checkpoint forward는 실행하지 않았다.
+
+기존 manifest의 shape로 계산한 새 범위는 결과 조합 16,691건, 공유 학습 5,363건,
+VUS 논리 원표 17,339행이다. ALoRa 12,240개 조합은 1,020개 학습 trajectory다. 원본 CSV나
+점수 배열을 다시 읽지 않았다. 최종 budget 봉인은 원격 실행 전 현재 코드 신원으로 수행한다.
+
+기존 소스·입력·VUS evaluator·ell_max 근거는 보존한다. 분할과 학습 일정이 바뀐 모델의 원격
+합성 검증, 새 budget과 연결한 foundation checkpoint 확인, 실제 자원 측정과 튜닝은 남아 있다.
+실행 명령은 [Lightning 안내](lightning_studio.md#전체-prefix-튜닝), 다음 작업은
+[next_session](next_session.md)을 따른다. GHL·HAI 최종 인수는 아래 기존 미완료 조건을 유지한다.
+
+## 이전 80/20 실행 기록
+
+2026-09-05 비율별 추가 튜닝의 정적 예산을 확인했다. main은 기존 1,170건을 보존하고 738건을
+추가해 1,908건·2,556행을 만든다. ALoRa는 heads 8을 유지하는 10개 고정 subset에서 450건을
+별도 실행한다. PaAno 64는 q80·100, 96은 q100에만 열린다. 새 결과는
+`results/dev18_tuning/ratio_tuned_v1/`에 분리하며 아래 공통 config 계약은 기존 통제 실험의
+기록이다. 로컬에서는 작은 함수 검증과 계획 생성만 했고 새 모델 실행·VUS·그림 생성은 하지 않았다.
 
 현행 기준은 [계획서 v5](plan_v5.md)다. 본실험은 GHL과 HAI이며, TSB-AD-M 비-GHL 18개는
 모델·recipe 선택용 튜닝 패널이다. 활성 roster는 Tier 1 `MWVAR·SQDIFF_LAST3·PCA_LEGACY`,

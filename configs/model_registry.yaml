@@ -1,40 +1,46 @@
-version: 1
+version: 2
 
 seeds:
   development: [0, 1, 2]
   final: [3, 4, 5, 6, 7]
 
 selection:
-  tier_q_floor: {t1: 5, t2: 10, t3: 5}
+  tier_q_floor: {t1: 5, t2: 5, t3: 5}
   minimum_primary_ratio_count: 3
-  allowed_primary_hpo_regimes: [equal_trial, runtime_matched]
-  primary_hpo_regime: equal_trial
-  budget_id: b5367ad431093
-  selection_status: ready
-  selection_rule_id: tier_fixed_family_lofo_v2
+  allowed_primary_hpo_regimes: [full_prefix_per_ratio]
+  primary_hpo_regime: full_prefix_per_ratio
+  budget_id: null
+  selection_status: pending_full_prefix_budget
+  selection_rule_id: full_prefix_tspulse_two_stage_family_lofo_v3
   primary_score_variants:
-    TSPulse: [raw_max]
-  diagnostic_score_variants:
-    TSPulse: [time, fft, pred]
+    TSPulse: [time, fft, pred, ensemble]
+  diagnostic_score_variants: {}
 
 common_recipe:
-  input_dispatch: registered_executor_v1
+  methodology_revision: paper_tuning_v4
+  input_dispatch: registered_executor_full_prefix_v2
+  training_split: full_prefix_v2
+  storage_schema_version: full_prefix_storage.v1
+  training_input_contract: current_prefix_input_with_model_native_fit_validation_and_evaluation_statistics
   input_scaling:
     training_free: none
-    pca_legacy: model_internal_window_standardscaler_fit_only
-    tier2: external_minmax_fit_only
-    strict_zero_shot: none
+    pca_legacy: model_internal_window_standardscaler_full_evaluation
+    paano: model_native_revin_without_external_scaler
+    gdn: external_minmax_fit_only
+    strict_zero_shot: model_native_full_evaluation_statistics
   score_calibration:
-    fit_validation: validation_median_iqr
-    target_free: none
+    fit_validation: model_native
+    full_prefix_scalar: model_native
+    full_prefix_channels: model_native
+    target_free: model_native
     epsilon: 0.01
   smoothing:
-    kind: trailing_mean
-    window: 4
-    boundary: first_three_timesteps_zero
+    kind: model_native
+    window: 0
+    boundary: model_native
   order:
-    raw: normalize_then_aggregate
-    smoothed: normalize_then_smooth_per_channel_then_aggregate
+    raw: model_native_then_aggregate
+    smoothed: identical_to_raw_native_score
   aggregation:
     channel_scores: max
     scalar_scores: model_native
@@ -51,7 +57,23 @@ models:
     local_relationship: behavioral_reimplementation
     target_use: training_free
     preprocess_recipe: {calibration: none, aggregation: max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, evaluation_mode: offline_noncausal, context_policy: centered_window_edge_repeat}
-    fixed: {window: 96, centered: true, ddof: 1}
+    fixed: {centered: true, ddof: 1}
+    candidate_basis: 봉인 저장소의 비교 실행 창 11종이다. 닫힌 공식 HPO grid는 없다.
+    grid:
+      window: [5, 10, 32, 50, 60, 64, 96, 100, 256, 512, 1024]
+
+  SQDIFF_LAST1:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
+    source_checkpoint_sha256: none
+    source_url: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
+    source_license: MIT
+    local_relationship: behavioral_reimplementation
+    target_use: training_free
+    preprocess_recipe: {calibration: none, aggregation: max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, evaluation_mode: offline_noncausal, context_policy: trailing_mean_backfill}
+    fixed: {lag: 1, window: 2, correction: 2.0}
 
   SQDIFF_LAST3:
     tier: t1
@@ -66,18 +88,58 @@ models:
     preprocess_recipe: {calibration: none, aggregation: max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, evaluation_mode: offline_noncausal, context_policy: trailing_mean_backfill}
     fixed: {lag: 3, window: 4, correction: 1.3333333333333333}
 
+  SQDIFF_CENTERED5:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
+    source_checkpoint_sha256: none
+    source_url: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
+    source_license: MIT
+    local_relationship: behavioral_reimplementation
+    target_use: training_free
+    preprocess_recipe: {calibration: none, aggregation: max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, evaluation_mode: offline_noncausal, context_policy: centered_mean_backfill_forward_fill}
+    fixed: {window: 5, centered: true, correction: 1.25}
+
+  MWVAR96_SQDIFF_LAST3:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
+    source_checkpoint_sha256: none
+    source_url: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
+    source_license: MIT
+    local_relationship: behavioral_reimplementation
+    target_use: training_free
+    preprocess_recipe: {official_procedure: true, calibration: none, component_normalization: full_evaluation_minmax, aggregation: component_max_then_channel_max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, target_statistics_fit: true, evaluation_mode: offline_noncausal, context_policy: component_rolling_fill_before_global_score_minmax}
+    fixed: {variance_window: 96, difference_window: 4, difference_centered: false, difference_correction: 1.3333333333333333}
+
+  MWVAR96_SQDIFF_CENTERED5:
+    tier: t1
+    execution_status: ready
+    deterministic: true
+    source_commit: dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9
+    source_checkpoint_sha256: none
+    source_url: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
+    source_license: MIT
+    local_relationship: behavioral_reimplementation
+    target_use: training_free
+    preprocess_recipe: {official_procedure: true, calibration: none, component_normalization: full_evaluation_minmax, aggregation: component_max_then_channel_max, official_scope: univariate, multivariate_extension: channelwise_then_project_max, target_statistics_fit: true, evaluation_mode: offline_noncausal, context_policy: component_rolling_fill_before_global_score_minmax}
+    fixed: {variance_window: 96, difference_window: 5, difference_centered: true, difference_correction: 1.25}
+
   PCA_LEGACY:
     tier: t1
     execution_status: ready
     deterministic: true
-    source_commit: e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48
+    source_commit: 6beac72e11d1155ade40870492c00d0d1cfdcaaf
     source_checkpoint_sha256: none
     source_url: https://github.com/TheDatumOrg/TSB-AD
     source_license: Apache-2.0
     local_relationship: official_source_adaptation
-    target_use: fit_validation
-    preprocess_recipe: {window_normalization: window_row_zscore_ddof1, scaler: window_feature_standardscaler_fit_only, calibration: validation_median_iqr, zero_pruning: false, aggregation: weighted_component_distance_scalar, evaluation_mode: offline_noncausal, context_policy: centered_window_edge_repeat}
-    fixed: {window: 100, zero_pruning: false}
+    target_use: training_free
+    preprocess_recipe: {official_procedure: true, fit_source: full_evaluation, target_statistics_fit: true, window_normalization: official_multi_row_ddof1_uni_column_ddof0, scaler: window_feature_standardscaler_full_evaluation, calibration: none, zero_pruning: true, aggregation: weighted_component_distance_scalar, evaluation_mode: offline_noncausal, context_policy: centered_window_edge_repeat}
+    candidate_basis: 공식 multivariate PCA의 n_components 네 값과 window 100을 쓰며 전체 평가 입력을 fit한다.
+    fixed: {window: 100, zero_pruning: true}
     grid:
       n_components: [0.25, 0.5, 0.75, null]
 
@@ -90,27 +152,13 @@ models:
     source_url: https://github.com/jinnnju/PaAno
     source_license: MIT
     local_relationship: official_source_adaptation
-    target_use: fit_validation
-    preprocess_recipe: {scaler: fit_minmax, calibration: validation_median_iqr, stitching: overlap_mean, aggregation: scalar_patch_top3_cosine, memory_count: floor_fit_patch_fraction, memory_cap: none, evaluation_mode: offline_noncausal, context_policy: stride_one_patch_overlap_mean}
+    target_use: fit_full_prefix
+    preprocess_recipe: {recipe_id: paano_official_minimum_v5, official_procedure: true, scaler: none, normalization: model_native_revin, calibration: none, stitching: overlap_mean, aggregation: scalar_patch_top3_cosine, memory_count: official_minimum, memory_cap: none, checkpoint_selection: best_training_loss, evaluation_mode: offline_noncausal, context_policy: stride_one_patch_overlap_mean}
+    candidate_basis: 공식 저장소에는 HPO loop가 없어 연결 논문 B.1의 patch·학습률 9개 후보를 유지한다. memory 10%와 최소 500개 규칙, patch 수에 따른 상한·반올림·KMeans·native RevIN은 최신 공식 코드를 따른다.
     fixed: {iterations: 100, batch_size: 512, weight_decay: 0.0001, memory_fraction: 0.1, memory_seed: 42, neighbors: 3, use_revin: true}
     grid:
       patch_size: [32, 64, 96]
       learning_rate: [0.001, 0.0001, 0.00001]
-
-  ALoRa:
-    tier: t2
-    execution_status: ready
-    deterministic: false
-    source_commit: 97dcc4a337710e6dc72c1a67893717c9538bae1a
-    source_checkpoint_sha256: none
-    source_url: https://github.com/CharisShimillas/ALoRa
-    source_license: EUPL-1.2
-    local_relationship: official_source_adaptation
-    target_use: fit_validation
-    preprocess_recipe: {scaler: fit_minmax, calibration: validation_median_iqr, stitching: first_window_then_last, aggregation: official_channel_mean, pair_selection: fit_only_spearman, batch_order: fixed, scheduler: constant, evaluation_mode: offline_noncausal, context_policy: first_window_then_last_stitch}
-    fixed: {layers: 3, heads: 8, learning_rate: 0.0001, lambda_regularization: 10, rank_threshold: 0.01, max_pairs: 512, epochs: 5, batch_size: 256, patience: 3, dropout: 0.0, token_kernel_size: 3, optimizer: Adam, weight_decay: 0.0}
-    grid:
-      window: [20, 40, 60, 80, 100]
 
   GDN:
     tier: t2
@@ -121,12 +169,14 @@ models:
     source_url: https://github.com/d-ailin/GDN
     source_license: MIT
     local_relationship: official_source_adaptation
-    target_use: fit_validation
-    preprocess_recipe: {scaler: fit_minmax, calibration: validation_median_iqr, alignment: next_step, aggregation: channelwise_then_project_max, batch_policy: project_transfer_128, evaluation_mode: causal, context_policy: next_step_forecast_no_boundary_fill}
-    fixed: {window: 5, epochs: 30, patience: 15, stride: 1, batch_size: 128, learning_rate: 0.001, weight_decay: 0.0, out_layer_num: 1, graph_heads: 1, graph_dropout: 0.0, output_dropout: 0.2, optimizer: Adam}
+    target_use: fit_full_prefix
+    preprocess_recipe: {recipe_id: gdn_official_procedure_v4, official_procedure: true, scaler: fit_minmax, input_adaptation: prefix_fit_minmax_supplies_official_preprocessed_input, calibration: official_full_evaluation, native_normalization: full_evaluation_median_iqr, native_smoothing: trailing4, alignment: next_step, aggregation: model_native_channel_max, batch_policy: candidate_batch_size, graph_policy: official_self_inclusive_fixed_topk, checkpoint_selection: validation_loss_early_stopping, validation_policy: official_contiguous_window_holdout, target_statistics_fit: true, evaluation_mode: offline_noncausal, context_policy: next_step_forecast_with_full_evaluation_error_calibration}
+    candidate_basis: 공식 저장소에는 완결 HPO grid가 없어 run.sh 한 조합과 논문 SWaT·WADI 주요 값에 코드를 보완한 두 조합을 유지한다. batch 32는 run.sh 값이며 세 조합 모두 최신 train.py의 patience 15와 Adam betas 0.9·0.999를 쓴다. embedding·topk·epoch·validation은 묶어 보존하고 out_layer_num 1에서 hidden은 사용되지 않는다. 세 조합 전체를 공식 HPO grid로 부르지 않는다.
+    fixed: {window: 5, stride: 1, learning_rate: 0.001, weight_decay: 0.0, out_layer_num: 1, graph_heads: 1, graph_dropout: 0.0, output_dropout: 0.2, optimizer: Adam}
     candidates:
-      - {embedding: 64, hidden: 128, rho: 0.3}
-      - {embedding: 128, hidden: 128, rho: 0.25}
+      - {embedding: 64, hidden: 128, topk: 5, batch_size: 32, epochs: 30, patience: 15, validation_ratio: 0.2, optimizer_betas: [0.9, 0.999]}
+      - {embedding: 64, hidden: 64, topk: 15, batch_size: 32, epochs: 50, patience: 15, validation_ratio: 0.1, optimizer_betas: [0.9, 0.999]}
+      - {embedding: 128, hidden: 128, topk: 30, batch_size: 32, epochs: 50, patience: 15, validation_ratio: 0.1, optimizer_betas: [0.9, 0.999]}
 
   TimeRCD:
     tier: t3
@@ -142,14 +192,15 @@ models:
     checkpoint_license: Apache-2.0
     local_relationship: package_backed_adapter
     target_use: strict_zero_shot
-    preprocess_recipe: {normalization: none, calibration: none, padding: short_none_long_tail_last_value, aggregation: model_native_scalar_channel_logit_mean, evaluation_mode: offline_noncausal, context_policy: nonoverlap_context_session_tail_padding}
+    preprocess_recipe: {recipe_id: timercd_official_procedure_v4, official_protocol: true, normalization: full_evaluation_channel_zscore, normalization_scope: full_evaluation, calibration: none, target_statistics_fit: true, padding: short_none_long_tail_last_value, aggregation: model_native_scalar_channel_logit_mean, evaluation_mode: offline_noncausal, context_policy: nonoverlap_context_session_tail_padding}
+    candidate_basis: 공식 multi 문맥 5000과 전체 평가 입력의 채널별 z-score를 쓴다.
     fixed: {context_length: 5000, checkpoint_variant: multi, score_head: probability}
 
   TSPulse:
     tier: t3
     execution_status: ready
     deterministic: true
-    source_commit: 9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d
+    source_commit: fe7a35697723e2a2f5246ae979474bfc554e26c0
     source_checkpoint_sha256: 57fa03b67d1473a7253ac37801b24c391d1fa931395db986743e2f59e556b9ac
     checkpoint_revision: 2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2
     checkpoint_file: model.safetensors
@@ -159,7 +210,8 @@ models:
     checkpoint_license: Apache-2.0
     local_relationship: package_backed_adapter
     target_use: strict_zero_shot
-    preprocess_recipe: {normalization: model_revin_only, calibration: none, native_smoothing: false, aggregation: model_native_scalar_heads, evaluation_mode: offline_noncausal, context_policy: stride_one_context_raw_head_native_alignment, head_alignment: pred_left_context_time_fft_center_offset_edge_repeat, raw_max: common_native_intersection_max_then_edge_repeat}
-    fixed: {context_length: 512, patch_size: 8, heads: [time, fft, pred, raw_max]}
+    preprocess_recipe: {recipe_id: tspulse_official_procedure_v4, official_protocol: true, normalization: full_evaluation_standardscaler_then_model_revin, calibration: official_full_evaluation, target_statistics_fit: true, inference_batch_size: 128, native_smoothing_window: 8, native_smoothing_scope: time_fft_before_ensemble, aggregation: model_native_scalar_heads, evaluation_mode: offline_noncausal, context_policy: official_head_boundary_repeat_then_postprocessing, head_alignment: model_native, ensemble: max_after_head_minmax_and_native_smoothing_then_output_minmax}
+    candidate_basis: 논문 부록 A.11.3의 aggregation 64·96·128과 공식 time·fft·pred·ensemble 점수를 모두 보존한다. 승인한 파일별 time·fft 동일 가중 평균으로 공통 창을 고른 뒤 공식 데이터셋별 파일 평균으로 head를 선택한다. 공통 창의 평균식은 프로젝트 보완이다.
+    fixed: {context_length: 512, patch_size: 8, heads: [time, fft, pred, ensemble]}
     grid:
       aggregation_window: [64, 96, 128]

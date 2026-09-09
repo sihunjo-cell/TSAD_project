@@ -2,20 +2,24 @@
 
 common:
   downsample_factor: 1
-  validation_fraction: 0.2
-  validation_position: tail
-  validation_split_order: after_ratio
+  training_split: full_prefix_v2
+  validation_fraction: 0.0
+  validation_position: model_native
+  validation_split_order: model_native_after_prefix_handoff
   ratio_base: normal_training
   timestamp_as_feature: false
   label_as_feature: false
   label_aggregation: null  # downsample_factor=1이라 집계하지 않는다.
   scaling_owner: registered_executor
-  input_dispatch: registered_executor_v1
+  input_dispatch: registered_executor_full_prefix_v2
+  methodology_revision: paper_tuning_v4
+  prefix_handoff: all_available_rows_before_model_internal_split
   input_scaling:
     training_free: none
-    pca_legacy: model_internal_window_standardscaler_fit_only
-    tier2: external_minmax_fit_only
-    strict_zero_shot: none
+    pca_legacy: model_internal_window_standardscaler_full_evaluation
+    paano: model_native_revin_without_external_scaler
+    gdn: external_minmax_fit_only
+    strict_zero_shot: model_native_full_evaluation_statistics
 
 datasets:
   GHL:
@@ -35,6 +39,6 @@ datasets:
         test_session: test2
     deferred_training_sessions: [train3, train4]
     feature_count: 86
-    validation_split_scope: current_ratio_prefix_per_session
-    scaler_fit_scope: fit_subsets_of_execution_training_sessions
+    validation_split_scope: model_native
+    scaler_fit_scope: full_prefixes_of_execution_training_sessions
     cross_session_windows: false

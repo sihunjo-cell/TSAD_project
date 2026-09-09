@@ -13,6 +13,7 @@ from src.common.model_registry import (
     load_model_registry,
     load_model_registry_with_sha,
     model_registry_sha256,
+    resolve_gdn_topk,
     validate_primary_hpo_seal,
 )
 
@@ -63,6 +64,42 @@ class TestBuildConfigId(unittest.TestCase):
 
 
 class TestModelRegistry(unittest.TestCase):
+    def test_gdn_keeps_official_code_and_paper_tuples_without_project_crosses(self):
+        candidates = [
+            candidate["hyperparameters"]
+            for candidate in load_model_registry()["models"]["GDN"]["candidates"]
+        ]
+        official = next(candidate for candidate in candidates if candidate.get("topk") == 5)
+        self.assertEqual(
+            {key: official[key] for key in (
+                "embedding", "hidden", "topk", "batch_size", "window", "epochs",
+                "stride", "learning_rate", "weight_decay", "out_layer_num", "optimizer",
+            )},
+            {"embedding": 64, "hidden": 128, "topk": 5, "batch_size": 32,
+             "window": 5, "epochs": 30, "stride": 1, "learning_rate": 0.001,
+             "weight_decay": 0.0, "out_layer_num": 1, "optimizer": "Adam"},
+        )
+        self.assertFalse(any("rho" in candidate or candidate.get("topk") == 2 for candidate in candidates))
+        self.assertEqual({
+            (candidate["embedding"], candidate["hidden"], candidate["topk"], candidate["epochs"],
+             candidate["patience"], candidate["validation_ratio"], tuple(candidate["optimizer_betas"]))
+            for candidate in candidates
+        }, {
+            (64, 128, 5, 30, 15, 0.2, (0.9, 0.999)),
+            (64, 64, 15, 50, 15, 0.1, (0.9, 0.999)),
+            (128, 128, 30, 50, 15, 0.1, (0.9, 0.999)),
+        })
+        self.assertEqual(len(candidates), 3)
+        self.assertEqual(load_model_registry()["models"]["GDN"]["preprocess_recipe"]["checkpoint_selection"],
+                         "validation_loss_early_stopping")
+
+    def test_gdn_topk_uses_exact_fixed_count_or_legacy_rho(self):
+        self.assertEqual(resolve_gdn_topk(2, topk=2), 2)
+        self.assertEqual(resolve_gdn_topk(2, rho=0.3), 1)
+        for arguments in ({}, {"topk": 2, "rho": 0.3}, {"topk": True}, {"topk": 0}):
+            with self.subTest(arguments=arguments), self.assertRaises(ValueError):
+                resolve_gdn_topk(3, **arguments)
+
     def test_registry_sha_is_stable_file_identity(self):
         digest = model_registry_sha256()
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
@@ -129,11 +166,11 @@ class TestModelRegistry(unittest.TestCase):
         )
         self.assertEqual(
             registry["TSPulse"]["candidates"][0]["hyperparameters"]["heads"],
-            ["time", "fft", "pred", "raw_max"],
+            ["time", "fft", "pred", "ensemble"],
         )
         self.assertEqual(
-            registry["TSPulse"]["preprocess_recipe"]["raw_max"],
-            "common_native_intersection_max_then_edge_repeat",
+            registry["TSPulse"]["preprocess_recipe"]["ensemble"],
+            "max_after_head_minmax_and_native_smoothing_then_output_minmax",
         )
 
     def test_context_and_multivariate_transfer_policies_are_hashed(self):
@@ -147,7 +184,7 @@ class TestModelRegistry(unittest.TestCase):
         )
         self.assertEqual(
             models["GDN"]["preprocess_recipe"]["aggregation"],
-            "channelwise_then_project_max",
+            "model_native_channel_max",
         )
         for model in models.values():
             self.assertIn(model["preprocess_recipe"]["evaluation_mode"], {
@@ -156,7 +193,7 @@ class TestModelRegistry(unittest.TestCase):
             self.assertIsInstance(model["preprocess_recipe"]["context_policy"], str)
             self.assertTrue(model["preprocess_recipe"]["context_policy"])
 
-    def test_registry_roster_status_and_candidate_order_are_sealed(self):
+    def test_registry_roster_and_full_prefix_candidate_counts_are_explicit(self):
         registry = load_model_registry()
 
         self.assertEqual(
@@ -164,31 +201,22 @@ class TestModelRegistry(unittest.TestCase):
                 (
                     name,
                     model["execution_status"],
-                    tuple(candidate["config_id"] for candidate in model["candidates"]),
+                    len(model["candidates"]),
                 )
                 for name, model in registry["models"].items()
             ),
             (
-                ("MWVAR", "ready", ("c43024819503c",)),
-                ("SQDIFF_LAST3", "ready", ("c472288b30428",)),
-                ("PCA_LEGACY", "ready", (
-                    "c24a495574d36", "c2fe6a5279bc1", "cc1e2a9937297",
-                    "cfc7d9fddbf38",
-                )),
-                ("PaAno", "ready", (
-                    "c486c198d51af", "c867da53d531b", "c78142611e61b",
-                    "c0b08c90aa5f8", "c7dd56f14a04e", "c00ba5b22d349",
-                    "c274acf78c2ae", "cabe0daecefe0", "c4edb5b522474",
-                )),
-                ("ALoRa", "ready", (
-                    "c6d63d2174286", "cedb42f4d95c7", "cf3cfcf2b1d07",
-                    "ca5e2c8657215", "c8c072cb432b9",
-                )),
-                ("GDN", "ready", ("cf1a967db6cfe", "c1168c94d4dfc")),
-                ("TimeRCD", "ready", ("c1c5aeea6f7d3",)),
-                ("TSPulse", "ready", (
-                    "c12c5e6196ea5", "cb3bd93b0152d", "c04a7985c3759",
-                )),
+                ("MWVAR", "ready", 11),
+                ("SQDIFF_LAST1", "ready", 1),
+                ("SQDIFF_LAST3", "ready", 1),
+                ("SQDIFF_CENTERED5", "ready", 1),
+                ("MWVAR96_SQDIFF_LAST3", "ready", 1),
+                ("MWVAR96_SQDIFF_CENTERED5", "ready", 1),
+                ("PCA_LEGACY", "ready", 4),
+                ("PaAno", "ready", 9),
+                ("GDN", "ready", 3),
+                ("TimeRCD", "ready", 1),
+                ("TSPulse", "ready", 3),
             ),
         )
         self.assertEqual(registry["seeds"], {
@@ -196,25 +224,39 @@ class TestModelRegistry(unittest.TestCase):
             "final": [3, 4, 5, 6, 7],
         })
         self.assertRegex(registry["common_recipe_id"], r"^r[0-9a-f]{12}$")
+        self.assertEqual(sum(len(model["candidates"]) for model in registry["models"].values()), 36)
+        from src.common.equal_trial_budget import _score_variants
 
-    def test_equal_trial_budget_and_primary_score_variant_are_sealed(self):
+        self.assertEqual(sum(len(_score_variants(registry["selection"], name, candidate["hyperparameters"])[0])
+                             for name, model in registry["models"].items() for candidate in model["candidates"]), 45)
+        self.assertEqual(registry["common_recipe"]["methodology_revision"], "paper_tuning_v4")
+
+    def test_full_prefix_selection_requires_a_new_budget(self):
         registry = load_model_registry()
-        validate_primary_hpo_seal(registry)
-        self.assertEqual(registry["selection"]["primary_hpo_regime"], "equal_trial")
-        self.assertEqual(registry["selection"]["budget_id"], "b5367ad431093")
+        self.assertEqual(registry["selection"]["primary_hpo_regime"], "full_prefix_per_ratio")
+        self.assertIsNone(registry["selection"]["budget_id"])
+        self.assertEqual(registry["selection"]["selection_status"], "pending_full_prefix_budget")
+        self.assertEqual(registry["selection"]["selection_rule_id"],
+                         "full_prefix_tspulse_two_stage_family_lofo_v3")
         self.assertEqual(
             registry["selection"]["primary_score_variants"],
-            {"TSPulse": ["raw_max"]},
+            {"TSPulse": ["time", "fft", "pred", "ensemble"]},
         )
-        for field, value in (
-            ("budget_id", "not-sealed"),
-            ("selection_status", "pending_budget_seal"),
-            ("primary_score_variants", {"TSPulse": ["time"]}),
-        ):
-            changed = deepcopy(registry)
-            changed["selection"][field] = value
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                validate_primary_hpo_seal(changed)
+        with self.assertRaisesRegex(ValueError, "ready"):
+            validate_primary_hpo_seal(registry)
+
+    def test_paper_native_statistics_and_duplicate_raw_smoothed_contract_are_explicit(self):
+        registry = load_model_registry()
+        common = registry["common_recipe"]
+        self.assertEqual(common["smoothing"], {"kind": "model_native", "window": 0, "boundary": "model_native"})
+        self.assertEqual(common["order"]["smoothed"], "identical_to_raw_native_score")
+        self.assertNotIn("tspulse_prediction_aggregation_window", registry["selection"])
+        self.assertEqual(registry["selection"]["diagnostic_score_variants"], {})
+        models = registry["models"]
+        self.assertEqual(models["PCA_LEGACY"]["target_use"], "training_free")
+        for name in ("PCA_LEGACY", "MWVAR96_SQDIFF_LAST3", "MWVAR96_SQDIFF_CENTERED5", "GDN", "TimeRCD", "TSPulse"):
+            self.assertTrue(models[name]["preprocess_recipe"]["target_statistics_fit"], name)
+        self.assertEqual(models["TimeRCD"]["preprocess_recipe"]["calibration"], "none")
 
     def test_active_models_record_unambiguous_source_provenance(self):
         models = load_model_registry()["models"]
@@ -234,10 +276,6 @@ class TestModelRegistry(unittest.TestCase):
             "PaAno": (
                 "https://github.com/jinnnju/PaAno",
                 "MIT", "official_source_adaptation",
-            ),
-            "ALoRa": (
-                "https://github.com/CharisShimillas/ALoRa",
-                "EUPL-1.2", "official_source_adaptation",
             ),
             "GDN": (
                 "https://github.com/d-ailin/GDN",
@@ -332,7 +370,7 @@ class TestModelRegistry(unittest.TestCase):
                 config_ids.append(candidate["config_id"])
         self.assertEqual(len(config_ids), len(set(config_ids)))
 
-    def test_paano_and_alora_resolved_fields_are_explicit(self):
+    def test_paano_resolved_fields_are_explicit(self):
         registry = load_model_registry()
         paano = registry["models"]["PaAno"]
         self.assertTrue(all(
@@ -343,11 +381,6 @@ class TestModelRegistry(unittest.TestCase):
             candidate["hyperparameters"]["memory_seed"] == 42
             for candidate in paano["candidates"]
         ))
-        alora = registry["models"]["ALoRa"]
-        self.assertTrue(all(
-            candidate["hyperparameters"]["rank_threshold"] == 0.01
-            for candidate in alora["candidates"]
-        ))
 
     def test_training_defaults_that_change_a_recipe_are_in_each_config_id(self):
         registry = load_model_registry()["models"]
@@ -356,10 +389,13 @@ class TestModelRegistry(unittest.TestCase):
         self.assertEqual(
             pca_recipe,
             {
-                "window_normalization": "window_row_zscore_ddof1",
-                "scaler": "window_feature_standardscaler_fit_only",
-                "calibration": "validation_median_iqr",
-                "zero_pruning": False,
+                "official_procedure": True,
+                "fit_source": "full_evaluation",
+                "target_statistics_fit": True,
+                "window_normalization": "official_multi_row_ddof1_uni_column_ddof0",
+                "scaler": "window_feature_standardscaler_full_evaluation",
+                "calibration": "none",
+                "zero_pruning": True,
                 "aggregation": "weighted_component_distance_scalar",
                 "evaluation_mode": "offline_noncausal",
                 "context_policy": "centered_window_edge_repeat",
@@ -370,29 +406,58 @@ class TestModelRegistry(unittest.TestCase):
         self.assertEqual(
             paano_recipe["aggregation"], "scalar_patch_top3_cosine",
         )
-        self.assertEqual(paano_recipe["memory_count"], "floor_fit_patch_fraction")
+        self.assertEqual(paano_recipe["memory_count"], "official_minimum")
         self.assertEqual(paano_recipe["memory_cap"], "none")
-        alora_model = registry["ALoRa"]
-        alora = alora_model["candidates"][0]["hyperparameters"]
-        self.assertEqual(
-            {key: alora[key] for key in ("epochs", "batch_size", "patience")},
-            {"epochs": 5, "batch_size": 256, "patience": 3},
-        )
-        self.assertEqual(alora_model["preprocess_recipe"]["pair_selection"], "fit_only_spearman")
-        self.assertEqual(alora_model["preprocess_recipe"]["batch_order"], "fixed")
-        self.assertEqual(alora_model["preprocess_recipe"]["scheduler"], "constant")
         gdn = registry["GDN"]["candidates"][0]["hyperparameters"]
         self.assertEqual(
-            {key: gdn[key] for key in ("embedding", "hidden", "rho")},
-            {"embedding": 64, "hidden": 128, "rho": 0.3},
+            {key: gdn[key] for key in ("embedding", "hidden", "topk")},
+            {"embedding": 64, "hidden": 128, "topk": 5},
         )
-        self.assertEqual(gdn["batch_size"], 128)
+        self.assertEqual(gdn["batch_size"], 32)
         self.assertEqual(gdn["learning_rate"], 0.001)
         self.assertEqual(gdn["weight_decay"], 0.0)
         self.assertEqual(
             registry["GDN"]["preprocess_recipe"]["batch_policy"],
-            "project_transfer_128",
+            "candidate_batch_size",
         )
+
+    def test_gdn_fixed_topk_is_forwarded_as_a_distinct_adapter_argument(self):
+        from src.common.run_registered_model import build_entrypoint_arguments
+
+        registry = load_model_registry()
+        model = registry["models"]["GDN"]
+        for candidate in model["candidates"]:
+            parameters = candidate["hyperparameters"]
+            arguments = build_entrypoint_arguments(
+                {"model": "GDN", "target_use": model["target_use"],
+                 "hyperparameters": parameters, "seed": 0,
+                 "common_recipe": registry["common_recipe"]},
+                device="cuda", channel_count=32,
+            )
+            if "topk" in parameters:
+                self.assertEqual(arguments["fixed_topk"], parameters["topk"])
+                self.assertNotIn("rho", arguments)
+            else:
+                self.assertEqual(arguments["rho"], parameters["rho"])
+                self.assertNotIn("fixed_topk", arguments)
+            self.assertEqual(arguments["batch_size"], parameters["batch_size"])
+
+    def test_mwvar_passes_all_eleven_official_comparison_windows(self):
+        from src.common.run_registered_model import build_entrypoint_arguments
+
+        model = load_model_registry()["models"]["MWVAR"]
+        self.assertEqual(
+            [candidate["hyperparameters"]["window"] for candidate in model["candidates"]],
+            [5, 10, 32, 50, 60, 64, 96, 100, 256, 512, 1024],
+        )
+        for candidate in model["candidates"]:
+            self.assertEqual(
+                build_entrypoint_arguments(
+                    {"model": "MWVAR", "hyperparameters": candidate["hyperparameters"]},
+                    device="cuda", channel_count=2,
+                ),
+                {"window": candidate["hyperparameters"]["window"]},
+            )
 
     def test_candidate_cannot_override_a_fixed_parameter(self):
         model = {
@@ -404,6 +469,20 @@ class TestModelRegistry(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "fixed.*window"):
             _expand_candidates("MWVAR", model, {"input_dispatch": "registered_executor_v1"})
+
+    def test_candidate_declarations_reject_silent_omission_and_duplicate_trials(self):
+        base = {
+            "source_commit": "a" * 40, "source_checkpoint_sha256": "none",
+            "preprocess_recipe": {}, "fixed": {},
+        }
+        for declaration in (
+            {"candidates": [{"window": 5}], "grid": {"window": [10]}},
+            {"candidates": []}, {"grid": {"window": []}},
+            {"candidates": [{"window": 5}, {"window": 5}]},
+            {"grid": {"window": [5, 5]}},
+        ):
+            with self.subTest(declaration=declaration), self.assertRaises(ValueError):
+                _expand_candidates("MWVAR", {**base, **declaration}, {})
 
 
 if __name__ == "__main__":

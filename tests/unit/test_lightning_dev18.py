@@ -6,6 +6,13 @@ from unittest.mock import patch
 
 
 class TestLightningDev18(unittest.TestCase):
+    def test_legacy_entrypoint_rejects_full_prefix_before_sealing(self):
+        from tests.checks.run_lightning_dev18 import require_legacy_registry
+
+        with self.assertRaisesRegex(RuntimeError, "run_ratio_tuning"):
+            require_legacy_registry({"models": {"PaAno": {"target_use": "fit_full_prefix"}}})
+        require_legacy_registry({"models": {"PaAno": {"target_use": "fit_validation"}}})
+
     def _require_lightning_cuda(self):
         try:
             from tests.checks.run_lightning_dev18 import require_lightning_cuda

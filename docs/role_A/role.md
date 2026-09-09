@@ -45,5 +45,5 @@ normalization 기준은 정상 학습 구간에서 정합니다.
 구현 지시나 성능 예상은 적지 않습니다. 모델 담당자가 파일을 다시 읽지 않고 정적 feasibility를
 계산할 수 있을 만큼 길이·feature·경계·품질 정보가 채워지면 완료입니다.
 
-모델 source·checkpoint SHA, GDN 구현, ALoRa 86채널 smoke, TimeRCD·TSPulse forward는 모델
+모델 source·checkpoint SHA, GDN 구현, TimeRCD·TSPulse forward는 모델
 담당자에게 넘깁니다. 지우님의 VUS-PR·`ℓ_max` 구현과 주혜님의 통계도 대신 맡지 않습니다.

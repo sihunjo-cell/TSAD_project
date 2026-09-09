@@ -7,6 +7,7 @@ import re
 from collections.abc import Mapping
 
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
+from src.common.model_registry import resolve_gdn_topk
 from src.data_split.split_ratio_prefix import compute_prefix_counts
 
 
@@ -139,6 +140,7 @@ def build_dev18_feasibility_rows(
                     available_count, fit_count, validation_count = (
                         compute_prefix_counts(
                             entry["training_boundary"], logical_ratio,
+                            full_prefix=target_use == "fit_full_prefix",
                         )
                     )
                     result = assess_candidate(
@@ -148,6 +150,8 @@ def build_dev18_feasibility_rows(
                         validation_count,
                         entry["row_count"] - entry["training_boundary"],
                         entry["feature_count"],
+                        full_prefix=target_use == "fit_full_prefix",
+                        official_protocol=registry.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4",
                     )
                     rows.append({
                         "model": model_name,
@@ -253,6 +257,7 @@ def _validate_dev18_feasibility_rows(rows: tuple[Mapping, ...], registry: dict) 
             raise ValueError("Dev18 feasibility 경계나 shape가 잘못됐다")
         expected_counts = compute_prefix_counts(
             row["training_boundary"], row["logical_ratio"],
+            full_prefix=model["target_use"] == "fit_full_prefix",
         )
         if (
             row["available_count"], row["fit_count"], row["validation_count"]
@@ -261,6 +266,8 @@ def _validate_dev18_feasibility_rows(rows: tuple[Mapping, ...], registry: dict) 
         result = assess_candidate(
             row["model"], candidate["hyperparameters"], row["fit_count"],
             row["validation_count"], row["test_length"], row["feature_count"],
+            full_prefix=model["target_use"] == "fit_full_prefix",
+            official_protocol=registry.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4",
         )
         expected_derived = json.dumps(
             result["derived"], sort_keys=True, separators=(",", ":"),
@@ -457,6 +464,10 @@ def assess_candidate(
     validation_length: int,
     test_length: int,
     channel_count: int,
+    *,
+    full_prefix: bool = False,
+    official_protocol: bool = False,
+    fit_session_lengths: tuple[int, ...] | None = None,
 ) -> dict:
     """봉인한 구조 제약만으로 한 `(model,config,series,q)`를 판정한다."""
     lengths = (fit_length, validation_length, test_length, channel_count)
@@ -473,7 +484,7 @@ def assess_candidate(
         return _require_lengths(
             {"test": (test_length, window)}, **derived,
         ) or _result(**derived)
-    if model == "SQDIFF_LAST3":
+    if model in {"SQDIFF_LAST1", "SQDIFF_LAST3", "SQDIFF_CENTERED5"}:
         window = hyperparameters["window"]
         derived = {
             "test_window_count": max(0, test_length - window + 1),
@@ -483,6 +494,19 @@ def assess_candidate(
         return _require_lengths(
             {"test": (test_length, window)}, **derived,
         ) or _result(**derived)
+    if model in {"MWVAR96_SQDIFF_LAST3", "MWVAR96_SQDIFF_CENTERED5"}:
+        window = hyperparameters["variance_window"]
+        derived = {"test_window_count": max(0, test_length - window + 1),
+                   "native_continuous_score_count": max(0, test_length - window + 1),
+                   "aligned_score_count": test_length}
+        return _require_lengths({"test": (test_length, window + 1)}, **derived) or _result(**derived)
+    if model == "PCA_LEGACY" and official_protocol:
+        window = hyperparameters["window"]
+        derived = {"evaluation_fit_window_count": max(0, test_length - window + 1),
+                   "test_window_count": max(0, test_length - window + 1),
+                   "native_continuous_score_count": max(0, test_length - window + 1),
+                   "aligned_score_count": test_length}
+        return _require_lengths({"test": (test_length, window + 1)}, **derived) or _result(**derived)
     if model == "PCA_LEGACY":
         window = hyperparameters["window"]
         derived = {
@@ -494,26 +518,29 @@ def assess_candidate(
         }
         return _require_lengths({
             "fit": (fit_length, window + 1),
-            "validation": (validation_length, window),
+            "validation": (validation_length, 0 if full_prefix else window),
             "test": (test_length, window),
         }, **derived) or _result(**derived)
     if model == "PaAno":
         patch = hyperparameters["patch_size"]
         fit_patches = max(0, fit_length - patch + 1)
+        test_patches = test_length if official_protocol else max(0, test_length - patch + 1)
+        if official_protocol or full_prefix:
+            memory_size = max(min(500, max(1, fit_patches - 1)), min(round(fit_patches * hyperparameters["memory_fraction"]), fit_patches - 1))
+        else:
+            memory_size = math.floor(fit_patches * hyperparameters["memory_fraction"])
         derived = {
             "fit_patch_count": fit_patches,
             "validation_patch_count": max(0, validation_length - patch + 1),
-            "test_patch_count": max(0, test_length - patch + 1),
-            "native_continuous_score_count": max(0, test_length - patch + 1),
+            "test_patch_count": test_patches,
+            "native_continuous_score_count": test_patches,
             "aligned_score_count": test_length,
-            "memory_size": math.floor(
-                fit_patches * hyperparameters["memory_fraction"]
-            ),
+            "memory_size": memory_size,
         }
         unavailable = _require_lengths({
             "fit": (fit_length, patch),
-            "validation": (validation_length, patch),
-            "test": (test_length, patch),
+            "validation": (validation_length, 0 if full_prefix else patch),
+            "test": (test_length, 1 if official_protocol else patch),
         }, **derived)
         if unavailable:
             return unavailable
@@ -528,58 +555,46 @@ def assess_candidate(
                 f"pretext patch count {fit_patches} <= patch step {patch}",
                 **derived,
             )
-        return _result(**derived)
-    if model == "ALoRa":
-        window = hyperparameters["window"]
-        pair_count = min(
-            hyperparameters["max_pairs"], channel_count * (channel_count - 1) // 2,
-        )
-        derived = {
-            "fit_window_count": max(0, fit_length - window + 1),
-            "validation_window_count": max(0, validation_length - window + 1),
-            "test_window_count": max(0, test_length - window + 1),
-            "native_continuous_score_count": max(0, test_length - window + 1),
-            "aligned_score_count": test_length,
-            "pair_count": pair_count,
-        }
-        unavailable = _require_lengths({
-            "fit": (fit_length, window),
-            "validation": (validation_length, window),
-            "test": (test_length, window),
-        }, **derived)
-        if unavailable:
-            return unavailable
-        if pair_count < hyperparameters["heads"]:
-            return _result(
-                f"pair count {pair_count} < heads {hyperparameters['heads']}",
-                **derived,
-            )
+        if official_protocol and (
+            fit_patches % hyperparameters["batch_size"] == 1
+            and hyperparameters["iterations"] >= math.ceil(fit_patches / hyperparameters["batch_size"])
+        ):
+            return _result("official PaAno reaches a singleton training batch", **derived)
         return _result(**derived)
     if model == "GDN":
         window = hyperparameters["window"]
-        topk = max(
-            1, min(channel_count - 1, math.floor(hyperparameters["rho"] * channel_count)),
-        ) if channel_count >= 2 else 0
+        sessions = fit_session_lengths if official_protocol and fit_session_lengths is not None else (fit_length,)
+        if not sessions or any(type(length) is not int or length < 0 for length in sessions):
+            raise ValueError("GDN fit session 길이가 잘못됐다")
         derived = {
-            "fit_forecast_count": max(0, fit_length - window),
+            "fit_forecast_count": sum(max(0, length - window) for length in sessions),
             "validation_forecast_count": max(0, validation_length - window),
             "test_forecast_count": max(0, test_length - window),
             "native_continuous_score_count": max(0, test_length - window),
             "aligned_score_count": max(0, test_length - window),
-            "topk": topk,
+            "topk": hyperparameters.get("topk", 0),
         }
-        if channel_count < 2:
-            return _result(
-                "GDN은 self-edge 외 이웃을 위해 채널 2개 이상이 필요하다",
-                **derived,
+        try:
+            derived["topk"] = resolve_gdn_topk(
+                channel_count, rho=hyperparameters.get("rho"),
+                topk=hyperparameters.get("topk"),
             )
+        except ValueError as error:
+            return _result(str(error), **derived)
         unavailable = _require_lengths({
-            "fit": (fit_length, window + 1),
-            "validation": (validation_length, window + 1),
+            "fit": (min(sessions), window + 1),
+            "validation": (validation_length, 0 if full_prefix else window + 1),
             "test": (test_length, window + 1),
         }, **derived)
         if unavailable:
             return unavailable
+        if official_protocol:
+            validation_windows = int(derived["fit_forecast_count"] * hyperparameters["validation_ratio"])
+            training_windows = derived["fit_forecast_count"] - validation_windows
+            derived.update(internal_validation_window_count=validation_windows,
+                           internal_training_window_count=training_windows)
+            if validation_windows < 1 or training_windows < 2:
+                return _result("official GDN needs one validation and two training windows", **derived)
         return _result(**derived)
     if model == "TimeRCD":
         context = hyperparameters["context_length"]
@@ -598,11 +613,12 @@ def assess_candidate(
     if model == "TSPulse":
         context = hyperparameters["context_length"]
         half_aggregation = hyperparameters["aggregation_window"] // 2
-        minimum = 3 * context
+        minimum = context + 1 if official_protocol else 3 * context
         derived = {
             "test_context_window_count": max(0, test_length - context),
             "native_continuous_score_count": max(
-                0, test_length - context - half_aggregation,
+                0, test_length - context + half_aggregation if official_protocol
+                else test_length - context - half_aggregation,
             ),
             "aligned_score_count": test_length,
             "minimum_test_length": minimum,

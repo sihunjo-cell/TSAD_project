@@ -104,7 +104,7 @@ def _csv_bytes(rows: list[dict]) -> bytes:
 def build_dev18_feasibility_artifacts(
     *, repository_root=REPOSITORY_ROOT, output_directory=DEFAULT_OUTPUT_DIRECTORY,
 ) -> dict:
-    """승인된 shape만 읽어 3,276행 원표와 support snapshot을 쓴다."""
+    """승인된 shape만 읽어 등록 후보의 원표와 support snapshot을 쓴다."""
     repository_root = Path(repository_root)
     output_directory = Path(output_directory)
     manifest_path = repository_root / "configs" / "input_manifest.yaml"

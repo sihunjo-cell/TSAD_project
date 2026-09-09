@@ -54,6 +54,16 @@ def validate_then_seal_runtime(*, validate_resource_gate, seal_runtime) -> dict:
     return {"resource_gate": resource_gate, "runtime": seal_runtime()}
 
 
+def require_legacy_registry(registry=None) -> None:
+    """새 실험을 이전 예산·manifest 경로로 실행하지 않는다."""
+    if registry is None:
+        from src.common.model_registry import load_model_registry
+
+        registry = load_model_registry()
+    if any(model.get("target_use") == "fit_full_prefix" for model in registry["models"].values()):
+        raise RuntimeError("새 full-prefix 실험은 python -m tests.ghl_main.run_ratio_tuning 경로를 사용한다")
+
+
 def main() -> None:
     from src.common.set_reproducible_seed import set_reproducible_seed
     from tests.checks.check_dev18_resources import validate_resource_report
@@ -66,7 +76,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     arguments = parser.parse_args()
+    require_legacy_registry()
     require_lightning_cuda()
+    set_reproducible_seed(0)
     validate_then_seal_runtime(
         validate_resource_gate=validate_resource_report,
         seal_runtime=lambda: seal_lightning_runtime(

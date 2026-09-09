@@ -21,5 +21,5 @@ python -m pip install -r src/models/requirements.txt
 python -c "import platform, torch; assert platform.python_version() == '3.11.14'; assert torch.__version__.split('+', 1)[0] == '2.10.0'; assert torch.version.cuda == '12.6'; print(platform.python_version(), torch.__version__, torch.version.cuda)"
 
 echo "설치가 끝났습니다. Studio를 non-interruptible L4로 바꾼 뒤 아래 명령을 실행하세요."
-echo "python tests/checks/check_dev18_resources.py"
-echo "점검 결과가 passed일 때만 python tests/checks/run_lightning_dev18.py 를 실행하세요."
+echo "python -m tests.ghl_main.run_ratio_tuning --prepare"
+echo "새 예산을 만든 뒤 docs/lead/lightning_studio.md의 full-prefix 점검·재개 명령을 따르세요."

@@ -10,7 +10,12 @@ from unittest.mock import patch
 
 import numpy
 
+from src.common.build_config_id import build_common_recipe_id
 from src.common.save_model_artifacts import save_model_score as _save_model_score
+from src.common.execution_evidence import (
+    DEV18_MEASUREMENT_PROTOCOL_ID, FULL_PREFIX_MEASUREMENT_PROTOCOL_ID,
+    FULL_PREFIX_STORAGE_SCHEMA_VERSION,
+)
 from src.common.model_registry import load_model_registry, model_registry_sha256
 from src.common.run_registered_model import (
     build_entrypoint_arguments,
@@ -35,6 +40,17 @@ EXECUTION_IDENTITY_FIELDS = (
     "dataset_role", "split_role", "input_manifest_sha256",
     "final_policy_membership_sha256",
 )
+LEGACY_OUTPUT_RECIPE = {
+    "methodology_revision": "source_faithful_v3", "training_split": "full_prefix_v2",
+    "score_calibration": {
+        "fit_validation": "validation_median_iqr", "target_free": "none",
+        "full_prefix_scalar": "none", "full_prefix_channels": "fit_median_iqr",
+        "epsilon": 0.01,
+    },
+    "smoothing": {"kind": "trailing_mean", "window": 4, "boundary": "first_three_timesteps_zero"},
+    "order": {"raw": "normalize_then_aggregate", "smoothed": "normalize_then_smooth_per_channel_then_aggregate"},
+    "aggregation": {"channel_scores": "max", "scalar_scores": "model_native"},
+}
 
 
 def execution_identity(spec: dict) -> dict:
@@ -42,33 +58,46 @@ def execution_identity(spec: dict) -> dict:
 
 
 def save_model_score(output, output_directory, **arguments):
+    """합성 산출물은 과거 fit 교정·trailing-4 저장 계약으로 고정한다."""
+    arguments["common_recipe"] = deepcopy(LEGACY_OUTPUT_RECIPE)
+    arguments["common_recipe_id"] = build_common_recipe_id(arguments["common_recipe"])
     arguments["dataset"] = "DEV18"
     target_free = arguments["target_use"] in {"training_free", "strict_zero_shot"}
+    full_prefix = arguments["target_use"] == "fit_full_prefix"
+    full_prefix_protocol = arguments["common_recipe"].get("training_split") == "full_prefix_v2"
     training_sessions = []
     if not target_free:
-        supplied = arguments.get("validation_scores", ())
+        supplied = arguments.get("calibration_scores" if full_prefix else "validation_scores", ())
         references = (
             (supplied,)
             if isinstance(supplied, numpy.ndarray) and len(supplied)
             else tuple(supplied)
         )
-        for reference in references:
+        for index, reference in enumerate(references):
             validation_count = len(reference)
             ratio = arguments["ratio"]
-            observation_count = (500 * validation_count + ratio - 1) // ratio
+            if full_prefix:
+                starts = arguments.get("calibration_source_starts", (0,) * len(references))
+                observation_count = (100 * (len(reference) + starts[index]) + ratio - 1) // ratio
+            else:
+                observation_count = (500 * validation_count + ratio - 1) // ratio
             available_count, fit_count, expected_validation = compute_prefix_counts(
-                observation_count, ratio,
+                observation_count, ratio, full_prefix=full_prefix,
             )
             training_sessions.append({
-                "available_count": available_count,
-                "fit_count": fit_count,
-                "validation_count": expected_validation,
-                "observation_count": observation_count,
+                **({"training_boundary": observation_count, "observed_row": available_count}
+                   if full_prefix_protocol else {
+                       "available_count": available_count, "fit_count": fit_count,
+                       "validation_count": expected_validation, "observation_count": observation_count,
+                   }),
                 "observed_duration_seconds": None,
                 "duration_basis": "unavailable",
             })
     arguments.setdefault("execution_evidence", {
-        "measurement_protocol_id": "dev18_registered_runner.v2",
+        **({"storage_schema_version": FULL_PREFIX_STORAGE_SCHEMA_VERSION,
+            "resource_usage": {"status": "unavailable", "reason": "mock"}}
+           if full_prefix_protocol else {}),
+        "measurement_protocol_id": FULL_PREFIX_MEASUREMENT_PROTOCOL_ID if full_prefix_protocol else DEV18_MEASUREMENT_PROTOCOL_ID,
         "execution_phase": "development_hpo",
         "status": "complete", "retry_count": 0,
         "training_sessions": training_sessions,
@@ -79,7 +108,9 @@ def save_model_score(output, output_directory, **arguments):
         "timing": {
             "split_preprocess_seconds": 0.0, "model_setup_seconds": 0.0,
             "training_seconds": 0.0,
-            "validation_inference_seconds": 0.0, "test_inference_seconds": 0.0,
+            **({} if full_prefix_protocol else {"validation_inference_seconds": 0.0}),
+            "test_inference_seconds": 0.0,
+            **({"calibration_inference_seconds": 0.0} if full_prefix_protocol else {}),
         },
         "runtime_seconds": 0.0, "peak_memory_mb": 0.0,
         "model_artifact_bytes": 0,
@@ -90,7 +121,13 @@ def save_model_score(output, output_directory, **arguments):
 def check_registered_output(output_directory, spec, **arguments):
     arguments["dataset"] = "DEV18"
     arguments["input_manifest_path"] = INPUT_MANIFEST_PATH
-    return _check_registered_output(output_directory, spec, **arguments)
+    spec = {**spec, "common_recipe": deepcopy(LEGACY_OUTPUT_RECIPE),
+            "common_recipe_id": build_common_recipe_id(LEGACY_OUTPUT_RECIPE)}
+    registry = load_model_registry()
+    registry["models"]["GDN"]["preprocess_recipe"]["calibration"] = "fit_median_iqr"
+    with patch("tests.ghl_main.check_registered_outputs.load_model_registry_with_sha",
+               return_value=(registry, model_registry_sha256())):
+        return _check_registered_output(output_directory, spec, **arguments)
 
 
 class TestSessionRunnerTiming(unittest.TestCase):
@@ -106,6 +143,7 @@ class TestSessionRunnerTiming(unittest.TestCase):
             "training_seconds": 0.1,
             "validation_inference_seconds": 0.2,
             "test_inference_seconds": 0.3,
+            "calibration_inference_seconds": 0.2,
         }
 
         for missing in complete_timing:
@@ -158,14 +196,16 @@ class TestSessionRunnerTiming(unittest.TestCase):
 class TestRegisteredSpecs(unittest.TestCase):
     def test_development_specs_follow_model_seed_and_ratio_contract(self):
         specs = build_specs("development")
-        self.assertEqual(len(specs), 370)
+        self.assertEqual(len(specs), 276)
         self.assertEqual({spec["model"] for spec in specs}, {
-            "MWVAR", "SQDIFF_LAST3", "PCA_LEGACY", "PaAno",
-            "ALoRa", "GDN", "TimeRCD", "TSPulse",
+            "MWVAR", "SQDIFF_LAST1", "SQDIFF_LAST3", "SQDIFF_CENTERED5",
+            "MWVAR96_SQDIFF_LAST3", "MWVAR96_SQDIFF_CENTERED5",
+            "PCA_LEGACY", "PaAno", "GDN", "TimeRCD", "TSPulse",
         })
 
         mwvar = [spec for spec in specs if spec["model"] == "MWVAR"]
-        self.assertEqual([(spec["ratio"], spec["seed"]) for spec in mwvar], [(100, 0)])
+        self.assertEqual(len(mwvar), 11)
+        self.assertEqual({(spec["ratio"], spec["seed"]) for spec in mwvar}, {(100, 0)})
         paano = [spec for spec in specs if spec["model"] == "PaAno"]
         self.assertEqual(len(paano), 9 * 7 * 3)
         self.assertEqual({spec["seed"] for spec in paano}, {0, 1, 2})
@@ -353,14 +393,6 @@ class TestRegisteredSpecs(unittest.TestCase):
         self.assertNotIn("ratio", paano_arguments)
         self.assertNotIn("seed", paano_arguments)
 
-        alora = next(spec for spec in specs if spec["model"] == "ALoRa")
-        alora_arguments = build_entrypoint_arguments(
-            alora, device="cpu", channel_count=19,
-        )
-        self.assertEqual(alora_arguments["window_size"], 20)
-        self.assertEqual(alora_arguments["epochs"], 5)
-        self.assertEqual(alora_arguments["batch_size"], 256)
-
         gdn = next(spec for spec in specs if spec["model"] == "GDN")
         gdn_arguments = build_entrypoint_arguments(
             gdn, device="cpu", channel_count=19,
@@ -374,7 +406,7 @@ class TestRegisteredSpecs(unittest.TestCase):
             tspulse, device="cpu", channel_count=19,
         )
         self.assertEqual(tspulse_arguments["device"], "cpu")
-        self.assertEqual(tspulse_arguments["batch_size"], 32)
+        self.assertEqual(tspulse_arguments["batch_size"], 128)
         self.assertEqual(
             load_model_entrypoint("TimeRCD").__name__, "score_time_rcd_official",
         )
@@ -384,9 +416,9 @@ class TestRegisteredSpecs(unittest.TestCase):
         for spec in build_specs("development"):
             first_specs.setdefault(spec["model"], spec)
         mutations = {
-            "MWVAR": ("window", 95),
+            "MWVAR": ("ddof", 0),
             "SQDIFF_LAST3": ("lag", 2),
-            "PCA_LEGACY": ("zero_pruning", True),
+            "PCA_LEGACY": ("zero_pruning", False),
             "TimeRCD": ("score_head", "logit"),
             "TSPulse": ("patch_size", 16),
         }
@@ -565,15 +597,15 @@ class TestRegisteredSpecs(unittest.TestCase):
             saved = save_model_score(
                 {
                     "scores": numpy.array([[2.0, 20.0], [4.0, 40.0]]),
-                    "source_start": 0,
-                    "source_end_exclusive": 2,
+                    "source_start": 5,
+                    "source_end_exclusive": 7,
                     "alignment": "next_step",
                     "primitive": "absolute_error",
-                    "calibration_mode": "validation_median_iqr",
+                    "calibration_mode": "fit_median_iqr",
                     "evaluation_mode": "causal",
                     "lookahead": 0,
                     "maximum_effective_lookahead": 0,
-                    "normalization_scope": "current_prefix_validation",
+                    "normalization_scope": "current_prefix_fit",
                 },
                 output_directory,
                 dataset="GHL",
@@ -586,8 +618,9 @@ class TestRegisteredSpecs(unittest.TestCase):
                 config_id=spec["config_id"],
                 common_recipe=spec["common_recipe"],
                 common_recipe_id=spec["common_recipe_id"],
-                normalization_scope="current_prefix_validation",
-                validation_scores=(numpy.array([[1.0, 10.0], [3.0, 30.0]]),),
+                normalization_scope="current_prefix_fit",
+                calibration_scores=(numpy.array([[1.0, 10.0], [3.0, 30.0]]),),
+                calibration_source_starts=(5,),
                 execution_identity=execution_identity(spec),
             )
             self.assertEqual(
@@ -600,7 +633,7 @@ class TestRegisteredSpecs(unittest.TestCase):
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             training = metadata["execution_evidence"]["training_sessions"][0]
 
-            training.update({"available_count": 9, "fit_count": 7})
+            training["observed_row"] = 8
             metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "spec ratio"):
                 check_registered_output(
@@ -608,10 +641,8 @@ class TestRegisteredSpecs(unittest.TestCase):
                 )
 
             training.update({
-                "available_count": 5,
-                "fit_count": 4,
-                "validation_count": 1,
-                "observation_count": 25,
+                "observed_row": 6,
+                "training_boundary": 30,
             })
             metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "validation"):
@@ -664,15 +695,15 @@ class TestRegisteredSpecs(unittest.TestCase):
             saved = save_model_score(
                 {
                     "scores": numpy.array([[2.0, 20.0], [4.0, 40.0]]),
-                    "source_start": 0,
-                    "source_end_exclusive": 2,
+                    "source_start": 5,
+                    "source_end_exclusive": 7,
                     "alignment": "next_step",
                     "primitive": "absolute_error",
-                    "calibration_mode": "validation_median_iqr",
+                    "calibration_mode": "fit_median_iqr",
                     "evaluation_mode": "causal",
                     "lookahead": 0,
                     "maximum_effective_lookahead": 0,
-                    "normalization_scope": "current_prefix_validation",
+                    "normalization_scope": "current_prefix_fit",
                 },
                 output_directory, dataset="GHL", series=1,
                 model=spec["model"], target_use=spec["target_use"],
@@ -680,8 +711,9 @@ class TestRegisteredSpecs(unittest.TestCase):
                 seed=spec["seed"], config_id=spec["config_id"],
                 common_recipe=spec["common_recipe"],
                 common_recipe_id=spec["common_recipe_id"],
-                normalization_scope="current_prefix_validation",
-                validation_scores=(numpy.array([[1.0, 10.0], [3.0, 30.0]]),),
+                normalization_scope="current_prefix_fit",
+                calibration_scores=(numpy.array([[1.0, 10.0], [3.0, 30.0]]),),
+                calibration_source_starts=(5,),
                 execution_identity=execution_identity(spec),
             )
             self.assertEqual(
@@ -793,6 +825,9 @@ class TestRegisteredSpecs(unittest.TestCase):
                     "lookahead": 32,
                     "maximum_effective_lookahead": 511,
                     "normalization_scope": "none",
+                    "input_normalization": "inference_context_zscore",
+                    "input_normalization_scope": "past_context",
+                    "persistent_target_fit": False,
                 },
                 output_directory, dataset="GHL", series=1,
                 model=spec["model"], target_use=spec["target_use"],

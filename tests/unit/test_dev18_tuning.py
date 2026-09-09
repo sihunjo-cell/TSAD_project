@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -61,6 +62,73 @@ def _rows():
 
 
 class TestDev18Tuning(unittest.TestCase):
+    def test_conditional_membership_resolves_native_tspulse_head_by_target_family(self):
+        policy = {"model": "TSPulse", "config_id": "c96", "group_id": "group",
+                  "score_variant": "family_selected", "score_variant_by_family": {"GHL": "fft"},
+                  "score_variant_fallback": "time"}
+        registry = {"models": {"TSPulse": {"target_use": "strict_zero_shot"}}}
+        for role, expected in (("ghl25_final", "fft"), ("train1_to_test1", "time"),
+                               ("train1_train2_to_test2", "time")):
+            with self.subTest(split_role=role):
+                row = run_dev18_tuning._conditional_membership_row(
+                    "model_ratio", {"split_role": role, "series": "01"}, 40,
+                    "TSPulse", "t3", policy, "within_dev_support", True, "", registry,
+                )
+                self.assertEqual(row["score_variant"], expected)
+                self.assertEqual(row["physical_ratio"], 100)
+                self.assertEqual(row["evaluation_ratio"], 40)
+
+    def test_csv_update_preserves_previous_file_on_write_or_sync_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.csv"
+            previous = b"name\r\nprevious\r\n"
+            path.write_bytes(previous)
+            with self.assertRaises(ValueError):
+                run_dev18_tuning._write_csv(path, [{"name": "new"}, {"unexpected": "bad"}], ["name"])
+            self.assertEqual(path.read_bytes(), previous)
+            with patch.object(run_dev18_tuning.os, "fsync", side_effect=OSError("sync failed")):
+                with self.assertRaises(OSError):
+                    run_dev18_tuning._write_csv(path, [{"name": "new"}])
+            self.assertEqual(path.read_bytes(), previous)
+            with patch.object(csv.DictWriter, "writerows", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    run_dev18_tuning._write_csv(path, [{"name": "new"}])
+            self.assertEqual(path.read_bytes(), previous)
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+            run_dev18_tuning._write_csv(path, [{"name": "new"}])
+            with path.open(encoding="utf-8", newline="") as saved:
+                self.assertEqual(list(csv.DictReader(saved)), [{"name": "new"}])
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_training_files_preserve_scaler_and_bind_its_size_and_hash(self):
+        scaler_state = {
+            "data_min": [1.0, 10.0], "data_max": [3.0, 14.0],
+            "scale": [0.5, 0.25], "offset": [-0.5, -2.5], "sample_count": 20,
+        }
+        training_log = {
+            "selected_iteration": 1, "iterations_completed": 2,
+            "best_training_loss": 0.25,
+            "loss_history": [{"iteration": 1, "total_loss": 0.25}, {"iteration": 2, "total_loss": 0.5}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with patch.object(run_dev18_tuning, "REPOSITORY_ROOT", root):
+                size, files = run_dev18_tuning._save_training_files(root, {
+                    "checkpoint": None, "scaler_state": scaler_state,
+                    "training_log": training_log,
+                    "timing": {"fit_seconds": 1.0},
+                })
+            path = root / files["scaler_state"]["file"]
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), scaler_state)
+            self.assertEqual(files["scaler_state"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+            self.assertEqual(size, path.stat().st_size)
+            self.assertEqual(files["scaler_state"]["bytes"], size)
+            log_path = root / files["training_log"]["file"]
+            self.assertEqual(json.loads(log_path.read_text(encoding="utf-8")), training_log)
+            self.assertEqual(files["training_log"]["sha256"], hashlib.sha256(log_path.read_bytes()).hexdigest())
+            self.assertEqual(files["training_log"]["bytes"], log_path.stat().st_size)
+            self.assertEqual(list((root / "training").glob("*.tmp")), [])
+
     def setUp(self):
         self.registry = {
             "selection": {
@@ -249,9 +317,6 @@ class TestDev18Tuning(unittest.TestCase):
                 "MWVAR": {"tier": "t1", "target_use": "training_free",
                           "source_commit": "m" * 40, "source_checkpoint_sha256": "none",
                           "candidates": [{"config_id": "mw", "hyperparameters": {}}]},
-                "ALoRa": {"tier": "t2", "target_use": "fit_validation",
-                          "source_commit": "a" * 40, "source_checkpoint_sha256": "none",
-                          "candidates": [{"config_id": "alora", "hyperparameters": {}}]},
                 "Other": {"tier": "t2", "target_use": "fit_validation",
                           "source_commit": "o" * 40, "source_checkpoint_sha256": "none",
                           "candidates": [{"config_id": "other", "hyperparameters": {}}]},
@@ -275,9 +340,6 @@ class TestDev18Tuning(unittest.TestCase):
                 {"model": "MWVAR", "tier": "t1", "logical_ratios": [5, 10, 40, 100],
                  "selected_config_ids": ["mw"], "primary_score_variants": [""],
                  "dev18_tier_representative_eligible": True},
-                {"model": "ALoRa", "tier": "t2", "logical_ratios": [],
-                 "selected_config_ids": [], "primary_score_variants": [""],
-                 "dev18_tier_representative_eligible": False},
                 {"model": "Other", "tier": "t2", "logical_ratios": [],
                  "selected_config_ids": [], "primary_score_variants": [""],
                  "dev18_tier_representative_eligible": False},
@@ -307,9 +369,6 @@ class TestDev18Tuning(unittest.TestCase):
         )
         selection = select_tuning_policies(
             rows, registry, budget, evaluator_sha256="d" * 64,
-            structural_block_evidence={
-                "ALoRa": {"heads": 8, "blocked_series": ["03", "07"]},
-            },
         )
         adaptive = {
             (row["tier"], row["ratio"]): row
@@ -342,12 +401,6 @@ class TestDev18Tuning(unittest.TestCase):
             },
         )
         self.assertEqual(audit[("t1", 100, "PCA_LEGACY")]["eligibility"], "reference_only")
-        self.assertEqual(
-            audit[("t2", 5, "ALoRa")]["eligibility"],
-            "full_panel_config_unavailable",
-        )
-        self.assertIn("pair_count < heads 8", audit[("t2", 5, "ALoRa")]["reason"])
-        self.assertIn("03, 07", audit[("t2", 5, "ALoRa")]["reason"])
         self.assertEqual(
             audit[("t2", 5, "Other")]["reason"],
             "18개 panel을 덮는 model-fixed config가 없다",
@@ -505,20 +558,6 @@ class TestDev18Tuning(unittest.TestCase):
             {"Tier 1", "Tier 2", "Tier 3", "PCA q100 reference"},
         )
 
-    def test_structural_block_evidence_summarizes_pair_count_series(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "feasibility.csv"
-            path.write_text(
-                "model,status,series,status_reason,derived_json\n"
-                "ALoRa,structurally_infeasible,03,pair count 1 < heads 8,\"{\"\"pair_count\"\":1}\"\n"
-                "ALoRa,structurally_infeasible,04,validation length 1 < 20,\"{\"\"pair_count\"\":512}\"\n",
-                encoding="utf-8",
-            )
-            evidence = run_dev18_tuning.load_structural_block_evidence(
-                path, {"models": {"ALoRa": {"fixed": {"heads": 8}}}},
-            )
-        self.assertEqual(evidence["ALoRa"], {"heads": 8, "blocked_series": ["03"]})
-
     def test_checkpoint_validation_reads_fresh_runtime_evidence(self):
         with patch.object(
             run_dev18_tuning,
@@ -662,12 +701,76 @@ class TestDev18Tuning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "completion.json"
             _write_completion_receipt(path, rows)
+            previous = path.read_bytes()
+            replacement_rows = [{**row, "retry_count": 1} for row in rows]
+            for error_type in (OSError, KeyboardInterrupt):
+                with self.subTest(error=error_type.__name__):
+                    with patch.object(Path, "replace", side_effect=error_type):
+                        with self.assertRaises(error_type):
+                            _write_completion_receipt(path, replacement_rows)
+                    self.assertEqual(path.read_bytes(), previous)
+                    self.assertEqual(list(Path(directory).iterdir()), [path])
+            _write_completion_receipt(path, replacement_rows)
             recovered = _load_completion_receipt(
                 path, spec=spec, panel_row=panel, series=3,
                 budget_id="b123456789abc",
             )
 
-        self.assertEqual(recovered, rows)
+        self.assertEqual(recovered, replacement_rows)
+
+    def test_metadata_update_cleans_interrupted_write_before_retry(self):
+        spec = {"model": "MWVAR", "tier": "t1", "config_id": "c123456789abc",
+                "ratio": 100, "seed": 0, "common_recipe": {}}
+        panel = {"primary_score_variants": [""], "diagnostic_score_variants": []}
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory).resolve()
+            snapshot_path = root / "run_snapshot.json"
+            snapshot_path.write_text('{"project_commit":"sealed"}', encoding="utf-8")
+            metadata_path = root / "score.meta.json"
+            previous = b'{"model":"MWVAR"}'
+            metadata_path.write_bytes(previous)
+            score_path = root / "DEV18__01__MWVAR__t1__r100__s0__raw__trainnorm.npy"
+            score_path.write_bytes(b"saved score")
+            temporary_metadata = metadata_path.with_name(f".{metadata_path.name}.tmp")
+            stack.enter_context(patch.object(run_dev18_tuning, "REPOSITORY_ROOT", root))
+            for name, value in (("_require_same_worktree", None), ("_record_seed_state", None),
+                                ("_save_training_files", (0, {})), ("_validate_bound_run_files", None)):
+                stack.enter_context(patch.object(run_dev18_tuning, name, return_value=value))
+            stack.enter_context(patch("src.common.execution_evidence.build_execution_evidence", return_value={}))
+            stack.enter_context(patch("src.common.save_model_artifacts.save_execution_result", return_value={
+                "metadata_path": str(metadata_path), "score_paths": [str(score_path)],
+            }))
+            stack.enter_context(patch("tests.ghl_main.run_registered_models.build_output_directory", return_value=root))
+            stack.enter_context(patch("tests.ghl_main.check_registered_outputs.check_registered_output"))
+
+            def save_result():
+                return run_dev18_tuning._save_run_result(
+                    {"split": None, "timing": {}}, spec, panel,
+                    {"family": "synthetic", "test_sessions": []}, series=1,
+                    snapshot_path=snapshot_path, peak_memory_mb=None,
+                    input_manifest_path=root / "manifest.yaml", retry_count=0, budget_id="sealed",
+                    execution_attempt={"run_id": "attempt", "history_file": "attempt.json"},
+                )
+
+            original_replace = Path.replace
+            for error_type in (OSError, KeyboardInterrupt):
+                def interrupt_metadata_replace(source, target):
+                    if source == temporary_metadata:
+                        raise error_type
+                    return original_replace(source, target)
+
+                with self.subTest(error=error_type.__name__):
+                    with patch.object(Path, "replace", autospec=True, side_effect=interrupt_metadata_replace):
+                        with self.assertRaises(error_type):
+                            save_result()
+                    self.assertEqual(metadata_path.read_bytes(), previous)
+                    self.assertFalse(temporary_metadata.exists())
+                    self.assertFalse((root / "completion.json").exists())
+            rows = save_result()
+            self.assertEqual(json.loads((root / "completion.json").read_text(encoding="utf-8")), rows)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["execution_attempt"]["run_id"], "attempt")
+            self.assertFalse(temporary_metadata.exists())
 
     def test_membership_reuses_target_free_r100_and_marks_unsupported_rows(self):
         selection = select_tuning_policies(
@@ -831,22 +934,32 @@ class TestDev18Tuning(unittest.TestCase):
                 },
             )
 
+    def _prepare_selection_fixture(self):
+        registry = json.loads(json.dumps(self.registry))
+        registry["selection"].update(selection_status="ready", primary_score_variants={"TSPulse": ["raw_max"]})
+        for model in registry["models"].values():
+            model["execution_status"] = "ready"
+        budget = {key: value for key, value in json.loads(json.dumps(self.budget)).items()
+                  if key != "budget_id"}
+        budget.update(seeds=[0, 1], selection_rule_id=registry["selection"]["selection_rule_id"],
+                      registry_space_sha256=run_dev18_tuning.registry_space_sha256(registry))
+        digest = hashlib.sha256(run_dev18_tuning._json(budget).encode("utf-8")).hexdigest()
+        budget.update(budget_sha256=digest, budget_id="b" + digest[:12], seal_status="sealed",
+                      execution_readiness_status="ready", pending_execution_models=[],
+                      attestation={"config_registry_sha256": "f" * 64})
+        registry["selection"]["budget_id"] = budget["budget_id"]
+        evaluator, ell_max_id = "d" * 64, "ell-test"
+        for name, value in (
+            ("load_model_registry_with_sha", (registry, "f" * 64)), ("_read_json", budget),
+            ("validate_vus_evidence", {"evaluator_sha256": evaluator}),
+            ("_validate_ell_max", {"ell_max_id": ell_max_id}),
+        ):
+            self.enterContext(patch.object(run_dev18_tuning, name, return_value=value))
+        return registry, "f" * 64, budget, evaluator, ell_max_id
+
     def test_selection_only_reuses_ledger_without_vus_or_score_arrays(self):
-        registry, registry_sha256 = run_dev18_tuning.load_model_registry_with_sha()
-        registry = json.loads(json.dumps(registry))
-        budget = json.loads(json.dumps(run_dev18_tuning._read_json(
-            run_dev18_tuning.DEFAULT_BUDGET_PATH,
-        )))
-        evaluator_sha256 = run_dev18_tuning._read_json(
-            run_dev18_tuning.DEFAULT_VUS_REPORT_PATH,
-        )["evaluator_sha256"]
-        ell_max_id = run_dev18_tuning._read_json(
-            run_dev18_tuning.DEFAULT_ELL_MAX_PATH,
-        )["ell_max_id"]
-        scores = {
-            "PCA_LEGACY": 0.20, "MWVAR": 0.40, "SQDIFF_LAST3": 0.30,
-            "PaAno": 0.65, "GDN": 0.60, "TimeRCD": 0.50, "TSPulse": 0.70,
-        }
+        registry, registry_sha256, budget, evaluator_sha256, ell_max_id = self._prepare_selection_fixture()
+        scores = {"M1": .4, "M2": .2, "M0": .0}
         ledger_rows = []
         for series, family in (("01", "A"), ("02", "B")):
             for panel in budget["model_panels"]:
@@ -886,10 +999,6 @@ class TestDev18Tuning(unittest.TestCase):
                 patch.object(
                     run_dev18_tuning, "DEV18_RECOVERY_BUDGET_ID", "test-budget",
                 ),
-                patch.object(
-                    run_dev18_tuning, "load_structural_block_evidence",
-                    return_value={},
-                ),
                 patch.object(run_dev18_tuning, "_git_head", return_value="c" * 40),
                 patch.object(
                     run_dev18_tuning, "_require_same_worktree",
@@ -918,8 +1027,8 @@ class TestDev18Tuning(unittest.TestCase):
             self.assertEqual(result["status"], "complete")
             self.assertEqual(result["ledger_sha256"], ledger_sha256)
             self.assertEqual(result["ledger_rows"], len(ledger_rows))
-            self.assertEqual(result["membership_rows"], 294)
-            self.assertEqual(len(result["selected_path"]), 21)
+            self.assertEqual(result["membership_rows"], 105)
+            self.assertEqual(len(result["selected_path"]), 7)
             self.assertEqual(hashlib.sha256(ledger_path.read_bytes()).hexdigest(), ledger_sha256)
             ledger_builder.assert_not_called()
             scorer.assert_not_called()
@@ -936,11 +1045,10 @@ class TestDev18Tuning(unittest.TestCase):
             with (output / "final_policy_membership.csv").open(
                 encoding="utf-8", newline="",
             ) as input_file:
-                self.assertEqual(len(list(csv.DictReader(input_file))), 294)
+                self.assertEqual(len(list(csv.DictReader(input_file))), 105)
 
     def test_selection_only_rejects_tampered_budget_before_output(self):
-        registry, registry_sha256 = run_dev18_tuning.load_model_registry_with_sha()
-        budget = run_dev18_tuning._read_json(run_dev18_tuning.DEFAULT_BUDGET_PATH)
+        registry, registry_sha256, budget, _, _ = self._prepare_selection_fixture()
         mutations = {
             "tie_rule": lambda changed: changed["tie_rule"].update(tolerance=0.5),
             "model_panels": lambda changed: changed["model_panels"][0].update(
@@ -974,14 +1082,8 @@ class TestDev18Tuning(unittest.TestCase):
                     self.assertFalse(result_directory.exists())
 
     def test_selection_only_rejects_invalid_ledger_before_output(self):
-        budget = run_dev18_tuning._read_json(run_dev18_tuning.DEFAULT_BUDGET_PATH)
+        _, _, budget, evaluator_sha256, ell_max_id = self._prepare_selection_fixture()
         panel = budget["model_panels"][0]
-        evaluator_sha256 = run_dev18_tuning._read_json(
-            run_dev18_tuning.DEFAULT_VUS_REPORT_PATH,
-        )["evaluator_sha256"]
-        ell_max_id = run_dev18_tuning._read_json(
-            run_dev18_tuning.DEFAULT_ELL_MAX_PATH,
-        )["ell_max_id"]
         row = {
             "series": "01", "family": "MSL", "tier": panel["tier"],
             "model": panel["model"], "config_id": panel["selected_config_ids"][0],
@@ -1362,6 +1464,36 @@ import tests.ghl_main.run_dev18_tuning
             with self.assertRaisesRegex(ValueError, "evaluator"):
                 validate_vus_evidence(report, evaluator)
 
+    def test_scoring_failure_waits_for_running_worker_before_returning(self):
+        from concurrent.futures import Future
+
+        tasks = [{"estimated_cost": 1, "manifest_row": {
+            "series": "01", "model": "M", "config_id": config,
+            "physical_ratio": 100, "seed": 0, "score_variant": "",
+        }} for config in ("c1", "c2")]
+        for error in (RuntimeError("score failed"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__):
+                failed, running = Future(), Future()
+                failed.set_exception(error)
+                running.set_running_or_notify_cancel()
+
+                def finish_workers(*, wait, cancel_futures=False):
+                    if wait:
+                        running.set_result("checkpoint saved")
+
+                with patch.object(run_dev18_tuning, "_resolve_score_workers", return_value=2), \
+                        patch.object(run_dev18_tuning.concurrent.futures, "ProcessPoolExecutor") as factory, \
+                        patch.object(run_dev18_tuning.concurrent.futures, "as_completed", return_value=[failed]):
+                    executor = factory.return_value
+                    executor.submit.side_effect = [failed, running]
+                    executor.shutdown.side_effect = finish_workers
+                    with self.assertRaises(type(error)):
+                        run_dev18_tuning._score_primary_rows(tasks, {}, workers=2)
+                self.assertTrue(running.done())
+                self.assertFalse(running.cancelled())
+                self.assertEqual(running.result(), "checkpoint saved")
+                executor.shutdown.assert_called_once_with(wait=True, cancel_futures=True)
+
     def test_cpu_scoring_worker_count_respects_cpu_memory_and_pending_work(self):
         gibibyte = 1024 ** 3
         resolve = run_dev18_tuning._resolve_score_workers
@@ -1374,6 +1506,11 @@ import tests.ghl_main.run_dev18_tuning
             12, pending_count=3, cpu_count=32,
             available_memory_bytes=10 * gibibyte,
         ), 3)
+        for requested in (0, 32):
+            self.assertEqual(resolve(
+                requested, pending_count=100, cpu_count=32,
+                available_memory_bytes=64 * gibibyte,
+            ), 8)
         with self.assertRaisesRegex(ValueError, "workers"):
             resolve(-1, pending_count=1)
 

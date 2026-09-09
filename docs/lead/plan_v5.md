@@ -6,41 +6,97 @@
 
 ## 0. 목적과 현재 범위
 
-본실험 데이터는 GHL과 HAI 두 종류뿐이다. `TSB-AD-M-Tuning.csv`에서 고른 비-GHL 18개
-시계열은 본실험 결과를 주장하는 데이터가 아니라, GHL을 보기 전에 모델과 recipe를 정하는
-튜닝 패널이다. 저장 경로와 기존 인터페이스에 남은 `dev18`은 이 튜닝 패널을 가리키는 내부
-식별자일 뿐 세 번째 실험 데이터셋을 뜻하지 않는다.
+2026-09-09 사용자 요청으로 고정 디스크 여유 공간 기준을 제거했다. 현재 용량은 관측 정보로만
+남기며 추정 용량이나 임의 여유율로 튜닝을 차단하지 않는다. 학습 증거 저장과 종료 이력 저장이
+함께 실패해도 자동 재학습하지 않도록 즉시 재시도와 재기동의 판정을 맞췄다. 원격 검증 전이다.
 
-연구 흐름은 아래 한 줄로 고정한다.
+2026-09-09 마지막 전면 감사에서 확인한 세 연결 오류를 보완했다. GDN 사전 검사를 scalar·
+채널별 네 점수 파일에 맞췄고, 학습 증거 저장 실패 뒤 재기동에서도 자동 재학습을 막는다.
+실제 채점에 쓴 ℓ_max snapshot과 공식 VUS 대조 보고서를 인수 묶음에 연결한다. 모델·후보·
+선택식·DB schema는 유지하며 관련 원격 검증 뒤 새 코드·환경·예산을 봉인한다.
 
-```text
-강혁 EDA·manifest → 모델 담당자 정적 feasibility·모델 함수·점수
-→ 지우 VUS-PR·튜닝 선택 → GHL 주실험 → HAI 외부 확인
-→ 주혜 통계·교차점 → 비용 목적함수와 최종 도입안
-```
+2026-09-09 최종 감사 요청으로 TSPulse의 실제 정규화 수치와 학습 파일의 부분 저장 참조를
+보존한다. PCA는 보수적 RAM 추정 초과만으로 차단하지 않고 기존 자원 검사에서 대표 설정의
+원격 CPU 실측을 확인한다. RAM 80% 미만 기준과 공식 후보·학습식·점수·선택식은 유지하며
+실측은 해당 대표 실행의 근거로만 쓴다. 구현·정적 검토 후 관련 원격 검증과 새 봉인을 거친다.
 
-0·1단계와 2단계 exact panel 실행·채점을 마쳤다. primary 물리 실행 1,170건과 논리 점수
-1,602행이 모두 `complete`이며, 완료 ledger를 다시 채점하지 않고 비율별 Tier 대표와 최종 실행
-membership을 봉인하는 단계다. 당시 L4 checkpoint·자원 gate와 GDN OOM 복구 기록은 실행 증거로
-보존하되 선택표를 다시 만들 때 되풀이하지 않는다.
+2026-09-09 최종 검토 보완으로 PaAno·GDN의 학습 완료 증거를 추론 전에 시도별로 보존한다.
+추론 실패 뒤에도 checkpoint·loss·학습 시간이 남고 정상 완료는 같은 파일을 재사용한다.
+실제 채점 worker 수와 CPU 할당 정보도 명령 이력에 남긴다. 기존 trial 단위 재개와 학습식·
+후보·선택식은 유지하며, 수정된 저장·인수 경로를 원격에서 검증한 뒤 새로 봉인한다.
+
+2026-09-09 사용자 지시로 연결된 공식 저장소의 최신 기본 브랜치 commit을 기준으로
+튜닝 절차와 풀을 대조한다. 일치하는 구현은 유지하고 다른 부분만 공식 코드에 맞춘다.
+이 지시는 이전 논문 우선·PaAno memory 최소 500 제거보다 우선한다. 공식 코드가 공개하지
+않은 풀이나 선택식은 추정하지 않으며 논문 근거와 기존 승인 보완을 따로 기록한다.
+q·모델별 독립 선택, Dev18·holdout 격리와 로컬 실행 금지는 유지한다.
+이번 튜닝 환경은 L4 24GB 한 장과 CPU 8개다. 학습 후보와 수식을 줄이지 않고 PaAno 배치
+추론·대표 memory 탐색, PCA 거리 계산의 메모리 사용을 줄인다. 채점 worker는 최대 8개,
+worker 내부 계산 thread는 1개로 제한한다. 실제 RAM 할당량은 원격에서 확인한다.
+
+2026-09-07 지시로 공식 논문의 튜닝 후보와 절차를 포함하도록 전면 수정했다.
+사용자는 모델별 검증 구간·조기 종료와 TSPulse 전체 평가 구간 통계 교정도 원문 방식으로
+변경하도록 명시했다. 이 결정은 과거 validation 없음·strict 전처리 고정보다 우선한다.
+최신 사용자 지시로 ALoRa와 전용 코드·실행 경로를 제외한다. 대체 모델은 추가하지 않으며
+나머지 모델의 공식 논문·구현 기반 후보 풀과 q별 독립 선택을 유지한다.
+q별 독립 선택과 Dev18/GHL·HAI 분리는 유지하며 공식 절차의 평가 구간 사용 범위를 결과에 명시한다.
+실행 분기를 식별하는 `paper_tuning_v4` 이름은 유지한다. 최신 source commit·recipe·
+hyperparameters는 config_id에 반영하며 기존 점수·checkpoint·선택표를 승계하지 않는다.
+
+이번 구현은 공식 비교 구성을 포함한 Tier 1 후보, 모델별 학습·checkpoint 절차, Tier 3 공식
+후처리와 ensemble, q별 선택·저장·재개 검증을 함께 바꾼다. 확인되지 않은 공식 자동 선택식은
+추정하지 않고 필요한 근거가 없다는 상태를 남긴다. 회귀는 작성하되 로컬 테스트·Python·YAML
+파싱·데이터 스캔·모델 실행은 하지 않는다. 구현과 정적 검토 후 원격 검증을 거쳐 새 예산을 봉인한다.
+
+`full_prefix_v2`는 각 CSV의 현재 q-prefix 전부를 모델에 전달하며, `paper_tuning_v4`에서
+모델 내부 검증 분할을 허용한다. 모델·q·실행 조건 집단마다 설정을 따로 선택한다.
+q60과 q80의 PaAno 설정은 달라도 된다.
+전체 q 교집합이나 18개 중 가장 짧은 파일을 기준으로 모든 후보를 배제하지 않는다.
+
+2026-09-06 최신 지시로 과거 80/20·과거 후보 풀·스케일러의 튜닝 결과는 폐기하고 전부 다시
+실행한다. Downloads의 과거 결과 묶음도 새 실행의 의존성에서 제외한다. 과거 추가 실행
+계획과 고정 membership 행수는 사용하지 않는다. 새 예산은 수정된 registry와
+CSV/q별 구조 조건으로 봉인한다. 과거 결과를 보존·보완하던 이전 지시보다 이 결정이 우선한다.
+
+본실험은 GHL과 HAI다. 비-GHL Dev18은 사전 튜닝 패널이며 최종 성능의 근거가 아니다.
+`source_faithful_v3`의 모델별 전처리·checkpoint·후보 수정은 정적 검토를 마쳤고 원격 검증 전이다.
+2026-09-07 [전면 재튜닝 전 수집 프롬프트](tuning_feature_capture_prompt.md)에 따라 추천용
+feature 수집과 SQLite 저장 코드를 반영했다. 입력 feature 검증을 본 튜닝의 시작 조건으로,
+전체 후보·실행 증거와 추천 자료 인수를 최종 완료 조건으로 연결했다. 정적 검토만 마쳤으며
+원격 검증 전에는 본 튜닝을 시작하지 않는다. 중단 재개·비용 이력은 같은 새 실험 안에서 사용한다.
+저장 계약은 [사용자 엑셀 첨부본](tuning_storage_format.xlsx)의 네 묶음을 기준으로 한다.
+새 full-prefix 저장의 중복 fit/validation 행 수를 없애고, CSV/q별 특징을 한 번 계산해
+여러 모델·설정·seed·head가 재사용한다. 2026-09-09 사용자 요청으로 기존 입력 통계에
+IQR·차분 절댓값 Q90/IQR·전후반 중앙값 이동/IQR·spectral entropy를 더한다. 채널별 값과
+유효 채널 중앙값·NULL 사유를 SQLite 원표에 저장하고 기존 CSV 열 뒤에 추가한다.
+extractor는 `prefix_features.v2`, 추천 DB schema는 3으로 구분하며 이전 DB를 덮어쓰지 않는다.
+단위 검토에 따라 추천용 VIEW·CSV에는 원시 진폭 대신 무차원 특징과 채널별 IQR/std
+중앙값·상수 비율·유효 비율·NULL 사유를 연결한다. 기존 단일 튜닝 명령에서 자동으로
+적재·백업·내보내며, 열의 역할과 단위·표본 간격·fold 검증 계약을 영수증에 보존한다.
+q가 다른 통계는 복사하지 않는다. 모델의 학습·추론·선택식은 이 수집 변경과 별개다.
+성능표 기본 11열은 유지하며 score head는 DB 내부 키와 CSV/head별 출력으로 구분한다.
+튜닝의 관측 범위를 서비스 지원 인증으로 해석하지 않는다. 최신 요청에 따라
+로컬 실행 검증은 보류한다. 새 모델 학습, VUS 채점과 그림 생성은 원격에서
+수행하며, GHL·HAI의 최종 인수 게이트는 별도로 유지한다.
+
+2026-09-06 추가 요청으로 서비스 상한 근거의 보류를 해제한다. q별 후보·전체 prefix·조건집단·
+family-LOFO는 유지하고, 완료된 튜닝 점수와 실행 증거에서 모델별 실제 관측 조합을 추출한다.
+상한은 센서 수와 실행 환경에 따른 관측 범위로 남기며 행·열의 개별 최댓값으로 직사각형을 만들지
+않는다. 같은 q라도 n·d·N이 다르면 기존 결과를 옮겨 추천하지 않는다. 기업의 N은 계획량이며
+학습에 충분한 양이라는 뜻이 아니다. 운영 성능 하한·최종 threshold·비용 최적화는 후속 담당 범위다.
 
 ## 1. 최종 연구 질문
 
-정상 데이터 비율 집합은 `Q={005,010,020,040,060,080,100}`이다. `q`는 target 설비의 정상
-학습 구간에서 시간순으로 관측한 앞쪽 prefix 비율이다. foundation model의 사전학습 데이터량이나
-TSB 파일의 표본 비율이 아니다.
+`Q={005,010,020,040,060,080,100}`를 유지한다. 파일 i의 100%는 봉인된 학습 구간 길이 N_i이며,
+q%는 그 앞쪽 `floor(N_i*q/100)`행이다. 파일 수의 비율이나 전체 CSV의 테스트 포함 길이가 아니다.
 
-주질문은 세 가지다.
+각 q에서 실행 가능한 모델·파라미터를 따로 골랐을 때의 성능과 실행 비용을 비교한다. 이 곡선에는
+데이터 증가와 설정 변경 효과가 함께 들어간다. 데이터 양만의 효과로 해석하지 않는다.
+과거 고정 설정 곡선은 새 분석의 통제 결과로 쓰지 않는다. 새 분석에 필요한 비교값도 새 점수에서 계산한다.
 
-1. 모델과 전처리·학습·정규화 recipe를 고정했을 때 target 정상 데이터가 늘수록 성능은 어떻게
-   달라지는가.
-2. 경량 통계, target 학습형 신경망, strict zero-shot 가운데 어느 계층이 어느 `q`부터 지속적으로
-   우세한가.
-3. 같은 성능 차이를 얻기 위해 필요한 데이터 대기, HPO, 재학습, 추론, 메모리와 artifact 비용은
-   얼마이며 현장 제약 아래 어떤 행동이 가장 싼가.
-
-GHL이 주된 성능·교차점 근거다. HAI는 제조 현장의 다변량 세션 구조에서도 결론이 유지되는지
-확인한다. TSB 튜닝 점수는 모델·recipe 선택에만 쓰며 최종 성능이나 교차점 근거로 사용하지 않는다.
+기업에는 q 하나만으로 답하지 않는다. 현재 학습 가능 행수 n, 센서 수 d, 예상 최종 행수 N과
+지원 상한을 함께 검사하고, 근거가 맞는 설정을 후보로 제시한다. 비용 최적 경로는 오탐·미탐과
+현장 단가가 준비된 뒤 계산한다.
 
 ## 2. 데이터의 역할과 격리
 
@@ -108,7 +164,7 @@ constant·저분산·고상관은 감사 결과로 남길 뿐 채널 삭제 근�
 | --- | --- | --- | --- |
 | 강혁 | GHL·HAI·TSB 튜닝 파일 EDA와 manifest 승인 | 데이터 manifest, 경계·품질·주기성·라벨 통계 | 모델 구현, checkpoint 검증, HPO, VUS-PR |
 | 모델 담당자 | Tier 1·2·3 모델과 본실험 함수 설계, 정적 feasibility, 점수·metadata·snapshot·시간 로그 | 튜닝·GHL·HAI score manifest와 실행 증거 | VUS-PR 재구현, 정책 재선택, 통계 검정 |
-| 지우 | 공통 VUS-PR, `ℓ_max`, threshold 격자, 튜닝 원표와 선택표 | 튜닝 score ledger, 고정 recipe 표, 최종 실행 요청 | 모델 코드와 runner 수정, 최종 통계 해석 |
+| 지우 | 공통 VUS-PR, `ℓ_max`, threshold 격자, 튜닝 원표와 선택표 | 튜닝 score ledger, 조건·q별 recipe 표, 최종 실행 요청 | 모델 코드와 runner 수정, 최종 통계 해석 |
 | 주혜 | 난이도·hit·통계·교차점·결과표 | GHL·HAI 통계와 교차점, 비용 최적화용 성능 원표 | 모델·recipe·threshold 재선택 |
 
 모델 담당자는 강혁의 manifest가 승인된 뒤 정적 feasibility를 계산한다. 지우는 모델 담당자의
@@ -123,9 +179,9 @@ constant·저분산·고상관은 감사 결과로 남길 뿐 채널 삭제 근�
 
 | Tier | 의미 | 활성 후보 |
 | --- | --- | --- |
-| Tier 1 | 경량 통계·저비용 기준선 | `MWVAR`, `SQDIFF_LAST3`, `PCA_LEGACY` |
-| Tier 2 | target 정상 prefix로 학습 | `PaAno`, `ALoRa`, `GDN` |
-| Tier 3 | target 학습 없는 strict zero-shot | `TimeRCD`, `TSPulse` |
+| Tier 1 | 경량 통계·저비용 기준선 | `MWVAR`, `SQDIFF_LAST1`, `SQDIFF_LAST3`, `SQDIFF_CENTERED5`, 두 Var96 앙상블, `PCA_LEGACY` |
+| Tier 2 | target 정상 prefix로 학습 | `PaAno`, `GDN` |
+| Tier 3 | 가중치 학습 없는 공식 zero-shot | `TimeRCD`, `TSPulse` |
 
 `GDN`은 하나만 쓴다. 공식 `d-ailin/GDN` commit
 `9853899da860682669a134e4af315d036aab4eca`를 기준으로 만든
@@ -141,34 +197,32 @@ GDN의 필요한 검사는 활성 구현 하나의 공식 동작 충실도에 �
 `MOMENT_ZS_LEGACY`는 과거 기록일 뿐 현행 모델이 아니다. CrossAD, DADA, CAROTS, ScatterAD도
 이번 연구에 추가하지 않는다. 결과를 본 뒤 후보를 늘리지 않는다.
 
-## 6. 비율 안의 분할과 누수 방지
+## 6. q-prefix와 모델별 공식 절차
 
-학습이나 정상 validation이 필요한 모델은 각 파일의 현재 `q%` prefix 안에서만 시간순으로 나눈다.
+`observed_row(i,q)=floor(N_i*q/100)`은 이용 가능한 정상 prefix 길이다. 공통 실행기는
+`[0, observed_row)`를 모델에 전달하고 모델 내부에서 원문 절차를 적용한다. 고정 평가 tail은
+`[N_i, 원본 CSV 끝)`이다. 실제 학습·검증 창과 평가 통계 출처를 관측 행 수와 구분해 기록한다.
 
-```text
-available_count(q)  = floor(N × q / 100)
-fit_count(q)        = floor(0.8 × available_count(q))
-validation_count(q) = available_count(q) - fit_count(q)
-fit(q)              = [0, fit_count(q))
-validation(q)       = [fit_count(q), available_count(q))
-```
+PaAno는 native RevIN과 학습 loss checkpoint를 쓴다. memory는 최신 공식 코드의 10%와
+최소 500개 규칙을 함께 적용하되 patch 수보다 작게 제한한다. 반올림·KMeans 구축 순서,
+공식 batch와 patch 점수의 학습 문맥 연결을 유지한다. 현행 memory 정책은 `official_minimum`이다.
 
-전체 정상 구간의 마지막 10%나 뒤쪽 20%를 모든 비율에 공통으로 주지 않는다. Tier 2의 입력
-`MinMaxScaler`는 `fit(q)`에만 맞춘다. score의 median·IQR 교정값은 같은 `q`의 validation raw
-score로만 추정한다. fit과 테스트 구간은 교정 통계에 넣지 않는다.
+GDN은 fit-only MinMaxScaler 뒤 q-prefix의 window 중 연속된 검증 블록을 분리한다.
+등록된 validation 비율·optimizer betas·patience를 쓰며 최저 검증 MSE checkpoint를 복원한다.
+평가 채널 오차의 전체 median/IQR, 원본 trailing 4, max 집계가 끝난 점수를 반환한다.
 
-HAI의 각 훈련 파일은 현재 prefix 안에서 따로 80:20으로 나눈다. 첫 실행은 train1 fit에만,
-둘째 실행은 train1·train2 fit을 합친 값에만 scaler를 맞춘다. 파일 경계를 넘는 window와
-validation score를 만들지 않는다.
+PCA는 TSB-AD의 전체 평가 입력 fit과 window zero pruning을 복원한다. q-prefix를
+학습하지 않는 실행으로 등록하되 metadata와 checkpoint에 평가 입력 fit 범위를 남긴다.
+One-Liners의 앙상블도 원본의 전체 평가 component min-max를 사용한다.
 
-training-free Tier 1과 strict zero-shot은 target prefix로 학습·정규화·calibration하지 않는다.
-동일한 물리 점수 한 벌을 여러 `q`에 표시할 수 있지만, 100% 데이터에서 설정을 골랐다는 뜻은
-아니다. stride와 downsampling은 1이다.
+TimeRCD는 전체 평가 입력 z-score, TSPulse는 전체 평가 StandardScaler와 공식 head별
+경계 복원·정규화·smoothing·ensemble을 사용한다. 두 모델의 가중치는 갱신하지 않는다.
+이 절차는 평가 파일 전체를 미리 보는 비인과적 처리다. 과거 문맥 제한 계약은 폐기한다.
 
-정적 시작점은 `q_floor={t1:5,t2:10,t3:5}`다. 이 값은 성능이 아니라 현재 분할식과 최소 window
-조건에서 정했다. 강혁 manifest의 실제 길이·채널 정보로 다시 계산했을 때 모순이 나면 점수를
-보기 전에 중단하고 문서 결정을 고친다.
-
+각 adapter가 끝낸 native 점수에 공통 trailing 4나 median/IQR을 다시 적용하지 않는다.
+저장 형식의 raw·smoothed 두 파일에는 같은 native 점수를 넣고 그 사실을 metadata에 적는다.
+HAI는 기존 두 실행과 세션 경계를 유지한다. 입력·출력이 q와 무관한 모델의 한 점수는
+일곱 q에서 참조하지만 q별 설정 선택은 따로 수행한다.
 ## 7. 정적 feasibility와 모델 함수 완료 조건
 
 정적 feasibility는 점수와 라벨을 읽기 전에 계산한다. 단위는
@@ -180,7 +234,7 @@ training-free Tier 1과 strict zero-shot은 target prefix로 학습·정규화·
 
 1. 공식 source·license·checkpoint 신원이 snapshot에 고정돼 있다.
 2. 합성 입력에서 score shape와 원시 시점 정렬이 맞는다.
-3. label, test threshold, point adjustment와 test-derived normalization이 score 생성에 개입하지 않는다.
+3. 라벨·test threshold·point adjustment는 연속 점수 생성에 쓰지 않고, 공식 평가 통계의 출처를 기록한다.
 4. 같은 seed와 입력으로 재현되며 실패·timeout을 성공 점수로 저장하지 않는다.
 5. 학습, validation 추론, 테스트 추론, 전처리 시간과 peak memory, artifact 크기를 남긴다.
 6. GHL 19채널과 HAI 86채널, HAI 세션 경계를 지원하는지 모델별로 판정한다.
@@ -190,98 +244,123 @@ training-free Tier 1과 strict zero-shot은 target prefix로 학습·정규화·
 
 ## 8. TSB 기반 튜닝
 
-첫 튜닝 점수 전에 후보 roster, model별 config 순서, seed, `Q`, 분할, VUS-PR 구현,
-`ℓ_max`, 실패와 동률 규칙을 봉인한다. stochastic 모델의 튜닝 seed는 `{0,1,2}`다.
+실행 전 registry·입력·전처리·feasibility 코드와 후보 전체를 새 budget에 봉인한다. 새 프로토콜은
+`full_prefix_per_ratio`이며 후보 수가 다른 전수 탐색이다. equal-trial 공정성을 주장하지 않는다.
+stochastic seed는 0·1·2, deterministic은 development 첫 seed인 0으로 한 번 실행한다. 실패를 0점으로 바꾸지 않고 모든
+필수 조합의 완료를 확인한 뒤 선택한다.
 
-primary HPO는 `equal_trial`이다. 정적 feasibility를 통과한 뒤 Tier 안 각 모델에 같은 수의
-full-fidelity trial을 배정하고 exact config 목록과 순서를 budget manifest에 고정한다. 일부
-시계열·일부 epoch로 예선하지 않는다. `runtime_matched`는 실제 timing 근거가 모인 뒤 필요한 경우에만
-민감도로 추가하며 primary 선택을 바꾸는 사후 장치로 쓰지 않는다.
+| 모델 | 공개 후보와 실행 절차 |
+| --- | --- |
+| One-Liners | MWVAR window 5·10·32·50·60·64·96·100·256·512·1024, Last1·Last3·Centered5, Var96+Last3·Var96+Centered5를 포함한다. |
+| PCA_LEGACY | n_components 0.25·0.5·0.75·None과 window 100, 전체 평가 입력 fit·zero pruning을 쓴다. |
+| PaAno | 공식 HPO loop가 없어 연결 논문 B.1의 patch 32·64·96 × LR 0.001·0.0001·0.00001을 유지한다. 100 iterations·batch 512와 공식 memory 10%·최소 500개 규칙을 쓴다. |
+| GDN | 공식 run.sh의 k5·30 epoch·validation0.2 한 조합과 논문 주요 값에 코드를 보완한 k15/k30·50 epoch·validation0.1 두 조합을 유지한다. 모두 batch32, 최신 train.py의 patience15·Adam beta2 0.999를 쓴다. 완결된 공식 HPO grid는 공개되지 않았다. |
+| TimeRCD | multi checkpoint와 context 5000의 공식 주실험 경로다. |
+| TSPulse | aggregation 64·96·128 × time·fft·pred·ensemble의 점수 풀을 보존한다. 공통 창을 고른 뒤 데이터셋별 head를 고른다. pred 대표값 제한과 진단 raw_max는 폐기한다. |
 
-비율별 adaptive 정책은 이 panel의 실패나 지연을 대신할 fallback이 아니다. 새 config, 축소 배치,
-수동 모델 실행으로 exact panel을 우회하지 않는다.
+현행 registry는 36개 설정이며 head를 구분하면 45개 선택 항목이다. CSV/q별 구조 조건을
+적용한 실제 실행량은 새 예산에서 정한다. 과거 점수·checkpoint·선택표·예산을 승계하지 않는다.
+공식 저장소의 기본 실행 한 조합을 전체 HPO 풀로 오인하지 않는다. 공개된 후보·기존 보완
+tuple은 유지하되 코드가 고정한 학습값은 최신 공식 값을 따른다. 별도 민감도 실험의 값을
+근거 없이 HPO grid로 만들거나 짧은 파일에 맞춰 전체 풀을 축소하지 않는다.
+GDN의 hidden 값은 원본 tuple에 남기지만 공식 out_layer_num=1에서는 사용되지 않는다.
+이를 실제 hidden 폭 탐색으로 세지 않으며, 세 조합은 embedding·topk·학습 설정으로 구분된다.
 
-Tier 대표 후보는 해당 Tier의 `q_floor` 이상 모든 주분석 비율에서 공통 recipe가 있고 GHL25와
-HAI 두 실행을 정적으로 지원해야 한다. 조건을 만족하는 후보가 없으면 해당 Tier를
-`unavailable`로 보고하며 `q_floor`를 사후에 올리지 않는다. 모델별 고정 곡선은 각 모델이 실제로
-지원하는 비율과 split에서 계속 보존한다.
+TSPulse는 각 q의 완전한 Dev18 TSPulse 패널에서 파일별 time·fft VUS-PR 평균을 구하고,
+파일 간 동일 가중 평균이 가장 큰 공통 창을 고른다. 창 평균은 반올림하지 않으며 최고값과
+1e-6 이내이면 작은 창을 택한다. 이 식은 2026-09-08 사용자가 승인한 프로젝트 보완이며,
+공개되지 않은 논문 원식으로 부르지 않는다. 공식 실행은 aggregation 기본값 96을 쓰되 다른
+값도 받는다. 선택한 창에서는 공식 CSV처럼 파일별 점수를 소수점 5자리로 반올림한 뒤
+데이터셋별 파일 평균으로 head를 고른다. 동률은 프로젝트가 고정한 time·fft·pred·ensemble
+순서다. 공식 코드의 비정렬 파일 순서는 재현 가능한 규칙을 보장하지 않는다.
+관측하지 않은 데이터셋은 공식 fallback인 time을 쓴다.
+주 정책은 q별 공통 창과 데이터셋별 head 표를 공유한다. LOFO의 모델·계층·공통 파일 비교는
+각 fold의 학습 파일에서 두 단계를 모두 다시 계산해 holdout 점수가 섞이지 않게 한다.
+정책은 데이터셋별 head 표와 fallback을 보존하고 실제 점수 파일을 참조할 때 native head로
+해석한다. 이 참조는 새 head나 물리 실행을 추가하지 않는다.
+Dev18·q·고정 평가 tail과 아래의 계층 비교는 사용자 연구 설계다. 원본 논문의 벤치마크 수치
+자체를 재현한다고 부르지 않는다.
+모델/q마다 실행 가능한 후보 집합이 같은 CSV를 하나의 조건 집단으로 묶는다. 후보 비교는 그
+집단의 같은 파일에서 한다. seed 평균 → family 안 파일 평균 → 포함된 family 동일 가중 평균
+순서다. 이는 공식 저장소에 공통 selector가 없어 유지하는 프로젝트 선택식이다. PCA 공식
+HPO는 파일별 후보 점수를 저장할 뿐 최종값을 고르는 집계식을 공개하지 않는다. PaAno의
+파일·Category 평균도 결과 보고용이며 선택식이 아니다. 앞서 명시한 TSPulse 내부 두 단계는
+파일 동일 가중 평균을 쓰며, 그 결과의 모델·계층
+비교에는 이 family 평균을 적용한다. 파일별 우승 점수만 모아 평균하지 않는다. 채널 scalar/max
+집계와 CSV 간 평균은 별개다.
+각 CSV에서 계산을 마친 VUS-PR만 합치며 서로 다른 CSV의 원시 점수를 이어 붙여 채점하지 않는다.
+후보 원표와 모델별 튜닝 CSV에는 주선택값 `family_macro_vus_pr`, 같은 파일을 동일 가중한
+보조값 `series_macro_vus_pr`, `file_count`와 `family_count`를 함께 저장한다. 두 평균은 같은
+모델·설정·q·head·조건 집단의 파일별 seed 평균을 사용하며 보조값으로 우승 설정을 바꾸지 않는다.
 
-지우는 먼저 seed 평균을 내고 10개 family를 같은 가중치로 평균한다.
+family-LOFO는 각 fold에서 holdout family를 제외하고 설정을 선택한 뒤 holdout 점수를 평가한다.
+한 family만 남은 집단은 선택 점수와 `insufficient_families`를 표시하고 일반화 검증으로 부르지
+않는다. 실제 전달 설정은 Dev18 해당 집단 전체로 다시 고른다. 동률 허용은 1e-6이며
+(model, config_id, score_variant) 사전순으로 정한다.
 
-```text
-z(i,m,h,q) = mean_seed VUSPR(i,m,h,q,seed)
-J(m,h,q)   = (1/10) × sum_family mean_{i in family} z(i,m,h,q)
-```
+`tier_adaptive`도 tier/q마다 모델별 후보 집합의 조합이 같은 파일을 묶고 모델+설정을 함께
+선택한다. 서로 다른 크기의 모델 패널 평균을 바로 비교하지 않는다. 모델 간 보조 비교는 겹치는
+같은 파일에서 LOFO를 다시 계산한다. 선택표에는 q, 집단, 파일 목록, 후보 목록, 실제 prefix와
+N·센서 수 범위, 선택 설정과 검증 상태를 함께 남긴다.
 
-모델 선택은 family leave-one-out 바깥 검증으로 한다. 각 holdout family마다 나머지 9개 family에서
-recipe를 고르고 holdout 점수만 모아 모델 점수 `S(m)`을 만든다. 모델을 고른 뒤 같은 봉인 예산으로
-18개 전체에서 고정 recipe 한 벌을 정한다. 점수 차이가 `1e-6` 이내면
-`(model, config_id, score_variant)` 사전순으로 고른다. 계산비는 동률 처리에 쓰지 않는다.
+튜닝 진입점은 `tests/ghl_main/run_ratio_tuning.py` 하나다. 기본 실행은 후보 봉인, 누락된
+합성·checkpoint·자원 검사, 환경 봉인, 모델 실행, VUS 채점, q별 선택과 근거 저장을 잇는다.
+승인한 입력 inventory·VUS 검증·ell_max 및 설치 환경은 선행 인수물이다. 진입점이 대신
+만들거나 기준을 완화하지 않는다. 기존 실패 검사와 완료 영수증은 보존하고, 통과 기록의
+신원이 바뀌면 중단한다. 재실행 명령과 원격 검증 조건은 `lightning_studio.md`를 따른다.
 
-선택 결과는 세 정책으로 나눈다.
+자원 probe별 완료 이력을 보존하며 재사용 조건에 패키지 환경·GPU·RAM을 포함한다. 채점 중단은
+이미 시작한 worker가 끝난 뒤 확정하고, 보고서 CSV는 원자적으로 교체한다. 모델 실행 후 저장
+실패를 학습 실패로 재시도하지 않는다. 당시 snapshot과 반환된 timing은 UUID 이력에 남기며
+명령 시간과 중복 합산하지 않는다. 강제 종료로 측정하지 못한 비용은 미확정으로 둔다.
 
-- `model_fixed_policy.csv`: 활성 모델마다 지원 `q` 전체에 쓸 recipe 한 벌과 물리 실행 합집합
-- `tier_fixed_policy.csv`: 비율과 무관하게 Tier 대표를 고정한 통제 비교
-- `ratio_adaptive_selection.csv`: model-fixed recipe를 유지하면서 각 `(Tier,q)`의 대표 모델을 고른
-  운영 주분석
+완료 모델·VUS checkpoint는 검증 후 재사용한다. 학습형 모델의 미완료 trial은 처음부터
+다시 실행하며 이전 시도의 시간과 횟수를
+남긴다. 강제 종료로 종료 시각을 모르면 총비용을 확정하지 않는다. 명령 시간과 그 안의 모델
+시도 시간은 겹치므로 합산하지 않는다. 이는 Dev18 개발 비용이며 GHL·HAI의 비용을 대신하지 않는다.
 
-`tier_adaptive`는 비율별로 config를 다시 고르지 않는다. 각 모델의 전체 지원 비율에서 고정한
-family-LOFO recipe를 비교하고, 최종 행에는 `model_fixed` config를 연결한다. PCA_LEGACY는 adaptive
-후보나 성능 gate가 아니라 q100 점수를 그린 참고선이다. 후보 배제와 모델 전환은 별도 CSV로
-남기며 HPO와 VUS-PR을 다시 계산하지 않는다.
+규모 근거에는 model_ratio와 tier_adaptive의 선택 합집합을 출처별로 남긴다. 같은 실행과
+같은 추론의 여러 head를 독립 물리 실행으로 합산하지 않는다. 비선택 후보의 성능은 전체
+ledger·candidate_audit에 보존한다. 규모표는 관측 기록이며 기업 응답 범위의 인증이 아니다.
 
 ## 9. GHL과 HAI 본실험
 
-지우가 선택표와 `final_policy_membership.csv`를 봉인한 뒤에만 본실험을 연다. 모델 runner는
-membership의 runnable 행만 실행하며 임의로 모델·recipe·비율을 추가하지 않는다.
+조건별 선택표를 최종 파일의 metadata와 대조해 `final_policy_membership.csv`를 만든다.
+`model_ratio`와 `tier_adaptive` 행마다 split·series·q·group_id를 고정한다. 최종 파일의 실행
+가능 후보 집합과 맞는 개발 집단이 없으면 unavailable이다. 최종 라벨로 집단이나 설정을 고르지 않는다.
 
-GHL25에서는 모든 활성 모델의 `model_fixed` 곡선을 보존한다. Tier 대표 세 개만 남기면 비용
-목적함수의 후보가 사라지기 때문이다. `tier_adaptive` 곡선은 비율마다 대표 모델을 바꿀 수 있는
-운영 주분석이고, `tier_fixed` 곡선은 데이터 양의 효과를 분리하는 통제 비교다.
-stochastic 모델의 GHL seed는 `{3,4,5,6,7}`, deterministic 모델은 한 번 실행한다.
+GHL·HAI처럼 개발 패널보다 큰 입력은 `out_of_dev_support`로 표시해 외부 검증 대상으로 실행한다.
+이 표시는 기업 추천 범위를 이미 검증했다는 뜻이 아니다. 최종 EDA 인수와 평가 게이트는 실행 전에
+닫아야 한다. GHL stochastic seed는 3·4·5·6·7이다. HAI의 두 실행은 독립적으로 저장한다.
 
-HAI는 두 실행을 따로 저장한다. 두 실행에서 모델과 recipe는 GHL 결과를 보지 않고 TSB 튜닝에서
-고정한 값을 쓴다. 다중 세션을 안전하게 처리하지 못하면 해당 행을 `unavailable`로 남기며 세션을
-이어 붙이지 않는다.
-
-adaptive membership은 `model_fixed`에 이미 포함된 model·config·physical ratio만 참조한다.
-물리 실행을 추가하지 않으며 비율별 모델 전환, 검증과 배포 비용은 현장 입력이 생긴 뒤 목적함수에
-연결한다. adaptive 곡선을 데이터 양만의 효과로 해석하지 않는다.
+runner는 membership에 지정한 series만 실행한다. 같은 model/config/q/seed 점수를 여러 정책이
+쓰면 한 번만 생성하고 참조한다. Tier 공동 선택이 모델별 선택과 다른 설정을 고르면 필요한 실행을
+합집합에 추가하며, 물리 실행이 전혀 늘지 않는다고 가정하지 않는다.
 
 ## 10. 점수와 실행 증거
 
-주지표 입력은 threshold 전 연속 `raw__trainnorm` 점수다. `smoothed`와 `testnorm`은 민감도다.
-채널 점수가 있으면 정규화 후 채널 `max`로 집계하며, 공식 scalar score에는 가짜 채널 축을 만들지
-않는다. smoothing은 후행 4칸 평균, 처음 3점 0으로 고정한다.
+주지표는 threshold 전 `raw__trainnorm` 연속 점수다. 파일명·source_start/end·label_slice를
+유지하며 모델별 native 후처리 뒤 공통 smoothing을 덧붙이지 않는다. `trainnorm` 파일명은 기존 인터페이스를
+위해 유지하며 실제 교정 여부는 `calibration_mode`와 `normalization_scope`로 구분한다.
+PaAno의 공식 scalar 점수를 임의로 채널 max로 바꾸지 않는다.
 
-```text
-{dataset}__{series}__{model}__{tier}__r{ratio}__s{seed}__{raw|smoothed}__{trainnorm|testnorm}.npy
-```
+config_id에는 source/checkpoint·파라미터·전처리와 새 common_recipe가 들어간다. dataset/series/q/
+seed는 넣지 않으므로 같은 설정의 식별자는 같고 물리 실행 키는 별도로 관리한다. 새 recipe로 인해
+기존 80/20 config와 충돌하지 않는다. 점수·metadata·학습 snapshot·checkpoint SHA가 모두 맞아야
+완료로 인정한다. 완료한 새 조합은 재실행하지 않고 VUS checkpoint도 이어서 사용한다.
 
-각 점수에는 `config_id`, 입력·source·checkpoint SHA-256, split, `q`, seed, source 범위,
-정렬 방식, normalization 범위, label slice, 실행 상태와 재시도 수를 연결한다. `config_id`는 모델,
-source commit, source checkpoint, hyperparameters와 고정 전처리 recipe로 만들며 dataset, series,
-`q`, seed를 넣지 않는다.
+새 측정 ID는 `dev18_registered_runner.full_prefix_v3`다. 전처리·setup·학습·calibration 추론·
+test 추론을 기록한다. GDN의 내부 검증은 학습 절차와 training_protocol에 기록한다. GPU peak,
+artifact 크기, 세션 관측량, 실패와 재시도도 보존한다. 원본 시간 근거가 없으면 행수를 초로 바꾸지 않는다.
 
-비용 원자료는 아래 항목을 분리한다.
+재개 보고는 전체 계획량과 이번 명령 시작 전 미완료 수를 구분한다. panel 전체 시간과 별개로
+완료 결과 확인 시간, 모델 계산·저장 시도 시간을 기록한다. 시도 시간에는 실패·재시도를 포함하며
+같은 물리 실행을 head나 q별로 중복 합산하지 않는다. 실패한 시도에서 완료한 결과도 보존하므로 그
+시도 시간을 전부 낭비 비용으로 해석하지 않는다. 명령·시도 이력은 HPO 개발비이며 현장 비용은 아니다.
 
-- `split_preprocess_seconds`
-- `model_setup_seconds`
-- `training_seconds`
-- `validation_inference_seconds`
-- `test_inference_seconds`
-- `peak_memory_mb`
-- `model_artifact_bytes`
-- 세션별 `observation_count`, 검증 가능한 `observed_duration_seconds`, `duration_basis`
-- `status`, `retry_count`, 실패 이유
-
-Dev18 실행 증거의 `measurement_protocol_id`는 `dev18_registered_runner.v2`다. 이 값은 한
-in-memory 등록 executor 안에서 split·전처리, 모델 setup, 학습과 추론을 잰 범위를 뜻하며, 다섯 timing 값의
-합이 `runtime_seconds`와 같아야 한다.
-
-TSB 튜닝 HPO 비용과 현장 재학습 비용은 같은 숫자로 합치지 않는다. GHL은 timestamp 근거가
-없으면 관측 개수를 초 단위로 바꾸지 않는다. HAI도 timestamp 간격을 검증한 경우에만 관측 지속시간을
-쓴다.
+과거 점수·manifest·ledger는 폐기하고 새 namespace `full_prefix_v2`에서 전부 다시 만든다.
+학습형과 target-free 모두 새 실행 결과를 사용한다. 새로 만든 target-free 점수의 q 간 공유와
+같은 새 실험의 중단 재개만 허용하며 과거 완료 파일은 승계하지 않는다.
 
 ## 11. 채점·통계·교차점
 
@@ -305,11 +384,11 @@ c*_a,b   = min {p in Q : 모든 관측 q >= p에서 D_a,b(q) > 0}
 
 ## 12. 최종 비용 목적함수
 
-본실험은 비용함수를 미리 최적화하지 않는다. 먼저 모든 활성 모델의 고정-recipe 성능과 비용
-원자료를 누수 없이 만든다. 마지막 단계의 행동 단위는 아래처럼 정의한다.
+본실험은 비용함수를 미리 최적화하지 않는다. 각 q의 후보 성능과 비용 원자료를 만들고 기존
+고정 recipe는 통제 비교로 보존한다. 마지막 단계의 행동 단위는 아래처럼 정의한다.
 
 ```text
-a = (tier, model, config_id, q, operating_threshold)
+a = (tier, model, config_id, score_variant, q, operating_threshold)
 ```
 
 GHL과 HAI의 `split`은 행동이 아니라 성능·비용 근거가 나온 평가 문맥이다. 목적함수는 현장
@@ -333,49 +412,138 @@ HPO 비용은 모델을 채택하기 전의 개발비로 따로 보고한다. �
 시간 근거가 없는 GHL에서는 관측량 대리값으로만 남긴다. `FalseAlarmCost`와 `MissCost`는
 threshold별 confusion 결과와 현장 단가가 모두 있어야 계산한다.
 
-최종 선택은 두 단계로 한다. 먼저 성능, 정상 데이터 요구량, 재학습·추론 시간, 메모리와 artifact의
-Pareto 열위를 제거한다. 그다음 현장 비용 가중치와 latency·memory·최소 성능 제약을 넣어
-`argmin_a TotalCost(a)`를 고른다. 가중치가 달라질 때 선택이 바뀌는 구간도 함께 보고한다.
+전체 후보의 연속 점수·설정·실행 비용을 보존한다. VUS 우승표나 개발 Pareto 표로 후속 비용
+최적화의 후보를 미리 삭제하지 않는다. threshold별 오탐·미탐, 현장 비용 가중치와 latency·memory·
+최소 성능 제약이 확정된 뒤 `argmin_a TotalCost(a)`를 고른다. Pareto 제거는 그 목적과 모든
+제약에서 열위가 증명된 후보에만 적용하며 원자료는 남긴다. 최종 데이터에서 일부 메뉴만
+실행했다면 최적성도 그 메뉴 안으로 제한한다. 가중치에 따른 선택 변화도 보고한다.
 `TransitionCost`의 모델 교체·검증·배포·중단 비용은 웹사이트가 현장 값을 받은 뒤에만 계산한다.
 값이 없으면 0으로 채우지 않는다.
 
+### 기업 입력과 추천 범위
+
+현재 정상 학습에 쓸 수 있는 행수 n과 센서 수 d를 확인하고, 기업이 예상 최종 학습 행수 N을
+입력한다. `0 < n <= N`, `0 < d`를 확인한다. 별도 운영 한도 R_max·C_max는 선택 입력이며
+지정하면 함께 검사한다. 이 한도를 통과해도 튜닝 근거에 없는 조합은 후보로 반환하지 않는다.
+
+기업의 N이 100%이며 R_max는 이를 허용하는 서비스 한도다. 가장 긴 CSV나 서로 다른 파일의
+행·열 최댓값을 합쳐 상한을 정하지 않는다. 실행 환경과 시간·메모리 한도를 고정하고, 모델·센서
+조건별 자원 경계와 독립 성능 근거를 함께 확인해 지원 범위를 봉인한다. 파일 길이의 존재나 각 축의
+최소·최대 안에 있다는 사실만으로 그 조합의 성능을 검증했다고 보지 않는다.
+
+후보 조회는 `n=floor(N*q/100)`인 등록 q만 사용한다. 최근접 q나 보간으로 미관측 prefix를
+채우지 않는다. 기업의 n·d·N, 평가할 관측 수, 실행 환경이 완료된 튜닝의 같은 조합과 일치해야
+한다. 설정·head·예산·선택표도 확인한다. q만 같거나 R_max 아래라는 이유로 추천하지 않는다.
+같은 5%라도 현재 1,000,000행인 기업을 몇백 행의 5%와 같게 취급하지 않는다.
+
+`--finish-only`와 `--selection-only`는 기존 완료 원표에서 `tuning_support.json`,
+`conditional_selection.json`, `model_support_limits.csv`를 만든다. 저장 위치는 기존
+`experiments/01_ghl_main/results/dev18_tuning/full_prefix_v2/`다. 완료 영수증은 JSON 지문도
+포함한다. 규모 근거에는 q별 모델·설정·head, 실제 n·d·N, 평가 길이, 모든 예정 seed의 점수와
+실행 증거를 연결한다. scalar 출력의 channel_count를 입력 센서 수로 쓰지 않는다.
+
+모델별 표는 센서 수·N·평가 길이·환경별 관측 q와 빈 q를 보존한다. `complete_from_ratio`는
+그 q부터 100%까지 등록 지점이 모두 있다는 뜻이며 연속 구간이나 순차 운영 성능의 보증은 아니다.
+같은 조건의 최대 계획량은 요약값이다. 그 이하 모든 길이나 다른 센서 수를 지원한다고 해석하지
+않는다. 기업 조회는 모델별 근거의 합집합을 쓰고 모델 비교는 기존 공통 파일 비교를 유지한다.
+
+범위 안 조회도 현장 검증 후보다. `service_status=unvalidated`를 유지하고 현재 지점의 후보와
+N까지 빠진 q를 나눠 반환한다. 전체 q가 있어도 도메인·센서 의미가 다른 기업의 성능을 보장하지
+않는다. family-LOFO는 선택 절차의 평가이며 최종 선택 설정의 독립 검증값이 아니다. 기록된
+단일 실행의 시간·CUDA 할당량 또는 CPU tracemalloc 값을 서비스 지연·전체 RAM 한도로 쓰지 않는다.
+공유 실행과 target-free의 q 재사용은 실행 참조로 남기며 논리 점수 행마다 비용을 합산하지 않는다.
+
+수치 상한을 서비스 계약으로 확정하려면 이 표에서 후보 조합을 정한 뒤 운영 성능 기준과 자원
+한도를 사전에 명시하고 독립 자료·동시 실행 조건에서 확인한다. 기준이나 근거가 빠지면
+미검증으로 남긴다. 그 결과가 없는 현재 코드에는 임의 성능 하한이나 인증 전환 기능을 넣지 않는다.
+현장 단가와 오탐·미탐 근거가 없으면 수익성 최적이라고 표시하지 않는다.
+
+### 고정 상한까지의 비용 경로
+
+현재 데이터량에서 기업의 N(서비스 상한 R_max 이하)까지 지원되는 실측 지점을 순서대로 놓고, 상태에는 현재 모델·설정·
+경보 기준과 마지막 학습 때의 데이터량을 포함한다. 각 지점에서 유지, 재학습, 모델·설정 전환을
+비교한다. 경로 비용은 각 구간의 운영·오탐·미탐 비용과 실제로 발생한 학습·전환 비용의 합이다.
+매 q의 VUS-PR 1등을 순서대로 채택하는 규칙으로 경로 최적화를 대신하지 않는다.
+
+수집속도로 각 구간의 운영 기간을 정하고 현장 단가·경보 빈도를 적용한다. 같은 전체 test의
+오탐·미탐 건수를 모든 구간에 중복해서 더하지 않는다. N 도달까지 평가할지, 도달 후의
+운영 기간까지 포함할지도 비용 비교 전에 정한다. 미래 열 수가 달라지면 적용 범위를 다시 검사한다.
+
+현재 독립 q 실험은 각 데이터량에서 새로 학습한 설정의 근거다. 기존 모델을 유지하는 경로는
+오류율이 유지된다는 가정 아래 기존 점수로 비용 시나리오를 계산할 수 있다. 실제 시간 경과에
+따른 성능 변화, 이어 학습의 절감 효과와 전환 지연을 실측했다고 주장하지 않는다. 그런 효과를
+최종 결론에 포함할 때만 별도 시간순 평가를 추가한다.
+
+### 기존 실험으로 보완할 평가와 추가 입력
+
+| 구분 | 남은 작업 | 모델 추가 실행 |
+| --- | --- | --- |
+| 저장 점수와 정답 라벨 | 공통 평가 구간에서 threshold별 TP·FP·TN·FN, FPR·FNR·precision·recall과 경보 건수를 계산한다. 시점과 사건 단위를 구분하고 경보 묶기 규칙을 먼저 고정한다. | 불필요 |
+| 운영 threshold용 별도 자료 | GDN의 내부 검증은 checkpoint 선택용이다. 별도 정상 교정 자료나 사전 고정 기준으로 threshold를 정하고 독립 구간에서 오류율을 확인한다. 모델 내부 검증과 평가 통계를 독립 운영 평가로 취급하지 않는다. | 기존 적합한 자료가 없으면 추가 필요 |
+| 기존 ledger와 metadata | 절대 관측량·채널 수별 근거, seed별 변동, 학습·추론 시간과 같은 파일 조건의 모델 비교를 만든다. | 완료 조합에는 불필요 |
+| 비용 후보 선정 | VUS-PR 1등 외에도 threshold별 오탐·미탐과 실행 비용을 비교해 남길 후보를 정한다. | 완료된 Dev18 조합에는 불필요, GHL·HAI에서 미실행 후보를 검증할 때만 필요 |
+| 기업 입력 | 오경보 조사비, 이상 사건별 손실, 발생 빈도·운영 기간, 수집속도, 자원 단가, 전환비와 기존 운영안의 비용·성능을 받는다. | 벤치마크 실험으로 대체 불가 |
+| 새 환경의 성능 | 기업 데이터의 오탐·미탐, 실시간 지연, 새 장비의 처리량·메모리와 온라인 전환 효과를 검증한다. | 주장할 범위에 따라 새 추론·학습 또는 현장 시험 필요 |
+
+새 튜닝으로 VUS 후보를 고르는 절차와 운영 threshold를 정하는 절차는 다르다. full-prefix
+튜닝이 끝나도 최종 라벨로 threshold를 골라 독립 성능처럼 보고하지 않는다. 0.99 분위수는
+미래 오탐률 1% 보장이 아니다. strict zero-shot에 target 교정을 추가하면 별도 운영 정책이다.
+비용 후보와 threshold 선택 규칙은 GHL·HAI 결과를 보기 전에 봉인하고, 추가로 필요한 설정은
+별도 실행 요청에 명시한다. 새 조건부 membership의 행수를 과거 462행으로 제한하지 않는다.
+
+논문의 오탐률은 가정값을 바꿔 보는 시나리오에만 쓴다. 기업의 미라벨 데이터로는 경보량을
+알 수 있지만 실제 오탐률·미탐률은 알 수 없다. 정상으로 확인한 별도 평가 구간은 오탐률을,
+정답 이상 이력이 있는 구간은 미탐과 사건 탐지를 검증하는 근거가 된다. 논문 수치나 VUS-PR을
+기업의 확정 손실률로 환산하지 않는다.
+
+기록된 배치 시간은 같은 실행 환경의 비교 근거다. `model_artifact_bytes`가 0이어도 사전학습
+모델의 배포 용량이 0이라는 뜻은 아니다. 필수 checkpoint·전처리 상태를 따로 집계한다. 저장
+메모리 피크도 전체 시스템 메모리나 서빙 피크와 구분한다. `offline_noncausal` 점수의 탐지
+위치를 실시간 지연으로 부르지 않으며 미래 문맥 대기와 처리 시간을 함께 검증한다.
+
+최종 답은 검증 범위와 현장 입력을 전제로 한 후보 간 비용 비교다. 최소 성능을 만족하는
+후보가 없으면 추천을 보류한다. 순이익 개선을 주장하려면 현재 운영안과 비교하고, 비용이나
+발생 빈도가 미확정이면 선택이 바뀌는 구간을 제시한다. 독립 q 실험만으로 온라인 재학습·
+전환 과정의 수익성을 입증했다고 주장하지 않는다.
+
 ## 13. 최소 산출물 계약
 
-필수 산출물만 주실험의 차단 조건으로 둔다.
+| 산출물 | 용도 |
+| --- | --- |
+| full_prefix_v2/budget.json·feasibility 원표 | 후보·집단·실제 CSV별 실행량과 코드 신원 봉인 |
+| full_prefix_v2/recommendation_contract.json | 최소 특징 산식·저장 schema·예상 기록과 실험 신원 |
+| recommendation_evidence/의 SQLite 백업·네 묶음 CSV·인수 영수증 | CSV/q별 특징과 전체 후보 결과 연결, head 구분·완전성 검증 |
+| handoff/의 전달 묶음·인수 목록 | 작은 원표·DB·실행 이력과 큰 점수·checkpoint의 위치·SHA 연결 |
+| dev18_full_prefix_v2_manifest.csv | 점수·metadata·완료와 실패 기록 |
+| dev18_trial_score_ledger.csv | 기존 채점기와 정렬 절차로 계산한 전체 VUS 원표 |
+| model_ratio_policy.csv·tier_adaptive.csv | 조건·q별 설정과 계층 대표 |
+| tuning_support.json·conditional_selection.json·model_support_limits.csv | 완료 실행에 묶인 모델별 관측 조합·q 누락·규모 요약과 정확한 선택표 |
+| ratio_family_lofo.csv·candidate_audit.csv·matched_model_comparison.csv | 선택 편향과 동일 파일 비교 근거 |
+| structural_exclusions.csv | 불가능한 CSV·설정·q와 원인 |
+| final_policy_membership.csv | 조건부 model_ratio·tier_adaptive의 split/series별 실행 합집합 |
+| 모델별 CSV·PNG·완료 영수증 | 조건 집단을 유지한 비교와 실행/채점 경과시간 |
 
-| 생성자 | 필수 산출물 | 용도 |
-| --- | --- | --- |
-| 강혁 | `docs/role_A/manifest.md`와 EDA 인수표 | 정적 feasibility의 입력 |
-| 모델 담당자 | `dev18_feasibility_ledger.csv` | TSB 튜닝 가능 조합 봉인 |
-| 모델 담당자 | `dev18_score_manifest.csv` | TSB 튜닝 점수와 실행 증거 |
-| 지우 | `dev18_trial_score_ledger.csv` | VUS-PR 튜닝 원표 |
-| 지우 | `model_fixed_policy.csv`, `tier_fixed_policy.csv`, `ratio_adaptive_selection.csv` | 고정 recipe, 통제 비교와 운영 주분석 |
-| 지우 | `tier_ratio_candidate_audit.csv`, `tier_policy_transitions.csv` | 후보 배제와 비율별 모델 전환 감사 |
-| 지우 | `final_policy_membership.csv` 294행 | GHL·HAI 논리 정책과 중복 없는 물리 실행 요청 |
-| 모델 담당자 | `ghl25_score_manifest.csv`, `hai_score_manifest.csv` | 최종 점수와 비용 원자료 |
-| 지우 | `ghl25_score_ledger.csv`, `hai_score_ledger.csv` | 최종 채점 원표 |
-| 주혜 | 통계·교차점·난이도 결과 | 비용 최적화의 성능 입력 |
-
-물리 runner는 `final_policy_membership.csv`와 registry·config SHA만 확인한다. 다섯 정책표와 두
-ledger를 한꺼번에 읽는 8-file bundle은 필수 실행 계약에서 제거한다. 선택식 검증은 지우의
-평가 단계가 맡고 runner는 모델 실행만 맡는다. 같은 물리 점수를 여러 분석이 쓰면 복사하지 않고
-ledger가 SHA-256으로 참조한다.
+main ledger 행수와 physical_run_count는 실제 execution.series_ids 합으로 계산한다. head·q의
+선택 항목과 물리 실행 수를 구분하고, 전체 결과에 무조건 18을 곱하지 않는다. GHL·HAI의
+최종 원표와 통계·교차점 결과는 기존 실험 루트에 저장한다.
 
 ## 14. 프로젝트 단계와 현재 게이트
 
-- 0단계: 문서·역할을 정리하고 강혁의 EDA·manifest 인수 조건을 닫는다.
-- 1단계: 모델 담당자가 정적 feasibility, 공식 구현 충실도, 합성 smoke와 실행 증거 연결을 닫고
-  `equal_trial` budget을 봉인한다.
-- 2단계: TSB 비-GHL 18개로 HPO·채점을 수행하고 고정 recipe와 Tier 대표를 봉인한다.
-- 3단계: GHL25 주실험과 통계·교차점 원표를 만든다.
-- 4단계: HAI 두 실행으로 외부 확인을 마친다.
-- 5단계: 성능·비용 원자료에 현장 가중치와 제약을 결합해 최종 도입안을 고른다.
+0·1단계의 입력·공식 source 근거는 유지하고 과거 2단계 튜닝 결과는 폐기한다. 현재 게이트는
+2단계 전면 재튜닝 전 최신 공식 저장소·저장·인수 보완 반영과 정적 검토 완료, 원격 검증 전이다.
+2026-09-09 여섯 저장소 최신 기본 브랜치와 36개 설정·45개 head 점수, q·모델별 독립 선택을
+대조했다. PaAno memory와 GDN patience·Adam beta를 공식 값으로 복원하고 PCA·TSPulse의
+source pin을 갱신했다. 최신 코드 우선 지시로 GDN graph·후처리의 논문 차이는 차단 사유가 아니다.
+`paper_tuning_v4`와 추천용 feature·SQLite 저장의 원격 검증은 아직 남아 있다.
+과거 검사를 현재 코드의 검증 결과로 쓰지 않는다.
 
-0단계의 Dev18 인수, 1단계의 정적 증거와 2단계의 exact panel·VUS-PR 채점을 닫았다. 현재 게이트는
-완료 ledger 1,602행에서 `tier_adaptive` 선택표, 상세 감사표, 그림과 294행 membership을 다시 만드는
-일이다. selection-only 경로는 과거 score manifest, 원본 CSV, score 배열과 checkpoint를 읽거나
-모델·HPO·채점·evaluator를 실행하지 않는다. 봉인 evaluator·`ell_max` 신원만 현재 코드와
-대조한다. GHL25·HAI의 최종 Role-A 인수는 3·4단계 시작 전에 따로 닫는다.
+적재 감사의 임시파일 재개·미배정 실패 이력 전달·인수 시간 기록·상관값 경계를 보완했다.
+다음은 최신 source를 설치한 원격 환경의 관련 회귀와 소규모 저장·중단 재개·인수·L4 검사다.
+Tier 1 평가 입력의 0범위 점수·퇴화 PCA 확인도 거친다. 이 검증을 마치고
+새 코드·feature 계약·예산·환경을 봉인한다. 입력 feature 검증을 통과한 뒤 전체 튜닝과 채점을
+처음부터 수행하며, 필수 추천 자료 인수까지 마쳐야 전체 완료로 판정한다.
+새 실측 결과가 나오기 전에 GHL25(3단계), HAI(4단계), 기업 비용 최적화(5단계)로 넘어가지 않는다.
+최종 EDA 인수·threshold·비용 후보 규칙과 현장 단가는 해당 단계의 미완료 과제로 남는다.
 
 ## 15. 중단과 완료 규칙
 
@@ -401,7 +569,6 @@ ledger가 SHA-256으로 참조한다.
 - TSB-AutoAD: https://www.vldb.org/pvldb/vol18/p4364-liu.pdf
 - One-Liners: https://gitlab.kuleuven.be/m-group-campus-brugge/dtai_public/publications/iclr2026_timeseriesfoundationmodelsad
 - PaAno: https://github.com/jinnnju/PaAno
-- ALoRa: https://github.com/CharisShimillas/ALoRa
 - GDN: https://github.com/d-ailin/GDN
 - Time-RCD: https://github.com/thu-sail-lab/Time-RCD
 - TSPulse: https://github.com/ibm-granite/granite-tsfm

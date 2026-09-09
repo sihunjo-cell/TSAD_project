@@ -9,8 +9,12 @@ class InsufficientPrefixError(ValueError):
     """현재 prefix가 모델의 사전 길이 조건을 만족하지 않는다."""
 
 
-def compute_prefix_counts(total_length: int, ratio_percent: int) -> tuple[int, int, int]:
-    """`floor(N*q/100)` prefix와 그 안의 `floor(0.8*A)`를 계산한다."""
+def compute_prefix_counts(
+    total_length: int, ratio_percent: int, *, full_prefix: bool = False,
+) -> tuple[int, int, int]:
+    """현재 prefix의 전체 학습 또는 기존 80:20 길이를 계산한다."""
+    if type(full_prefix) is not bool:
+        raise ValueError("full_prefix는 bool이어야 한다")
     if ratio_percent not in SUPPORTED_RATIO_PERCENTS:
         raise ValueError(
             f"ratio는 {SUPPORTED_RATIO_PERCENTS} 중 하나여야 한다: {ratio_percent!r}"
@@ -18,7 +22,7 @@ def compute_prefix_counts(total_length: int, ratio_percent: int) -> tuple[int, i
     if not isinstance(total_length, int) or total_length < 0:
         raise ValueError(f"total_length는 0 이상의 정수여야 한다: {total_length!r}")
     available_count = total_length * ratio_percent // 100
-    fit_count = available_count * 80 // 100
+    fit_count = available_count if full_prefix else available_count * 80 // 100
     return available_count, fit_count, available_count - fit_count
 
 
@@ -27,8 +31,10 @@ def split_ratio_prefix(
     ratio_percent: int,
     min_fit_length: int = 1,
     min_validation_length: int = 1,
+    *,
+    full_prefix: bool = False,
 ) -> tuple[numpy.ndarray, numpy.ndarray, dict]:
-    """현재 q-prefix만 사용해 앞 80% fit과 뒤 20% validation을 반환한다."""
+    """현재 q-prefix만 사용하며 full_prefix에서는 validation을 남기지 않는다."""
     normal_training = numpy.asarray(normal_training)
     if normal_training.ndim != 2 or not len(normal_training):
         raise ValueError("normal_training은 비어 있지 않은 2차원 배열이어야 한다")
@@ -37,8 +43,10 @@ def split_ratio_prefix(
 
     total_length = len(normal_training)
     available_count, fit_count, validation_count = compute_prefix_counts(
-        total_length, ratio_percent,
+        total_length, ratio_percent, full_prefix=full_prefix,
     )
+    if full_prefix:
+        min_validation_length = 0
     if fit_count < min_fit_length or validation_count < min_validation_length:
         raise InsufficientPrefixError(
             f"prefix 길이 하한 미달: N={total_length}, ratio={ratio_percent}, "

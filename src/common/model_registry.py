@@ -2,6 +2,7 @@
 
 import hashlib
 import itertools
+import math
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -27,21 +28,49 @@ def model_registry_sha256(repository_root=REPOSITORY_ROOT) -> str:
     return hashlib.sha256(_registry_path(repository_root).read_bytes()).hexdigest()
 
 
+def resolve_gdn_topk(channel_count: int, *, rho=None, topk=None) -> int:
+    """고정 top-k는 그대로 쓰고 기존 rho 후보의 변환 규칙은 보존한다."""
+    if channel_count < 2:
+        raise ValueError("GDN requires at least two channels")
+    if (rho is None) == (topk is None):
+        raise ValueError("GDN requires exactly one of rho or topk")
+    if topk is not None:
+        if isinstance(topk, bool) or not isinstance(topk, int) or topk < 1:
+            raise ValueError("GDN topk must be a positive integer")
+        if topk > channel_count:
+            raise ValueError(f"GDN topk {topk} > channel count {channel_count}")
+        return topk
+    if isinstance(rho, bool) or not isinstance(rho, (int, float)) or not math.isfinite(rho) or rho <= 0:
+        raise ValueError("GDN rho must be positive and finite")
+    return max(1, min(channel_count - 1, math.floor(rho * channel_count)))
+
+
 def _expand_candidates(
     model_name: str, model: dict, common_recipe: dict,
 ) -> list[dict]:
     fixed = model.get("fixed", {})
+    if "candidates" in model and "grid" in model:
+        raise ValueError(f"{model_name} candidates와 grid를 함께 지정할 수 없다")
+    if not isinstance(fixed, dict):
+        raise ValueError(f"{model_name} fixed는 mapping이어야 한다")
     if "candidates" in model:
         varying = model["candidates"]
+        if not isinstance(varying, list) or not varying:
+            raise ValueError(f"{model_name} candidates는 비어 있지 않은 목록이어야 한다")
     else:
         grid = model.get("grid", {})
+        if not isinstance(grid, dict) or any(not isinstance(values, list) or not values for values in grid.values()):
+            raise ValueError(f"{model_name} grid의 각 축은 비어 있지 않은 목록이어야 한다")
         varying = [
             dict(zip(grid, values))
             for values in itertools.product(*(grid[key] for key in grid))
         ] or [{}]
 
     candidates = []
+    seen = set()
     for values in varying:
+        if not isinstance(values, dict):
+            raise ValueError(f"{model_name} 후보는 mapping이어야 한다")
         overlap = fixed.keys() & values.keys()
         if overlap:
             raise ValueError(
@@ -58,6 +87,9 @@ def _expand_candidates(
             preprocess_recipe=model["preprocess_recipe"],
             common_recipe=common_recipe,
         )
+        if candidate["config_id"] in seen:
+            raise ValueError(f"{model_name} 중복 후보가 있다: {candidate['config_id']}")
+        seen.add(candidate["config_id"])
         candidates.append(candidate)
     return candidates
 
@@ -101,8 +133,27 @@ def load_model_registry(repository_root=REPOSITORY_ROOT) -> dict:
     return load_model_registry_with_sha(repository_root)[0]
 
 
-def validate_primary_hpo_seal(registry: dict) -> None:
+def validate_primary_hpo_seal(registry: dict, *, budget=None) -> None:
     """Dev18 실실행 전에 HPO 예산과 선택 규칙이 봉인됐는지 확인한다."""
+    if budget is not None and budget.get("experiment_mode") == "full_prefix_v2":
+        from src.common.equal_trial_budget import _canonical_bytes, _score_variants, registry_space_sha256
+
+        if (registry.get("common_recipe", {}).get("methodology_revision") == "source_faithful_v3"
+                and registry["selection"].get("tspulse_prediction_aggregation_window") != 96):
+            raise ValueError("source_faithful_v3는 TSPulse pred를 aggregation 96에서만 선택한다")
+        _score_variants(registry["selection"], "TSPulse")
+        for candidate in registry["models"].get("TSPulse", {}).get("candidates", []):
+            _score_variants(registry["selection"], "TSPulse", candidate["hyperparameters"])
+        core = {key: value for key, value in budget.items() if key not in {"budget_id", "budget_sha256"}}
+        digest = hashlib.sha256(_canonical_bytes(core)).hexdigest()
+        if (
+            budget.get("budget_sha256") != digest or budget.get("budget_id") != "b" + digest[:12]
+            or budget.get("registry_space_sha256") != registry_space_sha256(registry)
+            or registry["selection"].get("primary_hpo_regime") != "full_prefix_per_ratio"
+            or any(model.get("execution_status") != "ready" for model in registry["models"].values())
+        ):
+            raise ValueError("full-prefix 예산 또는 후보 공간의 봉인이 다르다")
+        return
     try:
         selection = registry["selection"]
         regime = selection["primary_hpo_regime"]

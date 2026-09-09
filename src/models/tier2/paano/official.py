@@ -11,6 +11,9 @@ from torch.nn import functional
 from torch.utils.data import DataLoader, TensorDataset
 
 
+_MEMORY_DISTANCE_BLOCK_SIZE = 1024
+
+
 class RevIN1d(nn.Module):
     def __init__(self, channel_count: int, epsilon: float = 1e-5):
         super().__init__()
@@ -91,14 +94,20 @@ def train_encoder(
     learning_rate: float,
     weight_decay: float,
     device: str,
+    official_procedure: bool = False,
 ):
     """원 구현의 triplet·초기 pretext 목적을 정해진 iteration만큼 학습한다."""
     if len(fit_patches) < 3:
         raise ValueError("PaAno 학습에는 patch가 3개 이상 필요하다")
     indices = torch.arange(len(fit_patches), dtype=torch.long)
-    effective_batch_size = choose_training_batch_size(
+    effective_batch_size = batch_size if official_procedure else choose_training_batch_size(
         len(fit_patches), batch_size,
     )
+    if official_procedure and (batch_size < 2 or (
+        len(fit_patches) % batch_size == 1
+        and iterations >= (len(fit_patches) + batch_size - 1) // batch_size
+    )):
+        raise ValueError("PaAno official batches cannot contain a singleton; the requested batch size is preserved")
     loader = DataLoader(
         TensorDataset(fit_patches, indices),
         batch_size=effective_batch_size,
@@ -112,6 +121,8 @@ def train_encoder(
     neighbor_offsets = torch.tensor((-2, -1, 1, 2), dtype=torch.long)
     best_loss = float("inf")
     best_state = copy.deepcopy(model.state_dict())
+    selected_iteration = None
+    loss_history = []
     completed = 0
 
     while completed < iterations:
@@ -191,7 +202,7 @@ def train_encoder(
                 )
                 adjacent_loss = (
                     losses[:len(adjacent)].mean()
-                    if len(adjacent)
+                    if len(adjacent) or official_procedure
                     else torch.zeros((), device=device)
                 )
                 nonadjacent_loss = losses[len(adjacent):].mean()
@@ -200,40 +211,74 @@ def train_encoder(
                 pretext_loss = torch.zeros((), device=device)
 
             loss = triplet_loss + pretext_weight * pretext_loss
+            if official_procedure and not torch.isfinite(loss):
+                raise RuntimeError("PaAno official training loss must remain finite")
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
-            if loss.item() < best_loss:
-                best_loss = loss.item()
+            total_loss = loss.item()
+            loss_history.append({
+                "iteration": completed,
+                "total_loss": total_loss,
+                "triplet_loss": triplet_loss.item(),
+                "pretext_loss": pretext_loss.item(),
+                "pretext_weight": pretext_weight,
+                "learning_rate": current_rate,
+            })
+            if total_loss < best_loss:
+                best_loss = total_loss
                 best_state = copy.deepcopy(model.state_dict())
+                selected_iteration = completed
 
     model.load_state_dict(best_state)
     return {
         "optimizer_updates": completed,
         "best_training_loss": best_loss,
         "iterations_completed": completed,
+        "selected_iteration": selected_iteration,
+        "loss_history": loss_history,
     }
 
 
 @torch.inference_mode()
-def encode_patches(model, patches, device: str):
+def encode_patches(model, patches, device: str, *, batch_size: int = 512,
+                   shuffle: bool = False):
     model.to(device).eval()
     embeddings = []
     for (batch,) in DataLoader(
-        TensorDataset(patches), batch_size=512, shuffle=False,
+        TensorDataset(patches), batch_size=batch_size, shuffle=shuffle,
     ):
         embeddings.append(model.embedding(batch.to(device)).detach().cpu().float())
     return torch.cat(embeddings)
 
 
-def select_memory_bank(embeddings, fraction: float = 0.1, random_seed: int = 42):
+def select_memory_count(patch_count: int, fraction: float = 0.1,
+                        memory_policy: str = "legacy_fraction") -> int:
+    if patch_count < 1 or not 0 < fraction <= 1:
+        raise ValueError("PaAno memory 입력이나 fraction이 잘못됐다")
+    if memory_policy == "legacy_fraction":
+        memory_count = int(patch_count * fraction)
+    elif memory_policy == "paper_fraction":
+        memory_count = min(round(fraction * patch_count), patch_count - 1)
+    elif memory_policy == "official_minimum":
+        memory_count = max(
+            min(500, max(1, patch_count - 1)),
+            min(round(fraction * patch_count), patch_count - 1),
+        )
+    else:
+        raise ValueError(f"알 수 없는 PaAno memory_policy: {memory_policy}")
+    if memory_count < 3:
+        raise ValueError("PaAno top-3 점수에는 memory가 3개 이상이어야 한다")
+    return memory_count
+
+
+def select_memory_bank(embeddings, fraction: float = 0.1, random_seed: int = 42,
+                       memory_policy: str = "legacy_fraction"):
     """MiniBatchKMeans 중심마다 가장 가까운 fit embedding 하나를 고른다."""
     embeddings = torch.as_tensor(embeddings, dtype=torch.float32).detach().cpu()
     if embeddings.ndim != 2 or not 0 < fraction <= 1:
         raise ValueError("PaAno memory 입력이나 fraction이 잘못됐다")
-    memory_count = int(len(embeddings) * fraction)
-    if memory_count < 3:
-        raise ValueError("PaAno top-3 점수에는 10% memory가 3개 이상이어야 한다")
+    memory_count = select_memory_count(len(embeddings), fraction, memory_policy)
     normalized = functional.normalize(embeddings, dim=1, eps=1e-12)
     clustering = MiniBatchKMeans(
         n_clusters=memory_count,
@@ -245,27 +290,70 @@ def select_memory_bank(embeddings, fraction: float = 0.1, random_seed: int = 42)
         reassignment_ratio=0.01,
     ).fit(normalized.numpy())
     centers = torch.from_numpy(clustering.cluster_centers_).to(normalized)
-    representatives = torch.cdist(normalized, centers).argmin(dim=0)
+    representatives = torch.empty(memory_count, dtype=torch.long)
+    # Edge blocks use the same distance algorithm as the full input.
+    compute_mode = (
+        "use_mm_for_euclid_dist" if len(normalized) > 25 or memory_count > 25
+        else "donot_use_mm_for_euclid_dist"
+    )
+    for center_start in range(0, memory_count, _MEMORY_DISTANCE_BLOCK_SIZE):
+        center_block = centers[center_start:center_start + _MEMORY_DISTANCE_BLOCK_SIZE]
+        best_distances = normalized.new_full((len(center_block),), float("inf"))
+        best_indices = torch.zeros(len(center_block), dtype=torch.long)
+        for patch_start in range(0, len(normalized), _MEMORY_DISTANCE_BLOCK_SIZE):
+            distances = torch.cdist(
+                normalized[patch_start:patch_start + _MEMORY_DISTANCE_BLOCK_SIZE],
+                center_block, compute_mode=compute_mode,
+            )
+            block_distances, block_indices = distances.min(dim=0)
+            improved = block_distances < best_distances
+            best_distances[improved] = block_distances[improved]
+            best_indices[improved] = patch_start + block_indices[improved]
+        representatives[center_start:center_start + len(center_block)] = best_indices
     return embeddings[representatives].clone()
 
 
 @torch.inference_mode()
-def score_embeddings(embeddings, memory_bank, top_k: int = 3):
+def _score_batch(embeddings, normalized_memory, top_k: int):
     embeddings = functional.normalize(
-        torch.nan_to_num(torch.as_tensor(embeddings, dtype=torch.float32)),
+        torch.nan_to_num(embeddings, nan=0.0, posinf=0.0, neginf=0.0),
         dim=1,
         eps=1e-12,
     )
-    memory_bank = functional.normalize(
-        torch.nan_to_num(torch.as_tensor(memory_bank, dtype=torch.float32)),
-        dim=1,
-        eps=1e-12,
+    embeddings = torch.nan_to_num(embeddings, nan=0.0, posinf=0.0, neginf=0.0)
+    if normalized_memory.ndim != 2 or len(normalized_memory) < top_k:
+        raise ValueError("PaAno memory bank must contain at least top_k representatives")
+    similarities = torch.nan_to_num(
+        embeddings @ normalized_memory.T, nan=-1.0, posinf=1.0, neginf=-1.0,
     )
-    if memory_bank.ndim != 2 or len(memory_bank) < top_k:
-        raise ValueError("PaAno memory bank가 top-k보다 작다")
-    similarities = torch.nan_to_num(embeddings @ memory_bank.T, nan=-1.0)
     nearest = torch.topk(similarities, k=top_k, dim=1).values
-    return torch.nan_to_num((1 - nearest).mean(dim=1), nan=1.0, posinf=1.0).cpu()
+    return torch.nan_to_num(
+        (1 - nearest).mean(dim=1), nan=1.0, posinf=1.0, neginf=0.0,
+    ).cpu()
+
+
+@torch.inference_mode()
+def score_embeddings(embeddings, memory_bank, top_k: int = 3):
+    embeddings = torch.as_tensor(embeddings, dtype=torch.float32)
+    normalized_memory = functional.normalize(
+        torch.as_tensor(memory_bank, dtype=torch.float32, device=embeddings.device),
+        dim=1, eps=1e-12,
+    )
+    return _score_batch(embeddings, normalized_memory, top_k)
+
+
+@torch.inference_mode()
+def score_patches(model, patches, memory_bank, *, device: str,
+                  top_k: int = 3, batch_size: int = 512):
+    model.to(device).eval()
+    normalized_memory = functional.normalize(
+        torch.as_tensor(memory_bank, dtype=torch.float32, device=device), dim=1, eps=1e-12,
+    )
+    scores = []
+    for (batch,) in DataLoader(TensorDataset(patches), batch_size=batch_size, shuffle=False):
+        embeddings = model.embedding(batch.to(device=device, dtype=torch.float32))
+        scores.append(_score_batch(embeddings, normalized_memory, top_k))
+    return torch.cat(scores)
 
 
 __all__ = [
@@ -273,6 +361,8 @@ __all__ = [
     "choose_training_batch_size",
     "encode_patches",
     "score_embeddings",
+    "score_patches",
     "select_memory_bank",
+    "select_memory_count",
     "train_encoder",
 ]

@@ -1,6 +1,7 @@
 """실제 checkpoint smoke runner의 label-free 감사 계약을 검증한다."""
 
 import inspect
+import hashlib
 import json
 import tempfile
 import unittest
@@ -16,6 +17,7 @@ from tests.checks.run_checkpoint_smoke import (
     TSPULSE_SMOKE_LENGTH,
     TIME_RCD_SMOKE_LENGTH,
     _VerifiedFileRecorder,
+    _dev18_budget_specs,
     forbid_project_scaler_fit,
     forbid_time_rcd_window_dataset,
     make_synthetic_wave,
@@ -27,6 +29,9 @@ from tests.checks.run_checkpoint_smoke import (
     validate_model_report_identity,
     validate_score_pair,
 )
+from src.common.equal_trial_budget import _canonical_bytes, registry_space_sha256
+from src.common.model_registry import load_model_registry_with_sha
+from tests.ghl_main.run_registered_models import build_specs
 from src.models.tier3.time_rcd import (
     TIME_RCD_CHECKPOINT_SHA256,
     TIME_RCD_CONFIG_SHA256,
@@ -91,16 +96,38 @@ class _FakeMinMaxScaler:
 
 
 class TestCheckpointSmoke(unittest.TestCase):
-    def test_dev18_smoke_default_output_is_git_ignored_runtime(self):
+    def test_dev18_smoke_selects_output_root_from_budget_mode(self):
         default_output = inspect.signature(
             run_dev18_checkpoint_smoke,
         ).parameters["output_root"].default
-        repository_root = Path(inspect.getfile(run_dev18_checkpoint_smoke)).parents[2]
+        self.assertIsNone(default_output)
 
-        self.assertEqual(
-            default_output,
-            repository_root / ".runtime" / "dev18_checkpoint_smoke",
-        )
+    @staticmethod
+    def _write_full_prefix_budget(directory):
+        registry, registry_sha = load_model_registry_with_sha()
+        specs = [spec for spec in build_specs("development", include_pending=True) if spec["model"] in {"TimeRCD", "TSPulse"}]
+        core = {
+            "experiment_mode": "full_prefix_v2", "registry_space_sha256": registry_space_sha256(registry),
+            "execution_panel": [{"model": spec["model"], "config_id": spec["config_id"], "physical_ratio": spec["ratio"], "seed": spec["seed"], "series_ids": ["03"]} for spec in specs],
+        }
+        digest = hashlib.sha256(_canonical_bytes(core)).hexdigest()
+        envelope = {"budget": {**core, "budget_sha256": digest, "budget_id": "b" + digest[:12]}, "attestation": {"config_registry_sha256": registry_sha}}
+        path = Path(directory) / "budget.json"
+        path.write_text(json.dumps(envelope), encoding="utf-8")
+        return path, specs
+
+    def test_full_prefix_budget_rejects_tampering_and_accepts_multiple_checkpoint_configs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path, specs = self._write_full_prefix_budget(directory)
+            budget, _, selected = _dev18_budget_specs(path)
+            self.assertEqual(budget["experiment_mode"], "full_prefix_v2")
+            self.assertEqual(set(selected), {"TimeRCD", "TSPulse"})
+            self.assertIn(selected["TSPulse"]["config_id"], {spec["config_id"] for spec in specs})
+            envelope = json.loads(path.read_text(encoding="utf-8"))
+            envelope["budget"]["execution_panel"][0]["series_ids"] = ["04"]
+            path.write_text(json.dumps(envelope), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "digest|SHA"):
+                _dev18_budget_specs(path)
 
     def test_tspulse_resource_equivalence_compares_every_score_head(self):
         from tests.checks.check_dev18_resources import summarize_tspulse_equivalence
@@ -157,7 +184,9 @@ class TestCheckpointSmoke(unittest.TestCase):
                 },
             }
 
-        def time_probe(*, channel_count, session, context_length):
+        def time_probe(*, channel_count, session, context_length, inference_context_normalization, official_protocol):
+            self.assertFalse(inference_context_normalization)
+            self.assertTrue(official_protocol)
             observed.append(("TimeRCD", channel_count, session.shape, context_length))
             return {
                 "score_pairs": _score_pairs(("score",), len(session)),
@@ -169,20 +198,19 @@ class TestCheckpointSmoke(unittest.TestCase):
                 },
             }
 
-        def tspulse_probe(*, channel_count, session, context_length, aggregation_window):
+        def tspulse_probe(*, channel_count, session, context_length, aggregation_window, inference_context_normalization, official_protocol):
+            self.assertFalse(inference_context_normalization)
+            self.assertTrue(official_protocol)
             observed.append((
                 "TSPulse", channel_count, session.shape, context_length,
                 aggregation_window,
             ))
             return {
                 "score_pairs": _score_pairs(
-                    ("time", "fft", "pred", "raw_max"), len(session),
+                    ("time", "fft", "pred", "ensemble"), len(session),
                 ),
                 "files": _files("TSPulse"),
-                "forbidden_calls": {
-                    "standard_scaler_fit": False,
-                    "minmax_scaler_fit": False,
-                },
+                "native_preprocessing": "full_input_standardscaler_head_minmax_smoothing_ensemble",
                 "loader": {
                     "from_pretrained_source": "verified_local_snapshot",
                     "snapshot_directory": "C:/cache/snapshot",
@@ -198,9 +226,11 @@ class TestCheckpointSmoke(unittest.TestCase):
             return _environment()
 
         with tempfile.TemporaryDirectory() as directory:
+            budget_path, specs = self._write_full_prefix_budget(directory)
             report = run_dev18_checkpoint_smoke(
                 data_root="C:/sealed-data",
                 output_root=directory,
+                budget_path=budget_path,
                 input_loader=load_input,
                 probes={"TimeRCD": time_probe, "TSPulse": tspulse_probe},
                 environment_collector=collect_environment,
@@ -220,15 +250,31 @@ class TestCheckpointSmoke(unittest.TestCase):
         self.assertEqual([event[0] for event in observed[1:3]], ["seed", "environment"])
         self.assertIn(("TimeRCD", 2, (1536, 2), 5000), observed)
         self.assertIn(("TSPulse", 2, (1536, 2), 512, 64), observed)
-        self.assertEqual(saved["TimeRCD"]["config_id"], "c1c5aeea6f7d3")
-        self.assertEqual(saved["TSPulse"]["config_id"], "c12c5e6196ea5")
+        for model in ("TimeRCD", "TSPulse"):
+            model_specs = [spec for spec in specs if spec["model"] == model]
+            self.assertEqual(saved[model]["probe_config_id"], model_specs[0]["config_id"])
+            self.assertEqual(saved[model]["source_compatible_config_ids"], list(dict.fromkeys(spec["config_id"] for spec in model_specs)))
         for model_report in saved.values():
+            self.assertTrue(model_report["official_protocol"])
+            self.assertFalse(model_report["inference_context_normalization"])
             self.assertEqual(model_report["input"]["kind"], "dev18_normal_prefix")
             self.assertEqual(model_report["input"]["slice"], [0, 1536])
             self.assertEqual(model_report["input"]["shape"], [1536, 2])
             self.assertFalse(model_report["input"]["uses_labels"])
             self.assertFalse(model_report["input"]["uses_test"])
             self.assertNotIn("values", json.dumps(model_report))
+
+    def test_paper_equivalence_requires_completed_ensemble_instead_of_raw_max(self):
+        from tests.checks.check_dev18_resources import summarize_tspulse_equivalence
+
+        outputs = {head: {"scores": pair[0]} for head, pair in
+                   _score_pairs(("time", "fft", "pred", "ensemble"), 4).items()}
+        result = summarize_tspulse_equivalence(outputs, outputs, registered_batch_size=128,
+                                               official_protocol=True)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(set(result["head_maximum_absolute_differences"]), set(outputs))
+        with self.assertRaisesRegex(ValueError, "heads"):
+            summarize_tspulse_equivalence(outputs, outputs, registered_batch_size=128)
 
     def test_verified_file_recorder_preserves_snapshot_paths_without_resolving_symlinks(self):
         with tempfile.TemporaryDirectory() as directory:

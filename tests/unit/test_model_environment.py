@@ -32,7 +32,7 @@ ACTIVE_PACKAGE_PINS = {
 }
 ACTIVE_SOURCES = {
     "git+https://github.com/thu-sail-lab/Time-RCD.git@372bb980426b2f67007311c6f3165ab789c79bef",
-    "git+https://github.com/ibm-granite/granite-tsfm.git@9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d",
+    "git+https://github.com/ibm-granite/granite-tsfm.git@fe7a35697723e2a2f5246ae979474bfc554e26c0",
 }
 def read_profile(filename: str) -> tuple[list[str], dict[str, str], set[str], list[str]]:
     includes = []

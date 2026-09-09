@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy
 
 from src.common.build_config_id import build_common_recipe_id
-from src.common.model_registry import load_model_registry
 from src.common.save_model_artifacts import save_model_score as _save_model_score
 from src.data_split.split_ratio_prefix import compute_prefix_counts
 
@@ -87,7 +86,23 @@ def save_model_score(output, output_dir, **arguments):
 
 
 class TestSaveModelScore(unittest.TestCase):
-    COMMON_RECIPE = load_model_registry()["common_recipe"]
+    # 이 파일은 validation 교정과 trailing-4 저장의 역사 계약을 검증한다.
+    COMMON_RECIPE = {
+        "methodology_revision": "source_faithful_v3",
+        "score_calibration": {
+            "fit_validation": "validation_median_iqr", "target_free": "none",
+            "epsilon": 0.01,
+        },
+        "smoothing": {
+            "kind": "trailing_mean", "window": 4,
+            "boundary": "first_three_timesteps_zero",
+        },
+        "order": {
+            "raw": "normalize_then_aggregate",
+            "smoothed": "normalize_then_smooth_per_channel_then_aggregate",
+        },
+        "aggregation": {"channel_scores": "max", "scalar_scores": "model_native"},
+    }
     COMMON_RECIPE_ID = build_common_recipe_id(COMMON_RECIPE)
 
     def test_semantic_values_cannot_be_overridden_outside_the_recipe(self):
@@ -107,6 +122,9 @@ class TestSaveModelScore(unittest.TestCase):
             "lookahead": 2,
             "maximum_effective_lookahead": 2,
             "normalization_scope": "none",
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "valid_inference_block",
+            "persistent_target_fit": False,
         }
         with tempfile.TemporaryDirectory() as temporary_dir:
             saved = save_model_score(
@@ -132,6 +150,9 @@ class TestSaveModelScore(unittest.TestCase):
         self.assertEqual(metadata["pipeline_order"], self.COMMON_RECIPE["order"])
         self.assertEqual(metadata["channel_count"], 0)
         self.assertEqual(metadata["normalization_scope"], "none")
+        self.assertEqual(metadata["input_normalization"], "inference_context_zscore")
+        self.assertEqual(metadata["input_normalization_scope"], "valid_inference_block")
+        self.assertIs(metadata["persistent_target_fit"], False)
         self.assertEqual(metadata["primitive"], "probability")
         self.assertEqual(metadata["aggregation_mode"], "model_native_scalar")
         self.assertEqual(metadata["window_size"], 0)
@@ -161,13 +182,16 @@ class TestSaveModelScore(unittest.TestCase):
             "evaluation_mode": "offline_noncausal",
             "lookahead": 1,
             "maximum_effective_lookahead": 2,
-            "normalization_scope": "model_revin_only",
+            "normalization_scope": "none",
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "past_context",
+            "persistent_target_fit": False,
         }
         with tempfile.TemporaryDirectory() as temporary_dir:
             saved = save_model_score(
                 output, temporary_dir, dataset="DEV18", series=1,
                 model="TSPulse", tier="t3", ratio=100, seed=3,
-                config_id="c123456789abc", normalization_scope="model_revin_only",
+                config_id="c123456789abc", normalization_scope="none",
                 score_variant="fft",
                 common_recipe=self.COMMON_RECIPE,
                 common_recipe_id=self.COMMON_RECIPE_ID,
@@ -192,14 +216,17 @@ class TestSaveModelScore(unittest.TestCase):
             "lookahead": 0,
             "maximum_effective_lookahead": 2,
             "evaluation_mode": "offline_noncausal",
-            "normalization_scope": "model_revin_only",
+            "normalization_scope": "none",
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "past_context",
+            "persistent_target_fit": False,
             "unapproved_native_detail": "must not leak",
         }
         with tempfile.TemporaryDirectory() as temporary_dir:
             saved = save_model_score(
                 output, temporary_dir, dataset="DEV18", series=1,
                 model="TSPulse", tier="t3", ratio=100, seed=3,
-                config_id="c123456789abc", normalization_scope="model_revin_only",
+                config_id="c123456789abc", normalization_scope="none",
                 score_variant="pred",
                 common_recipe=self.COMMON_RECIPE,
                 common_recipe_id=self.COMMON_RECIPE_ID,
@@ -214,7 +241,53 @@ class TestSaveModelScore(unittest.TestCase):
         self.assertEqual(metadata["boundary_policy"], "edge_repeat")
         self.assertEqual(metadata["lookahead"], 0)
         self.assertEqual(metadata["maximum_effective_lookahead"], 2)
+        self.assertEqual(metadata["input_normalization_scope"], "past_context")
+        self.assertIs(metadata["persistent_target_fit"], False)
         self.assertNotIn("unapproved_native_detail", metadata)
+
+    def test_source_faithful_tier3_requires_each_input_normalization_field(self):
+        for model, scope in (("TimeRCD", "valid_inference_block"), ("TSPulse", "past_context")):
+            output = {
+                "scores": numpy.ones(3), "source_start": 0, "source_end_exclusive": 3,
+                "alignment": "same_timestep", "primitive": "probability",
+                "calibration_mode": "none", "normalization_scope": "none",
+                "evaluation_mode": "offline_noncausal", "lookahead": 0,
+                "maximum_effective_lookahead": 0,
+                "input_normalization": "inference_context_zscore",
+                "input_normalization_scope": scope, "persistent_target_fit": False,
+            }
+            for field in ("input_normalization", "input_normalization_scope", "persistent_target_fit"):
+                changed = dict(output)
+                del changed[field]
+                with self.subTest(model=model, missing=field), tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaisesRegex(ValueError, "Tier 3 입력 정규화"):
+                        save_model_score(
+                            changed, directory, dataset="DEV18", series=1, model=model,
+                            tier="t3", ratio=100, seed=3, config_id="c123456789abc",
+                            normalization_scope="none", common_recipe=self.COMMON_RECIPE,
+                            common_recipe_id=self.COMMON_RECIPE_ID,
+                        )
+                    self.assertEqual(tuple(Path(directory).iterdir()), ())
+
+    def test_legacy_raw_tier3_does_not_require_context_normalization_metadata(self):
+        recipe = deepcopy(self.COMMON_RECIPE)
+        recipe.pop("methodology_revision")
+        output = {
+            "scores": numpy.ones(3), "source_start": 0, "source_end_exclusive": 3,
+            "alignment": "same_timestep", "primitive": "probability",
+            "calibration_mode": "none", "normalization_scope": "none",
+            "evaluation_mode": "offline_noncausal", "lookahead": 0,
+            "maximum_effective_lookahead": 0,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            saved = save_model_score(
+                output, directory, dataset="DEV18", series=1, model="TimeRCD",
+                tier="t3", ratio=100, seed=3, config_id="c123456789abc",
+                normalization_scope="none", common_recipe=recipe,
+                common_recipe_id=build_common_recipe_id(recipe),
+            )
+            metadata = json.loads(Path(saved["metadata_path"]).read_text(encoding="utf-8"))
+        self.assertNotIn("input_normalization", metadata)
 
     def test_channel_scores_use_only_supplied_validation_reference(self):
         output = {
@@ -292,6 +365,9 @@ class TestSaveModelScore(unittest.TestCase):
             "lookahead": 0,
             "maximum_effective_lookahead": 0,
             "normalization_scope": "none",
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "valid_inference_block",
+            "persistent_target_fit": False,
         }
         with tempfile.TemporaryDirectory() as temporary_dir:
             with self.assertRaisesRegex(ValueError, "source 범위"):
@@ -342,6 +418,9 @@ class TestSaveModelScore(unittest.TestCase):
             "lookahead": 0,
             "maximum_effective_lookahead": 0,
             "normalization_scope": "none",
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "valid_inference_block",
+            "persistent_target_fit": False,
         }
         cases = (
             (
@@ -392,6 +471,9 @@ class TestSaveModelScore(unittest.TestCase):
             "lookahead": 0,
             "maximum_effective_lookahead": 0,
             "normalization_scope": "none",
+            "input_normalization": "inference_context_zscore",
+            "input_normalization_scope": "valid_inference_block",
+            "persistent_target_fit": False,
         }
         forged = {
             "measurement_protocol_id": "synthetic_unit.v1",

@@ -15,10 +15,16 @@ HAI-23.05/
 experiments/01_ghl_main/scores/**/*.npy
 experiments/01_ghl_main/scores/**/*.json
 experiments/01_ghl_main/scores/**/*.npz
+experiments/01_ghl_main/scores/**/.*.npy.tmp
+experiments/01_ghl_main/scores/**/.*.npz.tmp
+experiments/01_ghl_main/scores/**/.*.json.tmp
 experiments/01_ghl_main/scores/**/*.ckpt
 experiments/01_ghl_main/scores/**/COMPLETE
 experiments/02_hai_extension/scores/**/*.npy
 experiments/02_hai_extension/scores/**/*.json
+experiments/02_hai_extension/scores/**/.*.npy.tmp
+experiments/02_hai_extension/scores/**/.*.npz.tmp
+experiments/02_hai_extension/scores/**/.*.json.tmp
 experiments/02_hai_extension/scores/**/*.ckpt
 experiments/02_hai_extension/scores/**/COMPLETE
 experiments/01_ghl_main/logs/*
@@ -30,6 +36,7 @@ experiments/01_ghl_main/snapshots/*
 !experiments/01_ghl_main/snapshots/.gitkeep
 !experiments/01_ghl_main/snapshots/dev18_selection/
 !experiments/01_ghl_main/snapshots/dev18_selection/**
+experiments/01_ghl_main/snapshots/dev18_selection/ratio_tuned_v1/
 experiments/02_hai_extension/snapshots/*
 !experiments/02_hai_extension/snapshots/.gitkeep
 experiments/**/training/
@@ -39,3 +46,9 @@ lightning_logs/
 # 파이썬
 __pycache__/
 *.pyc
+
+experiments/01_ghl_main/snapshots/dev18_selection/full_prefix_v2/
+
+experiments/checks/reference_code/active_models/full_prefix_v2/
+
+experiments/02_hai_extension/scores/**/*.npz

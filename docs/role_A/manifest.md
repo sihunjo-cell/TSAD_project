@@ -147,23 +147,21 @@ HAI 23.05를 쓴다. HAIEnd 23.05는 같은 실험에서 수집한 225채널 DCS
 
 “시계열 하나”는 `hai-train*.csv` 또는 `hai-test*.csv` 한 파일이 나타내는 연속 세션 하나로 센다. 훈련 4개와 테스트 2개, 합계 6개 시계열이다. 데이터 inventory는 여섯 세션을 모두 보존하지만 본실험은 `train1 → test1`과 `train1+train2 → test2` 두 실행만 쓴다. train3·train4를 추가하는 시간순 민감도는 본 결과 뒤로 미룬다. 파일 사이의 시간 간격에는 윈도를 만들지 않는다. 공식 문서가 보장하는 연속성 단위가 각 CSV이기 때문이다.
 
-모델 입력에서 timestamp와 label을 빼면 `N=86`이다. Tier 2 활성 모델은 PaAno, ALoRa,
-GDN이다. ALoRa 공식 HAI 설정의 78채널과 현재 86채널 차이는 모델 담당자가 합성 smoke test로
-검사한다. GDN은 공식 `d-ailin/GDN` 적응 구현 하나만 쓰며 설정은 첫 튜닝 전에 봉인한다.
+모델 입력에서 timestamp와 label을 빼면 `N=86`이다. Tier 2 활성 모델은 PaAno와 GDN이다.
+GDN은 공식 `d-ailin/GDN` 적응 구현 하나만 쓰며 설정은 첫 튜닝 전에 봉인한다.
 
 ### 전처리 결정과 남은 확인
 
 GHL·HAI 모두 다운샘플 배율 1을 쓴다. 정상 학습 구간의 앞쪽 5·10·20·40·60·80·100%를 먼저
-자르고, 학습과 validation이 필요한 모델은 현재 prefix 안에서만 시간순으로 다시 나눈다. 전체
-정상 구간의 마지막 10%를 낮은 비율에 제공하지 않는다. timestamp와 label은 입력에서 뺀다.
-Tier 2의 `MinMaxScaler`는 현재 prefix의 fit 부분에만 맞추고 validation과 평가 구간에는 transform만
-적용한다. PCA_LEGACY는 각 window를 행 단위 z-score로 바꾼 뒤 fit window feature에만
-StandardScaler와 PCA를 맞춘다. 내부 validation 비율은 80:20으로 고정했다. Dev18 최소 길이
+자르고, `full_prefix_v2`에서는 현재 prefix 전부를 학습한다. 뒤쪽 별도 validation은 떼지 않는다.
+timestamp와 label은 입력에서 뺀다. Tier 2의 `MinMaxScaler`는 현재 전체 prefix에만 맞추고
+평가 구간에는 transform만 적용한다. PCA_LEGACY는 각 window를 행 단위 z-score로 바꾼 뒤
+fit window feature에만 StandardScaler와 PCA를 맞춘다. Dev18 최소 길이
 feasibility는 봉인한 shape와 registry로 확정했으며 GHL·HAI 지원 판정은 각 모델 smoke 뒤에 닫는다.
 
 HAI 첫 실행은 train1의 현재 prefix, 두 번째 실행은 train1·train2의 같은 비율 prefix만 쓴다. 각
-훈련 세션은 현재 prefix 안에서 독립적으로 80:20으로 나누며, 첫 실행의 scaler는 train1 fit에만,
-둘째 실행의 scaler는 train1·train2 fit을 합친 값에만 맞춘다. 세션 경계에는 window와 validation
+훈련 세션은 `full_prefix_v2`에서 현재 prefix 전부를 fit에 쓰며, 첫 실행의 scaler는 train1 prefix에만,
+둘째 실행의 scaler는 train1·train2 prefix를 합친 값에만 맞춘다. 세션 경계에는 window와 calibration
 score를 만들지 않는다. constant·저분산·고상관을 이유로 채널을 삭제하지 않고 86개를 모두 쓴다.
 training-free MWVAR·SQDIFF 계열과 strict zero-shot은 비율별 target calibration을 쓰지 않는다.
 상세 계약은 `docs/lead/plan_v5.md`와 `docs/lead/process_0_preverify.md`가 관리한다. 과거 HAI

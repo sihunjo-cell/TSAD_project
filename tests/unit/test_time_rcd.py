@@ -184,6 +184,47 @@ def install_fixture_attention_import():
 
 
 class TestTimeRCD(unittest.TestCase):
+    def test_paper_protocol_matches_official_dataset_full_target_normalization(self):
+        from time_rcd._inference import _WindowDataset
+
+        values = numpy.array([
+            [10, 7], [12, 7], [14, 7], [16, 7], [100, 7], [104, 7],
+        ], dtype=numpy.float64)
+        original = values.copy()
+        reference = _WindowDataset(values, window_size=4)
+        model = ConstantProbabilityModel()
+        output = score_time_rcd(model, values, context_length=4, official_protocol=True)
+
+        for index, (payload, mask) in enumerate(model.calls):
+            expected_values, expected_mask = reference[index]
+            torch.testing.assert_close(payload[0], expected_values, rtol=0, atol=0)
+            torch.testing.assert_close(mask[0], expected_mask, rtol=0, atol=0)
+        self.assertEqual(output["input_normalization_scope"], "full_evaluation")
+        self.assertTrue(output["native_postprocessing"])
+        self.assertEqual(output["maximum_effective_lookahead"], len(values) - 1)
+        numpy.testing.assert_allclose(output["scores"], 0.75)
+        numpy.testing.assert_array_equal(values, original)
+        changed = values.copy()
+        changed[4:, 0] *= 10
+        other_model = ConstantProbabilityModel()
+        score_time_rcd(other_model, changed, context_length=4, official_protocol=True)
+        self.assertFalse(torch.equal(model.calls[0][0], other_model.calls[0][0]))
+
+    def test_paper_entrypoint_preserves_float64_before_scaling(self):
+        values = numpy.column_stack((1e10 + numpy.arange(6, dtype=float), numpy.full(6, 7.0)))
+        model = OfficialScoringFixtureModel()
+        with install_fixture_attention_import():
+            output = score_time_rcd_official(
+                values, context_length=4, official_protocol=True,
+                component_loader=lambda **arguments: (object(), model),
+            )
+        self.assertGreater(float(model.calls[0][0][0, :, 0].std()), 0)
+        self.assertEqual(output["official_protocol"], "paper_tuning_v4")
+        with self.assertRaisesRegex(ValueError, "per-context"):
+            score_time_rcd(
+                model, values, official_protocol=True, inference_context_normalization=True,
+            )
+
     def test_chunked_attention_matches_dense_global_attention(self):
         model = FixtureAttentionModel()
         attention = model.attention
@@ -318,6 +359,40 @@ class TestTimeRCD(unittest.TestCase):
         self.assertEqual(result["lookahead"], 2)
         self.assertEqual(result["maximum_effective_lookahead"], 2)
 
+    def test_normalizes_each_valid_block_before_padding_without_mutating_input(self):
+        model = ConstantProbabilityModel()
+        session = numpy.array([
+            [10, 7], [12, 7], [14, 7], [16, 7], [100, 9], [104, 9],
+        ], dtype=numpy.float32)
+        original = session.copy()
+
+        result = score_time_rcd(
+            model, session, context_length=4, device="cpu",
+            inference_context_normalization=True,
+        )
+
+        numpy.testing.assert_allclose(
+            model.calls[0][0][0, :, 0], numpy.array([-3, -1, 1, 3]) / math.sqrt(5),
+            rtol=1e-6,
+        )
+        numpy.testing.assert_array_equal(model.calls[1][0][0, :, 0], [-1, 1, 1, 1])
+        self.assertTrue(all(numpy.all(values[0, :, 1].numpy() == 0) for values, _ in model.calls))
+        self.assertEqual(model.calls[1][1][0].tolist(), [True, True, False, False])
+        numpy.testing.assert_array_equal(session, original)
+        self.assertEqual(result["normalization_scope"], "none")
+        self.assertEqual(result["input_normalization"], "inference_context_zscore")
+        self.assertEqual(result["input_normalization_scope"], "valid_inference_block")
+        self.assertFalse(result["persistent_target_fit"])
+
+        changed = session.copy()
+        changed[4:] *= 1000
+        other_model = ConstantProbabilityModel()
+        score_time_rcd(
+            other_model, changed, context_length=4, device="cpu",
+            inference_context_normalization=True,
+        )
+        torch.testing.assert_close(model.calls[0][0], other_model.calls[0][0], rtol=0, atol=0)
+
     def test_averages_channel_logits_before_softmax_like_official_inference(self):
         result = score_time_rcd(
             UnequalChannelLogitModel(), numpy.ones((2, 2), dtype=numpy.float32),
@@ -413,10 +488,13 @@ class TestTimeRCD(unittest.TestCase):
             result = score_time_rcd_official(
                 session, context_length=4, device="cpu",
                 component_loader=component_loader,
+                inference_context_normalization=True,
             )
 
         self.assertEqual(result["scores"].shape, (3,))
         self.assertEqual(model.calls[0][0].shape, (1, 3, 2))
+        numpy.testing.assert_allclose(model.calls[0][0].mean(dim=1), 0, atol=1e-6)
+        self.assertEqual(result["input_normalization_scope"], "valid_inference_block")
 
     def test_source_only_smoke_cannot_mark_checkpoint_path_available(self):
         self.assertEqual(len(TIME_RCD_CHECKPOINT_SHA256), 64)

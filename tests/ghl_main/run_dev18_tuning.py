@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import concurrent.futures
 import csv
 import datetime
@@ -12,8 +13,11 @@ import math
 import os
 import subprocess
 import sys
+import time
 import tracemalloc
 from collections import defaultdict
+from contextlib import ExitStack
+from functools import lru_cache
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +33,7 @@ from matplotlib import pyplot
 from src.common.equal_trial_budget import build_equal_trial_budget, registry_space_sha256
 from src.common.execution_identity import file_sha256, load_input_manifest_role
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
+from src.common.measure_process_memory import start_process_memory_sampling
 from src.common.model_registry import (
     load_model_registry_with_sha,
     validate_primary_hpo_seal,
@@ -39,6 +44,9 @@ from tests.checks.seal_runtime_environment import (
     validate_runtime_snapshot,
 )
 from tests.ghl_main.build_dev18_budget import _load_current_feasibility
+from tests.ghl_main.record_run_history import (
+    has_run_persistence_failure, load_attempt_counts, record_run_history, record_run_stage, save_run_history,
+)
 
 
 def vus_pr(*args, **kwargs):
@@ -103,7 +111,11 @@ FINAL_SPLIT_ROLES = (
 RATIO_ADAPTIVE_SELECTION_RULE_ID = "tier_adaptive_family_lofo_v1"
 EXPECTED_MODEL_RUNTIME_ORDER = {
     "SQDIFF_LAST3": 0,
+    "SQDIFF_LAST1": 0,
+    "SQDIFF_CENTERED5": 0,
     "MWVAR": 1,
+    "MWVAR96_SQDIFF_LAST3": 1,
+    "MWVAR96_SQDIFF_CENTERED5": 1,
     "PCA_LEGACY": 2,
     "TimeRCD": 3,
     "PaAno": 4,
@@ -142,10 +154,17 @@ def _write_csv(path, rows, fieldnames=None) -> None:
         if not rows:
             raise ValueError(f"빈 표는 저장하지 않는다: {path.name}")
         fieldnames = tuple(rows[0])
-    with path.open("w", encoding="utf-8", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary_path.open("w", encoding="utf-8", newline="") as output:
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def _require_clean_worktree() -> None:
@@ -201,6 +220,9 @@ def _validate_checkpoint_report(model_name: str, registry: dict, budget: dict) -
         REPOSITORY_ROOT / ".runtime" / "dev18_checkpoint_smoke"
         / directory / "dev18_checkpoint_smoke.json"
     )
+    if budget.get("experiment_mode") == "full_prefix_v2":
+        path = (REPOSITORY_ROOT / "experiments/checks/reference_code/active_models"
+                / "full_prefix_v2/checkpoints" / directory / "dev18_checkpoint_smoke.json")
     report = _read_json(path)
     model = registry["models"][model_name]
     input_manifest_sha256 = file_sha256(
@@ -210,8 +232,10 @@ def _validate_checkpoint_report(model_name: str, registry: dict, budget: dict) -
         REPOSITORY_ROOT / "src" / "models" / "tier3"
         / ("time_rcd.py" if model_name == "TimeRCD" else "tspulse.py")
     )
+    official_protocol = registry["common_recipe"].get("methodology_revision") == "paper_tuning_v4"
     expected_heads = (
         {"score"} if model_name == "TimeRCD"
+        else {"time", "fft", "pred", "ensemble"} if official_protocol
         else {"time", "fft", "pred", "raw_max"}
     )
     channel_report = report.get("channels", {}).get("2", {})
@@ -223,6 +247,9 @@ def _validate_checkpoint_report(model_name: str, registry: dict, budget: dict) -
     valid = (
         report.get("status") == "passed"
         and report.get("model") == model_name
+        and report.get("official_protocol", False) == official_protocol
+        and report.get("inference_context_normalization", False)
+        == (registry["common_recipe"].get("methodology_revision") == "source_faithful_v3")
         and report.get("config_id") in expected_config_ids
         and report.get("budget_id") == budget["budget_id"]
         and report.get("budget_sha256") == budget["budget_sha256"]
@@ -265,31 +292,41 @@ def _validate_environment_snapshot(environment: dict) -> dict:
 
 def prepare_tuning(
     *, data_root=DEFAULT_DATA_ROOT, require_clean=True,
-    require_execution_environment=True,
+    require_execution_environment=True, budget=None,
 ) -> dict:
     """기존 봉인을 다시 계산하지 않고 tuning 시작 조건만 대조한다."""
     if require_clean:
         _require_clean_worktree()
     registry, registry_sha256 = load_model_registry_with_sha()
-    validate_primary_hpo_seal(registry)
-    _, _, feasibility = _load_current_feasibility(
-        REPOSITORY_ROOT, SNAPSHOT_DIRECTORY, registry_sha256,
-    )
-    expected_budget = build_equal_trial_budget(registry, feasibility)
-    budget = _read_json(DEFAULT_BUDGET_PATH)
-    for field, value in expected_budget.items():
-        if budget.get(field) != value:
-            raise ValueError(f"Dev18 budget {field}가 현재 봉인과 다르다")
-    if (
-        budget.get("seal_status") != "sealed"
-        or budget.get("execution_readiness_status") != "ready"
-        or budget.get("pending_execution_models") != []
-        or budget.get("attestation", {}).get("config_registry_sha256") != registry_sha256
-    ):
-        raise ValueError("Dev18 budget 실행 준비가 닫히지 않았다")
+    full_prefix = budget is not None and budget.get("experiment_mode") == "full_prefix_v2"
+    if full_prefix:
+        validate_primary_hpo_seal(registry, budget=budget)
+    else:
+        validate_primary_hpo_seal(registry)
+        _, _, feasibility = _load_current_feasibility(
+            REPOSITORY_ROOT, SNAPSHOT_DIRECTORY, registry_sha256,
+            config_count=sum(len(model["candidates"]) for model in registry["models"].values()),
+        )
+        expected_budget = build_equal_trial_budget(registry, feasibility)
+        budget = _read_json(DEFAULT_BUDGET_PATH)
+        for field, value in expected_budget.items():
+            if budget.get(field) != value:
+                raise ValueError(f"Dev18 budget {field}가 현재 봉인과 다르다")
+        if (
+            budget.get("seal_status") != "sealed"
+            or budget.get("execution_readiness_status") != "ready"
+            or budget.get("pending_execution_models") != []
+            or budget.get("attestation", {}).get("config_registry_sha256") != registry_sha256
+        ):
+            raise ValueError("Dev18 budget 실행 준비가 닫히지 않았다")
 
     input_manifest_path = REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
     input_manifest_sha256 = file_sha256(input_manifest_path)
+    if full_prefix and (
+        budget["input_manifest_sha256"] != input_manifest_sha256
+        or budget["data_preprocessing_sha256"] != file_sha256(REPOSITORY_ROOT / "configs/data_preprocessing.yaml")
+    ):
+        raise ValueError("full-prefix budget의 입력 또는 전처리 신원이 바뀌었다")
     ell_max = _validate_ell_max(DEFAULT_ELL_MAX_PATH, input_manifest_sha256)
     evaluator_path = REPOSITORY_ROOT / "src" / "채점기" / "vus_pr.py"
     vus_report = validate_vus_evidence(DEFAULT_VUS_REPORT_PATH, evaluator_path)
@@ -300,6 +337,10 @@ def prepare_tuning(
     checkpoints = {}
     environment = {}
     if require_execution_environment:
+        if full_prefix:
+            from tests.checks.run_model_smoke import validate_full_prefix_smoke
+
+            validate_full_prefix_smoke()
         checkpoints = {
             model: _validate_checkpoint_report(model, registry, budget)
             for model in ("TimeRCD", "TSPulse")
@@ -316,7 +357,7 @@ def prepare_tuning(
         "budget_id": budget["budget_id"],
         "physical_execution_count_per_series": budget["physical_execution_count"],
         "series_count": 18,
-        "expected_primary_ledger_rows": 18 * budget["primary_logical_score_row_count"],
+        "expected_primary_ledger_rows": budget.get("expected_ledger_rows", 18 * budget["primary_logical_score_row_count"]),
         "evaluator_sha256": vus_report["evaluator_sha256"],
         "ell_max_id": ell_max["ell_max_id"],
         "checkpoint_models": sorted(checkpoints),
@@ -422,27 +463,9 @@ TRIAL_SCORE_LEDGER_FIELDS = (
 )
 
 
-def load_structural_block_evidence(path, registry: dict) -> dict:
-    """봉인 feasibility ledger에서 low-pair series만 요약한다."""
-    blocked = defaultdict(set)
-    with Path(path).open(encoding="utf-8", newline="") as input_file:
-        for row in csv.DictReader(input_file):
-            model = registry["models"].get(row["model"], {})
-            heads = model.get("fixed", {}).get("heads")
-            if row["status"] != "structurally_infeasible" or heads is None:
-                continue
-            pair_count = json.loads(row["derived_json"]).get("pair_count")
-            if pair_count is not None and int(pair_count) < int(heads):
-                blocked[row["model"]].add(row["series"])
-    return {
-        model: {"heads": registry["models"][model]["fixed"]["heads"],
-                "blocked_series": sorted(series)}
-        for model, series in blocked.items()
-    }
-
-
 def load_trial_score_ledger(
     path, budget: dict, *, expected_evaluator_sha256: str, expected_ell_max_id: str,
+    allow_partial=False,
 ) -> list[dict]:
     """완료 원표의 점수·채점 신원과 budget 논리 키를 확인해 읽는다."""
     with Path(path).open(encoding="utf-8", newline="") as input_file:
@@ -466,9 +489,9 @@ def load_trial_score_ledger(
     ]
     if len(set(keys)) != len(keys):
         raise ValueError("Dev18 trial ledger에 duplicate 논리 키가 있다")
-    if {row["evaluator_sha256"] for row in rows} != {expected_evaluator_sha256}:
+    if any(row["evaluator_sha256"] != expected_evaluator_sha256 for row in rows):
         raise ValueError("Dev18 trial ledger의 evaluator SHA가 공식 봉인과 다르다")
-    if {row["ell_max_id"] for row in rows} != {expected_ell_max_id}:
+    if any(row["ell_max_id"] != expected_ell_max_id for row in rows):
         raise ValueError("Dev18 trial ledger의 ell_max ID가 공식 봉인과 다르다")
     series_families = {}
     tiers_by_model = {panel["model"]: panel["tier"] for panel in budget["model_panels"]}
@@ -486,8 +509,10 @@ def load_trial_score_ledger(
     expected_by_model = {
         panel["model"]: {
             (config_id, ratio, seed, variant)
-            for config_id in panel["selected_config_ids"]
             for ratio in panel["logical_ratios"]
+            for config_id in panel.get("selected_config_ids_by_ratio", {}).get(
+                str(ratio), panel["selected_config_ids"],
+            )
             for seed in panel.get("seeds", budget["seeds"])
             for variant in panel["primary_score_variants"]
         }
@@ -495,11 +520,19 @@ def load_trial_score_ledger(
     }
     expected_keys = {
         (series, model, config_id, ratio, seed, variant)
-        for series in {row["series"] for row in rows}
+        for series in budget.get("series_ids", {row["series"] for row in rows})
         for model, entries in expected_by_model.items()
         for config_id, ratio, seed, variant in entries
     }
-    if set(keys) != expected_keys:
+    if budget.get("experiment_mode") == "full_prefix_v2":
+        expected_keys = {
+            (series, panel["model"], panel["config_id"], ratio, panel["seed"], variant)
+            for panel in budget["execution_panel"]
+            for series in panel["series_ids"]
+            for ratio in panel["logical_ratios"]
+            for variant in panel["primary_score_variants"]
+        }
+    if not set(keys) <= expected_keys or (not allow_partial and set(keys) != expected_keys):
         raise ValueError("Dev18 trial ledger의 논리 키가 budget과 다르다")
     return rows
 
@@ -635,12 +668,10 @@ def _draw_ratio_adaptive_selection(axis, data: dict) -> None:
 
 def select_ratio_adaptive_policies(
     rows, registry: dict, budget: dict, *, model_fixed, evaluator_sha256: str,
-    structural_block_evidence=None,
 ) -> dict:
     """모델별 고정 recipe를 유지한 채 비율마다 Tier 대표를 고른다."""
     seed_rows = _seed_means(rows)
     tolerance = float(budget["tie_rule"]["tolerance"])
-    structural_block_evidence = structural_block_evidence or {}
     fixed_by_model = {row["model"]: row for row in model_fixed}
     panels_by_tier = defaultdict(list)
     for panel in budget["model_panels"]:
@@ -714,12 +745,6 @@ def select_ratio_adaptive_policies(
                         "reason_code": "full_panel_config_unavailable",
                         "reason": "18개 panel을 덮는 model-fixed config가 없다",
                     })
-                    evidence = structural_block_evidence.get(model_name)
-                    if evidence:
-                        audit["reason"] = (
-                            f"pair_count < heads {evidence['heads']}; 차단 series: "
-                            + ", ".join(evidence["blocked_series"])
-                        )
                 elif ratio not in panel["logical_ratios"]:
                     audit.update({
                         "eligibility": "ratio_unsupported", "reason_code": "ratio_unsupported",
@@ -808,7 +833,6 @@ def select_ratio_adaptive_policies(
 
 def select_tuning_policies(
     rows, registry: dict, budget: dict, *, evaluator_sha256: str,
-    structural_block_evidence=None,
 ) -> dict:
     """seed 평균 → family 균형 → LOFO 모델 선택 → full-panel recipe 고정을 수행한다."""
     seed_rows = _seed_means(rows)
@@ -934,10 +958,6 @@ def select_tuning_policies(
     adaptive = select_ratio_adaptive_policies(
         rows, registry, budget, model_fixed=model_fixed,
         evaluator_sha256=evaluator_sha256,
-        structural_block_evidence=(
-            load_structural_block_evidence(DEFAULT_FEASIBILITY_LEDGER_PATH, registry)
-            if structural_block_evidence is None else structural_block_evidence
-        ),
     )
     return {"model_fixed": model_fixed, "tier_fixed": tier_fixed, "lofo": lofo, **adaptive}
 
@@ -981,6 +1001,9 @@ def build_final_membership_rows(
         for policy in selection["tier_adaptive"]
     }
     for split_role in split_roles:
+        for policy in selection.get("model_ratio", []):
+            append("model_ratio", split_role, policy, policy["model"], policy["ratio"],
+                   unavailable_reason=policy.get("selection_reason"))
         for policy in selection["model_fixed"]:
             for ratio in ratios:
                 append("model_fixed", split_role, policy, policy["model"], ratio)
@@ -1023,6 +1046,9 @@ def write_selection_reports(
     output_directory.mkdir(parents=True, exist_ok=True)
     seed_rows = _seed_means(rows)
     fixed = {row["model"]: row for row in selection["model_fixed"]}
+    ratio_policies = {
+        (row["model"], row["ratio"]): row for row in selection.get("model_ratio", [])
+    }
     models = sorted(row["model"] for row in selection["model_fixed"])
     model_tables = {}
     for model_name in models:
@@ -1032,6 +1058,7 @@ def write_selection_reports(
             for row in seed_rows if row["model"] == model_name
         })
         for config_id, ratio, variant in combinations:
+            policy = ratio_policies.get((model_name, ratio), fixed[model_name])
             filtered = [
                 row for row in seed_rows
                 if row["model"] == model_name and row["config_id"] == config_id
@@ -1046,12 +1073,12 @@ def write_selection_reports(
                 ),
                 "series_macro_vus_pr": float(numpy.mean([row["vus_pr"] for row in filtered])),
                 "selected_recipe": (
-                    fixed[model_name]["selection_status"] == "selected"
-                    and fixed[model_name]["config_id"] == config_id
-                    and fixed[model_name]["score_variant"] == variant
+                    policy["selection_status"] == "selected"
+                    and policy["config_id"] == config_id
+                    and policy["score_variant"] == variant
                 ),
-                "selected_hyperparameters": fixed[model_name]["hyperparameters"],
-                "selection_reason": fixed[model_name]["selection_reason"],
+                "selected_hyperparameters": policy["hyperparameters"],
+                "selection_reason": policy["selection_reason"],
             })
         if not model_rows:
             model_rows = [{
@@ -1091,7 +1118,7 @@ def write_selection_reports(
                     if row["config_id"] == config_id and row["score_variant"] == variant
                 ]
                 curves.append(curve)
-                selected = curve[0]["selected_recipe"]
+                selected = curve[0]["selected_recipe"] and not ratio_policies
                 if selected:
                     label = "Selected recipe"
                     selected_curve = curve
@@ -1107,6 +1134,15 @@ def write_selection_reports(
                     linestyle="-" if selected else "--",
                     linewidth=2.5 if selected else 1.2, label=label,
                 )
+            if ratio_policies:
+                selected_curve = sorted(
+                    (row for row in model_rows if row["selected_recipe"]),
+                    key=lambda row: row["ratio"],
+                )
+                axis.plot([row["ratio"] for row in selected_curve],
+                          [row["family_macro_vus_pr"] for row in selected_curve],
+                          marker="o", color="#1f77b4", linewidth=2.5,
+                          label="Selected at each ratio")
             axis.set(
                 title=model_name, xlabel="Observed normal prefix (%)",
                 ylabel="Family-macro VUS-PR",
@@ -1211,6 +1247,10 @@ def write_selection_reports(
     _write_csv(output_directory / "family_lofo.csv", selection["lofo"])
     model_summary = _serializable_rows(selection["model_fixed"])
     _write_csv(output_directory / "models.csv", model_summary)
+    if ratio_policies:
+        _write_csv(output_directory / "model_ratio_policy.csv",
+                   _serializable_rows(selection["model_ratio"]))
+        _write_csv(output_directory / "ratio_family_lofo.csv", selection["adaptive_lofo"])
     _write_csv(
         output_directory / "ratio_adaptive_selection.csv",
         _serializable_rows(selection["tier_adaptive"]),
@@ -1285,6 +1325,132 @@ SCORE_MANIFEST_FIELDS = (
 )
 
 
+def _load_final_target_shapes(input_manifest):
+    """기존 감사의 shape만 읽고 최종 CSV·라벨은 읽지 않는다."""
+    datasets = input_manifest["datasets"]
+    audit_root = REPOSITORY_ROOT / "experiments/checks/datasets"
+    with (audit_root / "ghl/logs/inventory.csv").open(encoding="utf-8", newline="") as source:
+        inventory = {row["file_name"]: row for row in csv.DictReader(source)}
+    targets = []
+    for entry in datasets["GHL"]["files"]:
+        row = inventory[entry["name"]]
+        if row["sha256"] != entry["sha256"]:
+            raise ValueError("GHL shape 감사와 입력 manifest의 신원이 다르다")
+        targets.append({
+            "split_role": "ghl25_final", "series": f"{int(row['series']):02d}",
+            "training_lengths": [int(row["train_length"])],
+            "test_length": int(row["test_length"]), "feature_count": int(row["feature_count"]),
+        })
+    audit = _read_json(audit_root / "hai/tier2_eda/json/eda_manifest.json")
+    audit_inputs = {Path(row["path"]).name: row["sha256"] for row in audit["inputs"]}
+    with (audit_root / "hai/tier2_eda/csv/data_integrity.csv").open(encoding="utf-8", newline="") as source:
+        inventory = {row["file_name"]: row for row in csv.DictReader(source)}
+    hai_entries = {row["name"]: row for row in datasets["HAI"]["files"]}
+    for series, split_role in (("01", "train1_to_test1"), ("02", "train1_train2_to_test2")):
+        role = input_manifest["roles"][split_role]
+        names = role["normal_training_files"] + role["test_files"]
+        if any(audit_inputs[name] != hai_entries[name]["sha256"] for name in names):
+            raise ValueError("HAI shape 감사와 입력 manifest의 신원이 다르다")
+        channels = {int(inventory[name]["feature_count"]) for name in names}
+        if len(channels) != 1:
+            raise ValueError("HAI 실행 세션의 센서 수가 다르다")
+        targets.append({
+            "split_role": split_role, "series": series,
+            "training_lengths": [int(inventory[name]["row_count"]) for name in role["normal_training_files"]],
+            "test_length": int(inventory[role["test_files"][0]]["row_count"]),
+            "feature_count": channels.pop(),
+        })
+    return targets
+
+
+def build_conditional_membership_rows(selection, registry, input_manifest=None, *, targets=None):
+    """튜닝에서 고정한 조건별 정책을 최종 파일의 실행 요청으로 바꾼다."""
+    from src.common.model_feasibility import assess_candidate
+    from src.common.run_registered_model import SESSION_RUNNERS, TARGET_FREE
+    from src.common.select_conditional_policy import match_conditional_policy, match_joint_support
+    from src.data_split.split_ratio_prefix import compute_prefix_counts
+
+    if targets is None:
+        if input_manifest is None:
+            input_manifest = __import__("yaml").safe_load((REPOSITORY_ROOT / "configs/input_manifest.yaml").read_text(encoding="utf-8"))
+        targets = _load_final_target_shapes(input_manifest)
+    rows = []
+    for target in targets:
+        training_boundary = sum(target["training_lengths"])
+        for ratio in SUPPORTED_RATIO_PERCENTS:
+            prefixes = [compute_prefix_counts(length, ratio, full_prefix=True)[0]
+                        for length in target["training_lengths"]]
+            available = sum(prefixes)
+            signatures = {}
+            for name, model in registry["models"].items():
+                supports_sessions = len(prefixes) == 1 or name in SESSION_RUNNERS or model["target_use"] in TARGET_FREE
+                official_protocol = registry.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4"
+                checks = ([(sum(prefixes), tuple(prefixes))] if official_protocol and name == "GDN"
+                          else [(length, None) for length in prefixes])
+                signatures[name] = [candidate["config_id"] for candidate in model["candidates"]
+                                    if supports_sessions and all(assess_candidate(
+                                        name, candidate["hyperparameters"], length, 0,
+                                        target["test_length"], target["feature_count"], full_prefix=True,
+                                        official_protocol=official_protocol, fit_session_lengths=sessions,
+                                    )["status"] == "feasible" for length, sessions in checks)]
+                match = match_conditional_policy(
+                    selection, registry, model=name, ratio=ratio, available_count=available,
+                    feature_count=target["feature_count"], test_length=target["test_length"],
+                    training_boundary=training_boundary, feasible_config_ids=signatures[name],
+                    allow_out_of_support=True,
+                ) if available else {
+                    "status": "unavailable", "policy": None, "support_status": "unavailable",
+                    "reasons": ["현재 q-prefix가 0행임"],
+                }
+                rows.append(_conditional_membership_row(
+                    "model_ratio", target, ratio, name, model["tier"], match.get("policy"),
+                    match["support_status"], match["status"] == "matched", "; ".join(match["reasons"]), registry,
+                ))
+            for tier in sorted({model["tier"] for model in registry["models"].values()}):
+                signature = {name: configs for name, configs in signatures.items()
+                             if registry["models"][name]["tier"] == tier and configs}
+                matches = [policy for policy in selection.get("tier_adaptive", [])
+                           if policy["tier"] == tier and policy["ratio"] == ratio
+                           and policy.get("candidate_ids_by_model") == signature
+                           and policy["selection_status"] == "selected"]
+                if len(matches) > 1:
+                    raise ValueError("최종 조건에 대응하는 Tier 정책이 하나가 아니다")
+                policy = matches[0] if matches else None
+                name = policy["selected_model"] if policy else next(
+                    name for name, model in registry["models"].items() if model["tier"] == tier)
+                support_reasons = match_joint_support(
+                    policy.get("support"), available_count=available,
+                    feature_count=target["feature_count"], training_boundary=training_boundary,
+                ) if policy else ["conditional_group_missing"]
+                has_support = policy is not None and support_reasons != ["conditional_group_support_missing"]
+                rows.append(_conditional_membership_row(
+                    "tier_adaptive", target, ratio, name, tier, policy,
+                    "within_dev_support" if not support_reasons else "out_of_dev_support" if has_support else "unavailable",
+                    has_support, "; ".join(support_reasons), registry,
+                ))
+    return rows
+
+
+def _conditional_membership_row(kind, target, ratio, model, tier, policy, support_status, runnable, reason, registry):
+    from src.common.tuning_support import resolve_policy_score_variant
+
+    family = target.get("family") or {
+        "ghl25_final": "GHL", "train1_to_test1": "HAI", "train1_train2_to_test2": "HAI",
+    }.get(target["split_role"], "")
+    return {
+        "analysis_kind": kind, "split_role": target["split_role"], "tier": tier, "model": model,
+        "evaluation_ratio": ratio,
+        "physical_ratio": (100 if registry["models"][model]["target_use"] in {"training_free", "strict_zero_shot"}
+                           else ratio) if runnable else "",
+        "config_id": policy["config_id"] if runnable else "",
+        "score_variant": resolve_policy_score_variant(policy, family) if runnable else "",
+        "status": "runnable" if runnable else "unavailable",
+        "status_reason": "" if runnable else reason or "조건별 선택 근거가 없음",
+        "series": target["series"], "group_id": policy["group_id"] if policy else "",
+        "support_status": support_status if runnable else "unavailable",
+    }
+
+
 def _manifest_key(row) -> tuple:
     return tuple(str(row[field]) for field in (
         "series", "model", "config_id", "physical_ratio", "seed", "score_variant",
@@ -1302,17 +1468,25 @@ def _validate_primary_manifest_rows(manifest_rows, budget: dict, series_ids) -> 
             series, panel["model"], panel["config_id"], panel["physical_ratio"],
             panel["seed"], variant,
         )))
-        for series in series_ids
         for panel in budget["execution_panel"]
+        for series in panel.get("series_ids", series_ids)
         for variant in panel["primary_score_variants"]
     }
     if set(actual_keys) != expected_keys:
         raise ValueError("Dev18 primary score manifest가 exact budget key와 다르다")
-    if any(
-        row.get("status") != "complete"
-        or row.get("budget_id") != budget["budget_id"]
-        for row in primary_rows
-    ):
+    legacy = {} if budget.get("experiment_mode") == "full_prefix_v2" else budget.get("legacy_budget", {})
+    legacy_keys = {
+        tuple(map(str, (series, panel["model"], panel["config_id"],
+                       panel["physical_ratio"], panel["seed"], variant)))
+        for series in series_ids for panel in legacy.get("execution_panel", [])
+        for variant in panel["primary_score_variants"]
+    }
+    if any(row.get("status") != "complete" or (
+        row.get("budget_id") != budget["budget_id"] and not (
+            row.get("budget_id") == legacy.get("budget_id")
+            and _manifest_key(row) in legacy_keys
+        )
+    ) for row in primary_rows):
         raise ValueError("Dev18 exact budget primary score가 모두 complete가 아니다")
     return primary_rows
 
@@ -1388,12 +1562,25 @@ def _json_default(value):
 
 
 def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, environment: dict) -> Path:
+    from src.common.execution_evidence import FULL_PREFIX_STORAGE_SCHEMA_VERSION
     from src.common.run_registered_model import build_registered_execution_policy
+    from src.data_split.split_ratio_prefix import compute_prefix_counts
 
     output_directory.mkdir(parents=True, exist_ok=True)
     path = output_directory / "run_snapshot.json"
+    current_storage = spec.get("common_recipe", {}).get("training_split") == "full_prefix_v2"
+    prefix_observation = {}
+    if current_storage and spec["target_use"] == "fit_full_prefix":
+        training_boundary = len(inputs["normal_training"])
+        prefix_observation = {
+            "training_boundary": training_boundary,
+            "observed_row": compute_prefix_counts(training_boundary, spec["ratio"], full_prefix=True)[0],
+        }
     path.write_text(json.dumps({
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        **({"storage_schema_version": FULL_PREFIX_STORAGE_SCHEMA_VERSION}
+           if current_storage else {}),
+        **prefix_observation,
         "project_commit": _git_head(),
         "spec": spec,
         "execution_policy": build_registered_execution_policy(spec),
@@ -1421,20 +1608,19 @@ def _write_completion_receipt(path: Path, rows: list[dict]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(f".{path.name}.tmp")
-    temporary_path.write_text(
-        json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    temporary_path.replace(path)
+    try:
+        temporary_path.write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
-def _load_completion_receipt(
-    path: Path, *, spec: dict, panel_row: dict, series: int, budget_id: str,
+def _validate_completion_rows(
+    rows, *, spec: dict, panel_row: dict, series: int, budget_id: str,
 ) -> list[dict]:
-    path = Path(path)
-    if not path.is_file():
-        return []
-    rows = _read_json(path)
     if not isinstance(rows, list):
         raise ValueError("Dev18 완료 영수증 형식이 잘못됐다")
     expected_keys = {
@@ -1458,9 +1644,76 @@ def _load_completion_receipt(
     return rows
 
 
+def _load_completion_receipt(
+    path: Path, *, spec: dict, panel_row: dict, series: int, budget_id: str,
+) -> list[dict]:
+    path = Path(path)
+    if not path.is_file():
+        return []
+    return _validate_completion_rows(
+        _read_json(path), spec=spec, panel_row=panel_row, series=series, budget_id=budget_id,
+    )
+
+
+def _recover_saved_run_rows(*, spec, panel_row, series, family, budget_id, computed):
+    """출력은 저장됐지만 완료 이력 쓰기가 끊긴 실행의 행을 복구한다."""
+    from src.common.naming import build_score_filename
+    from tests.ghl_main.run_registered_models import build_output_directory
+
+    history_path = Path(computed["history_file"]).resolve()
+    history_path.relative_to(REPOSITORY_ROOT)
+    history = _read_json(history_path)
+    recovered = []
+    for variant in _expected_variants(panel_row):
+        output_directory = build_output_directory(
+            REPOSITORY_ROOT / "experiments/01_ghl_main", spec,
+            score_variant=variant if spec["model"] == "TSPulse" else None,
+        )
+        raw = output_directory / build_score_filename(
+            "DEV18", series, spec["model"], spec["tier"], spec["ratio"], spec["seed"], "raw", "trainnorm",
+        )
+        metadata_path = raw.with_suffix(".meta.json")
+        if not metadata_path.is_file():
+            return []
+        metadata = _read_json(metadata_path)
+        attempt = metadata.get("execution_attempt", {})
+        if (attempt.get("run_id") != history["run_id"]
+                or not attempt.get("history_file")
+                or (REPOSITORY_ROOT / attempt["history_file"]).resolve() != history_path):
+            raise ValueError("저장된 출력이 복구할 모델 시도와 다르다")
+        references = metadata.get("score_files", [])
+        if not references:
+            return []
+        by_path = {}
+        for reference in references:
+            path = (REPOSITORY_ROOT / reference["file"]).resolve()
+            path.relative_to(output_directory.resolve())
+            if not path.is_file():
+                return []
+            if path in by_path or file_sha256(path) != reference["sha256"] or path.stat().st_size != reference["bytes"]:
+                raise ValueError("복구할 점수의 SHA-256 또는 크기가 저장 근거와 다르다")
+            by_path[path] = reference
+        if raw.resolve() not in by_path:
+            return []
+        recovered.append({
+            "series": f"{series:02d}", "family": family, "tier": spec["tier"], "model": spec["model"],
+            "config_id": spec["config_id"], "physical_ratio": spec["ratio"], "seed": spec["seed"],
+            "score_variant": variant, "primary_score": str(variant in panel_row["primary_score_variants"]).lower(),
+            "status": "complete", "status_reason": "", "score_file": _relative(raw),
+            "score_sha256": by_path[raw.resolve()]["sha256"], "metadata_file": _relative(metadata_path),
+            "metadata_sha256": file_sha256(metadata_path), "budget_id": budget_id,
+            "retry_count": computed["attempt"],
+        })
+    return _validate_completion_rows(
+        recovered, spec=spec, panel_row=panel_row, series=series, budget_id=budget_id,
+    )
+
+
 def _record_seed_state(snapshot_path: Path, result: dict) -> None:
     snapshot = _read_json(snapshot_path)
     snapshot["seed_state"] = result["seed_state"]
+    if "effective_execution" in result:
+        snapshot["effective_execution"] = result["effective_execution"]
     snapshot_path.write_text(
         json.dumps(snapshot, ensure_ascii=False, indent=2, default=_json_default) + "\n",
         encoding="utf-8",
@@ -1471,9 +1724,11 @@ def _validate_bound_run_files(
     metadata: dict, *, expected_project_commit: str | None = None,
     compatible_project_commit: str | None = None,
     expected_environment: dict | None = None, expected_spec: dict | None = None,
+    allow_compatible_history: bool = False,
 ) -> None:
     references = [metadata.get("run_snapshot")]
     references.extend((metadata.get("training_files") or {}).values())
+    references.extend(metadata.get("score_files", []))
     if not references or any(not isinstance(reference, dict) for reference in references):
         raise ValueError("Dev18 run snapshot·training file 연결이 없다")
     for reference in references:
@@ -1490,16 +1745,26 @@ def _validate_bound_run_files(
         REPOSITORY_ROOT / metadata["run_snapshot"]["file"]
     ).resolve()
     snapshot = _read_json(snapshot_path)
+    current_storage = (expected_spec or snapshot.get("spec", {})).get("common_recipe", {}).get("training_split") == "full_prefix_v2"
+    if current_storage:
+        from src.common.execution_evidence import FULL_PREFIX_STORAGE_SCHEMA_VERSION
+
+        if snapshot.get("storage_schema_version") != FULL_PREFIX_STORAGE_SCHEMA_VERSION:
+            raise ValueError("Dev18 full-prefix snapshot의 저장 계약이 현재 실행과 다르다")
+        compatible_project_commit = None
+        allow_compatible_history = False
     if expected_project_commit is not None or expected_environment is not None:
         accepted_commits = {expected_project_commit, compatible_project_commit} - {None}
         if accepted_commits and snapshot.get("project_commit") not in accepted_commits:
-            raise ValueError("Dev18 재개 snapshot의 project commit이 현재 HEAD와 다르다")
+            if not allow_compatible_history:
+                raise ValueError("Dev18 재개 snapshot의 project commit이 현재 HEAD와 다르다")
+            _validate_resume_source(snapshot.get("project_commit"), expected_project_commit)
         if (
-            expected_environment is not None
+            expected_environment is not None and not allow_compatible_history
             and snapshot.get("environment") != expected_environment
         ):
             raise ValueError("Dev18 재개 snapshot의 실행 환경이 현재 봉인과 다르다")
-    from src.common.run_registered_model import build_registered_execution_policy
+    from src.common.run_registered_model import build_registered_execution_policy, select_input_scaler
 
     snapshot_spec = snapshot.get("spec")
     if (
@@ -1512,9 +1777,65 @@ def _validate_bound_run_files(
         != build_registered_execution_policy(expected_spec or snapshot_spec)
     ):
         raise ValueError("Dev18 run snapshot의 execution policy가 현재 등록 일정과 다르다")
+    if current_storage and snapshot_spec["target_use"] == "fit_full_prefix":
+        from src.data_split.split_ratio_prefix import compute_prefix_counts
+
+        source_range = snapshot["source_ranges"]["normal_training"]
+        boundary = source_range[1] - source_range[0]
+        observed = compute_prefix_counts(boundary, snapshot_spec["ratio"], full_prefix=True)[0]
+        if snapshot.get("training_boundary") != boundary or snapshot.get("observed_row") != observed:
+            raise ValueError("Dev18 snapshot의 관측 행 수가 현재 prefix와 다르다")
+    if metadata.get("training_state_version") == 1:
+        training_files = metadata.get("training_files") or {}
+        if (snapshot_spec["target_use"] in {"fit_validation", "fit_full_prefix"}
+                or snapshot_spec["model"] == "PCA_LEGACY"
+                and snapshot_spec.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4"):
+            if "checkpoint" not in training_files:
+                raise ValueError("학습형 모델의 checkpoint가 없다")
+            if select_input_scaler(snapshot_spec) != "none" and "scaler_state" not in training_files:
+                raise ValueError("Tier 2 입력 scaler 상태가 없다")
 
 
-def _save_training_files(output_directory: Path, result: dict) -> tuple[int, dict]:
+@lru_cache(maxsize=None)
+def _validate_resume_source(previous_commit: str, current_commit: str) -> None:
+    """선택·예산 변경만 허용하고 점수 생성 코드가 바뀐 이력은 재사용하지 않는다."""
+    changed = subprocess.check_output([
+        "git", "diff", "--name-only", previous_commit, current_commit, "--",
+        "src", "configs", "tests/ghl_main/run_registered_models.py",
+        ":(exclude)src/common/load_final_membership.py",
+        ":(exclude)configs/deployment_scenario.schema.json",
+    ], cwd=REPOSITORY_ROOT, text=True).splitlines()
+    graph_path = "src/models/tier2/gdn_official/official.py"
+    if graph_path in changed:
+        previous_graph = subprocess.check_output(
+            ["git", "show", f"{previous_commit}:{graph_path}"],
+            cwd=REPOSITORY_ROOT, encoding="utf-8",
+        )
+        # 완료 배치의 메모리 복구는 사용하지 않는 attention 캐시만 detach했다.
+        previous_graph = previous_graph.replace(
+            "self.attention_weights = attention\n", "self.attention_weights = attention.detach()\n",
+        )
+        current_graph = (REPOSITORY_ROOT / graph_path).read_text(encoding="utf-8")
+        if ast.dump(ast.parse(previous_graph)) == ast.dump(ast.parse(current_graph)):
+            changed.remove(graph_path)
+    if changed:
+        raise ValueError(f"기존 점수 생성 코드가 바뀌어 재사용할 수 없다: {changed}")
+    relative_path = "tests/ghl_main/run_dev18_tuning.py"
+    previous = subprocess.check_output(
+        ["git", "show", f"{previous_commit}:{relative_path}"],
+        cwd=REPOSITORY_ROOT, encoding="utf-8",
+    )
+    names = {"_run_one_spec", "_write_run_snapshot", "_record_seed_state",
+             "_save_training_files", "_json_default", "_evidence_directory"}
+    def bodies(source):
+        return {node.name: ast.dump(node, include_attributes=False)
+                for node in ast.parse(source).body
+                if isinstance(node, ast.FunctionDef) and node.name in names}
+    if bodies(previous) != bodies(Path(__file__).read_text(encoding="utf-8")):
+        raise ValueError("기존 점수 저장·실행 함수가 바뀌어 재사용할 수 없다")
+
+
+def _save_training_files(output_directory: Path, result: dict, *, on_file_saved=None) -> tuple[int, dict]:
     training_directory = output_directory / "training"
     training_directory.mkdir(parents=True, exist_ok=True)
     files = {}
@@ -1523,25 +1844,63 @@ def _save_training_files(output_directory: Path, result: dict) -> tuple[int, dic
         import torch
 
         checkpoint_path = training_directory / "checkpoint.ckpt"
-        torch.save(checkpoint, checkpoint_path)
+        temporary_path = checkpoint_path.with_name(f".{checkpoint_path.name}.tmp")
+        torch.save(checkpoint, temporary_path)
+        temporary_path.replace(checkpoint_path)
         files["checkpoint"] = {
             "file": _relative(checkpoint_path),
             "sha256": file_sha256(checkpoint_path),
             "bytes": checkpoint_path.stat().st_size,
         }
+        if on_file_saved is not None:
+            on_file_saved("checkpoint", files["checkpoint"])
     for name, value in (
+        ("scaler_state", result.get("scaler_state")),
         ("training_log", result.get("training_log")),
         ("timing", result.get("timing")),
+        ("effective_execution", result.get("effective_execution")),
     ):
         if value is None:
             continue
         path = training_directory / f"{name}.json"
-        path.write_text(
+        temporary_path = path.with_name(f".{path.name}.tmp")
+        temporary_path.write_text(
             json.dumps(value, ensure_ascii=False, indent=2, default=_json_default) + "\n",
             encoding="utf-8",
         )
-        files[name] = {"file": _relative(path), "sha256": file_sha256(path)}
-    return files.get("checkpoint", {}).get("bytes", 0), files
+        temporary_path.replace(path)
+        files[name] = {
+            "file": _relative(path), "sha256": file_sha256(path),
+            "bytes": path.stat().st_size,
+        }
+        if on_file_saved is not None:
+            on_file_saved(name, files[name])
+    artifact_bytes = sum(files.get(name, {}).get("bytes", 0)
+                         for name in ("checkpoint", "scaler_state"))
+    return artifact_bytes, files
+
+
+def _save_training_completion(output_directory: Path, result: dict, history: dict) -> None:
+    """추론 전에 학습 증거를 시도별로 보존한다. 실패한 추론의 학습 재개점은 아니다."""
+    _require_same_worktree(history["run_snapshot"]["project_commit"])
+    attempt_directory = output_directory / "training_attempts" / history["run_id"]
+    history["training_complete"] = {
+        "status": "saving", "directory": _relative(attempt_directory),
+        "timing": dict(result["timing"]), "seed_state": result["seed_state"], "files": {},
+    }
+    history["model_execution_seconds_scope"] = "execution_wall_including_training_evidence_storage"
+
+    def record_training_file(name, reference):
+        history["training_complete"]["files"][name] = reference
+        save_run_history(history)
+
+    try:
+        with record_run_stage(history, "save_training"):
+            _, files = _save_training_files(attempt_directory, result, on_file_saved=record_training_file)
+            history["training_complete"].update(status="complete", files=files)
+            save_run_history(history)
+    except Exception as error:
+        raise RunResultPersistenceError("학습 완료 증거 저장에 실패했다") from error
 
 
 def _specs_for_budget(budget: dict) -> tuple[list[dict], dict[tuple, dict]]:
@@ -1574,6 +1933,7 @@ def _completed_run(
     input_manifest_path, expected_project_commit: str,
     compatible_project_commit: str | None,
     expected_environment: dict,
+    allow_compatible_history: bool = False,
 ) -> bool:
     from tests.ghl_main.check_registered_outputs import check_registered_output
     from tests.ghl_main.run_registered_models import build_output_directory
@@ -1610,6 +1970,7 @@ def _completed_run(
             compatible_project_commit=compatible_project_commit,
             expected_environment=expected_environment,
             expected_spec=spec,
+            allow_compatible_history=allow_compatible_history,
         )
     return True
 
@@ -1672,19 +2033,103 @@ def _authorized_attempt_limit(
     return max(maximum_attempts, DEV18_RECOVERY_RETRY_COUNT + 1)
 
 
+class RunResultPersistenceError(RuntimeError):
+    """학습·추론 증거의 저장 실패를 모델 재시도와 구분한다."""
+
+
+def _read_process_memory() -> dict:
+    try:
+        fields = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines())
+        return {"rss_bytes": int(fields["VmRSS"].split()[0]) * 1024,
+                "process_lifetime_peak_bytes": int(fields["VmHWM"].split()[0]) * 1024,
+                "reason": None}
+    except (OSError, KeyError, ValueError) as error:
+        return {"rss_bytes": None, "process_lifetime_peak_bytes": None,
+                "reason": f"proc_status_unavailable:{type(error).__name__}"}
+
+
+def _start_run_resources(device: str) -> dict:
+    import torch
+
+    usage = {"requested_device": device, "cpu_start": _read_process_memory(),
+             "gpu_allocated_start_bytes": None, "gpu_reserved_start_bytes": None}
+    if device.startswith("cuda") and torch.cuda.is_available():
+        usage.update(gpu_allocated_start_bytes=torch.cuda.memory_allocated(device),
+                     gpu_reserved_start_bytes=torch.cuda.memory_reserved(device))
+    return usage
+
+
+def _finish_run_resources(start: dict, result: dict, *, python_peak_bytes) -> dict:
+    import torch
+
+    backend = result.get("effective_execution", {}).get("backend")
+    end = _read_process_memory()
+    cuda_backend = isinstance(backend, str) and backend.startswith("cuda")
+    device = start["requested_device"]
+    gpu_measured = cuda_backend and device.startswith("cuda") and torch.cuda.is_available()
+    return {
+        "requested_device": device, "actual_backend": backend,
+        "actual_backend_reason": None if backend is not None else "execution_backend_not_recorded",
+        "scope": "model_execution",
+        "cpu_rss_start_bytes": start["cpu_start"]["rss_bytes"],
+        "cpu_rss_end_bytes": end["rss_bytes"],
+        "cpu_process_lifetime_peak_bytes": end["process_lifetime_peak_bytes"],
+        "cpu_peak_scope": "process_lifetime",
+        "cpu_rss_reason": start["cpu_start"]["reason"] or end["reason"],
+        "python_tracemalloc_peak_bytes": python_peak_bytes,
+        "python_measurement_scope": "python_traced_allocations_since_start",
+        "gpu_allocated_start_bytes": start["gpu_allocated_start_bytes"] if gpu_measured else None,
+        "gpu_reserved_start_bytes": start["gpu_reserved_start_bytes"] if gpu_measured else None,
+        "gpu_allocated_peak_bytes": torch.cuda.max_memory_allocated(device) if gpu_measured else None,
+        "gpu_reserved_peak_bytes": torch.cuda.max_memory_reserved(device) if gpu_measured else None,
+        "gpu_measurement_scope": "allocator_absolute_peak_since_reset" if gpu_measured else "not_applicable",
+        "gpu_measurement_reason": None if gpu_measured else "cuda_backend_not_used_or_unavailable",
+    }
+
+
+def _finish_failed_run_resources(start: dict) -> dict:
+    """실패 직전 측정값을 남기되 실제 backend를 추정하지 않는다."""
+    import torch
+
+    device = start["requested_device"]
+    end = _read_process_memory()
+    gpu_started = start["gpu_allocated_start_bytes"] is not None
+    usage = {
+        "requested_device": device, "actual_backend": None,
+        "actual_backend_reason": "execution_failed_before_result", "scope": "failed_model_execution",
+        "cpu_rss_start_bytes": start["cpu_start"]["rss_bytes"],
+        "cpu_rss_end_bytes": end["rss_bytes"],
+        "cpu_process_lifetime_peak_bytes": end["process_lifetime_peak_bytes"],
+        "cpu_peak_scope": "process_lifetime", "cpu_rss_reason": start["cpu_start"]["reason"] or end["reason"],
+        "python_tracemalloc_peak_bytes": None,
+        "python_measurement_scope": "python_traced_allocations_since_start",
+        "gpu_allocated_start_bytes": start["gpu_allocated_start_bytes"],
+        "gpu_reserved_start_bytes": start["gpu_reserved_start_bytes"],
+        "gpu_allocated_peak_bytes": None, "gpu_reserved_peak_bytes": None,
+        "gpu_measurement_scope": "requested_device_allocator_absolute_peak_since_reset" if gpu_started else "not_applicable",
+        "gpu_measurement_reason": "actual_backend_unknown_after_failure" if gpu_started else "cuda_measurement_not_started",
+        "measurement_errors": {},
+    }
+    measurements = [("python_tracemalloc_peak_bytes", lambda: tracemalloc.get_traced_memory()[1])]
+    if gpu_started:
+        measurements.extend((
+            ("gpu_allocated_peak_bytes", lambda: torch.cuda.max_memory_allocated(device)),
+            ("gpu_reserved_peak_bytes", lambda: torch.cuda.max_memory_reserved(device)),
+        ))
+    for field, measure in measurements:
+        try:
+            usage[field] = measure()
+        except Exception as error:
+            usage["measurement_errors"][field] = f"{type(error).__name__}: {error}"
+    return usage
+
+
 def _run_one_spec(
     spec: dict, panel_row: dict, inputs: dict, *, series: int,
     device: str, environment: dict, input_manifest_path, retry_count: int,
-    budget_id: str,
+    budget_id: str, history: dict,
 ) -> list[dict]:
-    from src.common.execution_evidence import (
-        DEV18_MEASUREMENT_PROTOCOL_ID,
-        build_execution_evidence,
-    )
-    from src.common.execution_identity import EXECUTION_IDENTITY_FIELDS
     from src.common.run_registered_model import execute_registered_model
-    from src.common.save_model_artifacts import save_model_score
-    from tests.ghl_main.check_registered_outputs import check_registered_output
     from tests.ghl_main.run_registered_models import build_output_directory
 
     experiment_directory = REPOSITORY_ROOT / "experiments" / "01_ghl_main"
@@ -1693,30 +2138,116 @@ def _run_one_spec(
     snapshot_path = _write_run_snapshot(
         evidence_directory, spec, inputs, environment,
     )
+    history["run_snapshot_file"] = _relative(snapshot_path)
+    history["run_snapshot"] = _read_json(snapshot_path)
+    save_run_history(history)
     import torch
 
     if device.startswith("cuda") and torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats(device)
+    resource_start = _start_run_resources(device)
+    memory_sampler = None
     tracemalloc.start()
+    execution_started = time.perf_counter()
     try:
+        memory_sampler = start_process_memory_sampling(_read_process_memory)
         result = execute_registered_model(
             spec,
             normal_training=inputs.get("normal_training"),
             normal_training_sessions=inputs.get("normal_training_sessions"),
             test_sessions=inputs["test_sessions"], device=device,
+            **({"on_training_complete": lambda trained: _save_training_completion(
+                evidence_directory, trained, history,
+            )} if spec["model"] in {"PaAno", "GDN"} else {}),
         )
+    except BaseException:
+        history.update(model_execution_complete=False,
+                       model_execution_seconds=time.perf_counter() - execution_started)
+        try:
+            history["resource_usage"] = _finish_failed_run_resources(resource_start)
+        except Exception as error:
+            history["resource_usage"] = {
+                "status": "unavailable", "scope": "failed_model_execution",
+                "reason": f"resource_measurement_failed:{type(error).__name__}: {error}",
+                "start": resource_start,
+            }
+        raise
+    else:
+        history.update(model_execution_complete=True,
+                       model_execution_seconds=time.perf_counter() - execution_started)
         _, peak_bytes = tracemalloc.get_traced_memory()
+        save_run_history(history)
     finally:
         tracemalloc.stop()
+        sampled_resources = memory_sampler.stop() if memory_sampler is not None else {
+            "cpu_rss_sampled_peak_bytes": None, "cpu_rss_sampling_status": "unavailable",
+            "cpu_rss_sampling_reason": "sampling_interrupted_before_start",
+        }
+        history.setdefault("resource_usage", {}).update(sampled_resources)
+        history["resource_usage"]["includes_training_evidence_storage"] = "training_complete" in history
+    try:
+        history["model_timing"] = dict(result["timing"])
+        resource_usage = {**_finish_run_resources(resource_start, result, python_peak_bytes=peak_bytes),
+                          **sampled_resources,
+                          "includes_training_evidence_storage": "training_complete" in history}
+        history["resource_usage"] = resource_usage
+        with record_run_stage(history, "save_result"):
+            peak_memory_mb = resource_usage["gpu_allocated_peak_bytes"]
+            if spec.get("common_recipe", {}).get("training_split") != "full_prefix_v2":
+                peak_memory_mb = (
+                    torch.cuda.max_memory_allocated(device) / 1024 ** 2
+                    if device.startswith("cuda") and torch.cuda.is_available()
+                    else peak_bytes / 1024 ** 2
+                )
+            elif peak_memory_mb is not None:
+                peak_memory_mb /= 1024 ** 2
+            return _save_run_result(
+                result, spec, panel_row, inputs, series=series,
+                snapshot_path=snapshot_path, peak_memory_mb=peak_memory_mb,
+                input_manifest_path=input_manifest_path, retry_count=retry_count, budget_id=budget_id,
+                resource_usage=resource_usage,
+                execution_attempt={"run_id": history["run_id"], "history_file": _relative(history["history_file"])},
+                history=history,
+            )
+    except Exception as error:
+        raise RunResultPersistenceError(
+            f"모델 실행 후 결과 저장에 실패했다: {snapshot_path}: {type(error).__name__}: {error}"
+        ) from error
+
+
+def _save_run_result(
+    result, spec, panel_row, inputs, *, series, snapshot_path, peak_memory_mb,
+    input_manifest_path, retry_count, budget_id,
+    resource_usage=None,
+    execution_attempt=None,
+    history=None,
+):
+    from src.common.execution_evidence import (
+        DEV18_MEASUREMENT_PROTOCOL_ID, FULL_PREFIX_MEASUREMENT_PROTOCOL_ID, build_execution_evidence,
+    )
+    from src.common.save_model_artifacts import _write_metadata, save_execution_result
+    from tests.ghl_main.check_registered_outputs import check_registered_output
+    from tests.ghl_main.run_registered_models import build_output_directory
+
+    experiment_directory = REPOSITORY_ROOT / "experiments/01_ghl_main"
+    evidence_directory = snapshot_path.parent
+    _require_same_worktree(_read_json(snapshot_path)["project_commit"])
     _record_seed_state(snapshot_path, result)
-    peak_memory_mb = (
-        torch.cuda.max_memory_allocated(device) / 1024 ** 2
-        if device.startswith("cuda") and torch.cuda.is_available()
-        else peak_bytes / 1024 ** 2
-    )
+    preserved = (history or {}).get("training_complete", {}).get("files", {})
+
+    def record_result_file(name, reference):
+        history.setdefault("result_files", {})[name] = reference
+        save_run_history(history)
+
     artifact_bytes, training_files = _save_training_files(
-        evidence_directory, result,
+        evidence_directory, {**result, **{name: None for name in preserved
+                                         if name in {"checkpoint", "scaler_state", "training_log"}}},
+        on_file_saved=record_result_file if history is not None else None,
     )
+    if preserved:
+        training_files = {**preserved, **training_files}
+        artifact_bytes = sum(training_files.get(name, {}).get("bytes", 0)
+                             for name in ("checkpoint", "scaler_state"))
     split = result["split"]
     split_count = 0 if split is None else 1 if isinstance(split, dict) else len(split)
     unavailable_duration = {
@@ -1724,50 +2255,25 @@ def _run_one_spec(
     }
     evidence = build_execution_evidence(
         split, result["timing"], spec=spec,
-        measurement_protocol_id=DEV18_MEASUREMENT_PROTOCOL_ID, retry_count=retry_count,
+        measurement_protocol_id=(FULL_PREFIX_MEASUREMENT_PROTOCOL_ID
+                                 if spec["common_recipe"].get("training_split") == "full_prefix_v2"
+                                 else DEV18_MEASUREMENT_PROTOCOL_ID), retry_count=retry_count,
         training_session_durations=[dict(unavailable_duration) for _ in range(split_count)],
         test_input_sessions=inputs["test_sessions"],
         test_session_durations=[dict(unavailable_duration) for _ in inputs["test_sessions"]],
         peak_memory_mb=peak_memory_mb, model_artifact_bytes=artifact_bytes,
+        resource_usage=resource_usage,
     )
-    validation_outputs = tuple(result.get("validation_outputs") or ())
-    for output in validation_outputs:
-        required_alignment = {
-            "scores", "source_start", "source_end_exclusive", "alignment",
-        }
-        if not required_alignment <= output.keys():
-            raise ValueError("validation output에 시점 정렬 필드가 없다")
-        if (
-            int(output["source_end_exclusive"]) - int(output["source_start"])
-            != len(output["scores"])
-        ):
-            raise ValueError("validation output의 source 범위와 score 길이가 다르다")
-    validation_scores = tuple(output["scores"] for output in validation_outputs)
-    validation_source_starts = tuple(
-        int(output.get("source_start", 0)) for output in validation_outputs
-    )
-    test_output = result["test_outputs"][0]
     variants = _expected_variants(panel_row)
     saved_rows = []
     for variant in variants:
-        output = test_output[variant] if spec["model"] == "TSPulse" else test_output
         output_directory = build_output_directory(
             experiment_directory, spec,
             score_variant=variant if spec["model"] == "TSPulse" else None,
         )
-        saved = save_model_score(
-            output, output_directory, dataset="DEV18", series=series,
-            model=spec["model"], target_use=spec["target_use"], tier=spec["tier"],
-            ratio=spec["ratio"], seed=spec["seed"], config_id=spec["config_id"],
-            common_recipe=spec["common_recipe"],
-            common_recipe_id=spec["common_recipe_id"],
-            normalization_scope=output["normalization_scope"],
-            validation_scores=validation_scores,
-            validation_source_starts=validation_source_starts,
-            score_variant=variant or None,
-            config_registry_sha256=spec["config_registry_sha256"],
-            execution_identity={field: spec[field] for field in EXECUTION_IDENTITY_FIELDS},
-            execution_evidence=evidence,
+        saved = save_execution_result(
+            result, output_directory, spec=spec, dataset="DEV18", series=series,
+            score_variant=variant or None, execution_evidence=evidence,
         )
         metadata_path = Path(saved["metadata_path"])
         metadata = _read_json(metadata_path)
@@ -1775,9 +2281,13 @@ def _run_one_spec(
             "file": _relative(snapshot_path), "sha256": file_sha256(snapshot_path),
         }
         metadata["training_files"] = training_files
-        metadata_path.write_text(
-            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
-        )
+        metadata["training_state_version"] = 1
+        if execution_attempt is not None:
+            metadata["execution_attempt"] = execution_attempt
+        metadata["score_files"] = [{
+            "file": _relative(path), "sha256": file_sha256(path), "bytes": Path(path).stat().st_size,
+        } for path in saved["score_paths"]]
+        _write_metadata(metadata_path, metadata)
         _validate_bound_run_files(metadata, expected_spec=spec)
         check_registered_output(
             output_directory, spec, dataset="DEV18", series=series,
@@ -1802,6 +2312,9 @@ def _run_one_spec(
             "budget_id": budget_id,
             "retry_count": retry_count,
         })
+    if history is not None:
+        history["result"] = saved_rows
+        save_run_history(history)
     _write_completion_receipt(
         evidence_directory / "completion.json", saved_rows,
     )
@@ -1821,18 +2334,28 @@ def _require_cuda_or_remote(*, device: str, remote_execution: bool) -> None:
 
 def execute_panel(
     *, data_root=DEFAULT_DATA_ROOT, device="cuda", remote_execution=False,
+    budget=None, manifest_path=DEFAULT_SCORE_MANIFEST_PATH, preserved_rows=(),
+    execution_timing=None, recommendation_directory=None,
 ) -> list[dict]:
-    """18개 series에 exact 65-run panel을 재개형으로 실행한다."""
+    """봉인한 예산의 CSV별 실행 목록을 재개형으로 처리한다."""
+    execution_timing = {} if execution_timing is None else execution_timing
+    execution_timing.update(completion_check_seconds=0.0, model_attempt_seconds=0.0)
     _require_cuda_or_remote(device=device, remote_execution=remote_execution)
     if device.startswith("cuda"):
         from src.common.set_reproducible_seed import set_reproducible_seed
 
         set_reproducible_seed(0)
-    readiness = prepare_tuning(data_root=data_root, require_clean=True)
-    budget = _read_json(DEFAULT_BUDGET_PATH)
+    budget = budget or _read_json(DEFAULT_BUDGET_PATH)
+    full_prefix = budget.get("experiment_mode") == "full_prefix_v2"
+    if full_prefix and (preserved_rows or "legacy_budget" in budget):
+        raise ValueError("새 full-prefix 실행은 과거 결과를 승계하지 않는다")
+    readiness = prepare_tuning(data_root=data_root, require_clean=True, budget=budget)
     specs, panel_by_key = _specs_for_budget(budget)
     specs.sort(key=_execution_priority)
-    manifest_rows = _load_score_manifest()
+    manifest_rows = _merge_manifest_rows(preserved_rows, _load_score_manifest(manifest_path))
+    if full_prefix and any(row["budget_id"] != budget["budget_id"] for row in manifest_rows):
+        raise ValueError("새 full-prefix manifest에 다른 실험 결과가 있다")
+    preserved_keys = {_manifest_key(row)[:5] for row in preserved_rows}
     input_manifest_path = REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
     input_manifest, _ = load_input_manifest_role(
         input_manifest_path, "development", "dev18_selection",
@@ -1843,103 +2366,200 @@ def execute_panel(
     )
     environment = readiness["environment"]
     project_commit = _git_head()
-    compatible_project_commit = _compatible_resume_source()
+    compatible_project_commit = None if full_prefix else _compatible_resume_source()
+    computed_attempts = {}
+    prior_attempts = load_attempt_counts(
+        REPOSITORY_ROOT / "experiments/01_ghl_main/logs/run_history/model_attempts", budget["budget_id"],
+        computed_attempts=computed_attempts,
+    )
     from tests.ghl_main.run_registered_models import load_registered_inputs
 
-    for entry in series_entries:
-        series = int(entry["series"])
-        inputs = load_registered_inputs(
-            spec=specs[0], input_manifest_path=input_manifest_path,
-            series=f"{series:02d}", data_root=data_root,
-        )
-        for spec in specs:
-            key = (spec["model"], spec["config_id"], spec["ratio"], spec["seed"])
-            panel_row = panel_by_key[key]
-            if _completed_run(
-                manifest_rows, spec=spec, panel_row=panel_row, series=series,
-                input_manifest_path=input_manifest_path,
-                expected_project_commit=project_commit,
-                compatible_project_commit=compatible_project_commit,
-                expected_environment=environment,
-            ):
+    with ExitStack() as recommendation_stack:
+        recommendation_store = None
+        if full_prefix:
+            from src.data_split.load_dev18_series import load_dev18_registered_inputs
+            from tests.ghl_main.store_recommendation_evidence import (
+                DEFAULT_RECOMMENDATION_DIRECTORY, open_recommendation_evidence,
+            )
+
+            recommendation_store = recommendation_stack.enter_context(open_recommendation_evidence(
+                load_model_registry_with_sha()[0], budget,
+                directory=(recommendation_directory if recommendation_directory is not None
+                           else DEFAULT_RECOMMENDATION_DIRECTORY),
+                project_commit=project_commit,
+            ))
+            recommendation_store.bind_environment(environment)
+            feature_started = time.perf_counter()
+            feature_status = recommendation_store.prepare_features(
+                lambda entry: load_dev18_registered_inputs(entry, data_root),
+            )
+            execution_timing["feature_preparation_seconds"] = time.perf_counter() - feature_started
+            if not feature_status["feature_complete"]:
+                raise ValueError("Dev18 입력 특징 수집이 끝나지 않아 모델 실행을 열지 않는다")
+        for entry in series_entries:
+            if budget.get("series_ids") and entry["series"] not in budget["series_ids"]:
                 continue
-            recovered = _load_completion_receipt(
-                _completion_receipt_path(spec, series),
-                spec=spec, panel_row=panel_row, series=series,
-                budget_id=budget["budget_id"],
-            )
-            if recovered:
-                candidate_rows = _merge_manifest_rows(manifest_rows, recovered)
-                if not _completed_run(
-                    candidate_rows, spec=spec, panel_row=panel_row, series=series,
-                    input_manifest_path=input_manifest_path,
-                    expected_project_commit=project_commit,
-                    compatible_project_commit=compatible_project_commit,
-                    expected_environment=environment,
-                ):
-                    raise ValueError("Dev18 완료 영수증 산출물을 복구하지 못했다")
-                manifest_rows = _replace_manifest_rows(
-                    manifest_rows, recovered,
-                )
-                continue
-            prior_rows = [
-                row for row in manifest_rows
-                if _manifest_key(row)[:5] == tuple(map(str, (
-                    f"{series:02d}", spec["model"], spec["config_id"],
-                    spec["ratio"], spec["seed"],
-                )))
-            ]
-            attempts_used = max(
-                (int(row.get("retry_count") or 0) + 1 for row in prior_rows),
-                default=0,
-            )
-            maximum_attempts = budget["failure_rules"]["maximum_total_attempts"]
-            recovery_row = _authorized_oom_recovery_row(
-                prior_rows,
-                budget_id=budget["budget_id"],
-                compatible_project_commit=compatible_project_commit,
-            )
-            maximum_attempts = _authorized_attempt_limit(
-                maximum_attempts, recovery_row=recovery_row,
-            )
-            if recovery_row is not None:
-                _write_oom_recovery_receipt(
-                    DEFAULT_ALLOCATOR_RECOVERY_PATH,
-                    recovery_row,
-                    recovery_project_commit=project_commit,
-                )
-            if attempts_used >= maximum_attempts:
-                raise RuntimeError("Dev18 trial이 봉인된 최대 시도 횟수에 도달했다")
-            for attempt in range(attempts_used, maximum_attempts):
-                try:
-                    completed = _run_one_spec(
-                        spec, panel_row, inputs, series=series, device=device,
-                        environment=environment, input_manifest_path=input_manifest_path,
-                        retry_count=attempt, budget_id=budget["budget_id"],
-                    )
-                except Exception as error:
-                    failed = [{
-                        "series": f"{series:02d}", "family": inputs["family"],
-                        "tier": spec["tier"], "model": spec["model"],
-                        "config_id": spec["config_id"], "physical_ratio": spec["ratio"],
-                        "seed": spec["seed"], "score_variant": variant,
-                        "primary_score": str(
-                            variant in panel_row["primary_score_variants"]
-                        ).lower(),
-                        "status": "failed",
-                        "status_reason": f"{type(error).__name__}: {error}",
-                        "score_file": "", "score_sha256": "", "metadata_file": "",
-                        "metadata_sha256": "", "budget_id": budget["budget_id"],
-                        "retry_count": attempt,
-                    } for variant in _expected_variants(panel_row)]
-                    manifest_rows = _replace_manifest_rows(manifest_rows, failed)
-                    if attempt + 1 == maximum_attempts:
-                        raise
+            series = int(entry["series"])
+            inputs = None
+            for spec in specs:
+                if full_prefix:
+                    spec = {**spec, "series": f"{series:02d}", "series_input_sha256": entry["sha256"]}
+                key = (spec["model"], spec["config_id"], spec["ratio"], spec["seed"])
+                panel_row = panel_by_key[key]
+                if f"{series:02d}" not in panel_row.get("series_ids", budget.get("series_ids", [f"{series:02d}"])):
                     continue
-                manifest_rows = _replace_manifest_rows(manifest_rows, completed)
-                break
-            _require_same_worktree(project_commit)
-    return manifest_rows
+                check_started = time.perf_counter()
+                try:
+                    if _completed_run(
+                        manifest_rows, spec=spec, panel_row=panel_row, series=series,
+                        input_manifest_path=input_manifest_path,
+                        expected_project_commit=project_commit,
+                        compatible_project_commit=compatible_project_commit,
+                        expected_environment=environment,
+                        allow_compatible_history=not full_prefix and "legacy_budget" in budget,
+                    ):
+                        if recommendation_store is not None:
+                            recommendation_store.sync_results([
+                                row for row in manifest_rows
+                                if _manifest_key(row)[:5] == tuple(map(str, (f"{series:02d}", *key)))
+                            ], manifest_path=manifest_path)
+                        continue
+                    if tuple(map(str, (f"{series:02d}", *key))) in preserved_keys:
+                        raise ValueError("보존 대상 실행이 불완전하다. 기존 경로를 덮어쓰지 않는다")
+                    recovered = _load_completion_receipt(
+                        _completion_receipt_path(spec, series),
+                        spec=spec, panel_row=panel_row, series=series,
+                        budget_id=budget["budget_id"],
+                    )
+                    computed = computed_attempts.get(tuple(map(str, (f"{series:02d}", *key))))
+                    recover_receipt = not recovered and computed is not None
+                    if recover_receipt:
+                        recovered = computed.get("result") or _recover_saved_run_rows(
+                            spec=spec, panel_row=panel_row, series=series, family=entry.get("family", ""),
+                            budget_id=budget["budget_id"], computed=computed,
+                        )
+                        if not recovered:
+                            # ponytail: 부분 저장은 보존하고 중단한다. 필요하면 해당 산출물의 복구만 추가한다.
+                            raise RunResultPersistenceError(
+                                "모델 실행의 저장이 미완료다. 기존 파일을 보존하며 재학습하지 않는다: "
+                                + computed["history_file"]
+                            )
+                        recovered = _validate_completion_rows(
+                            recovered, spec=spec, panel_row=panel_row, series=series,
+                            budget_id=budget["budget_id"],
+                        )
+                    if recovered:
+                        candidate_rows = _merge_manifest_rows(manifest_rows, recovered)
+                        if not _completed_run(
+                            candidate_rows, spec=spec, panel_row=panel_row, series=series,
+                            input_manifest_path=input_manifest_path,
+                            expected_project_commit=project_commit,
+                            compatible_project_commit=compatible_project_commit,
+                            expected_environment=environment,
+                            allow_compatible_history=not full_prefix and "legacy_budget" in budget,
+                        ):
+                            raise ValueError("Dev18 완료 영수증 산출물을 복구하지 못했다")
+                        if recover_receipt:
+                            _write_completion_receipt(_completion_receipt_path(spec, series), recovered)
+                        manifest_rows = _replace_manifest_rows(
+                            manifest_rows, recovered, manifest_path,
+                        )
+                        if recommendation_store is not None:
+                            recommendation_store.sync_results(recovered, manifest_path=manifest_path)
+                        continue
+                finally:
+                    execution_timing["completion_check_seconds"] += time.perf_counter() - check_started
+                prior_rows = [
+                    row for row in manifest_rows
+                    if _manifest_key(row)[:5] == tuple(map(str, (
+                        f"{series:02d}", spec["model"], spec["config_id"],
+                        spec["ratio"], spec["seed"],
+                    )))
+                ]
+                attempts_used = max(
+                    (int(row.get("retry_count") or 0) + 1 for row in prior_rows),
+                    default=0,
+                )
+                attempts_used = max(attempts_used, prior_attempts.get(
+                    tuple(map(str, (f"{series:02d}", *key))), 0,
+                ))
+                maximum_attempts = budget["failure_rules"]["maximum_total_attempts"]
+                recovery_row = _authorized_oom_recovery_row(
+                    prior_rows,
+                    budget_id=budget["budget_id"],
+                    compatible_project_commit=compatible_project_commit,
+                )
+                maximum_attempts = _authorized_attempt_limit(
+                    maximum_attempts, recovery_row=recovery_row,
+                )
+                if recovery_row is not None:
+                    _write_oom_recovery_receipt(
+                        DEFAULT_ALLOCATOR_RECOVERY_PATH,
+                        recovery_row,
+                        recovery_project_commit=project_commit,
+                    )
+                if attempts_used >= maximum_attempts:
+                    raise RuntimeError("Dev18 trial이 봉인된 최대 시도 횟수에 도달했다")
+                if inputs is None:
+                    inputs = load_registered_inputs(
+                        spec=spec, input_manifest_path=input_manifest_path,
+                        series=f"{series:02d}", data_root=data_root,
+                    )
+                for attempt in range(attempts_used, maximum_attempts):
+                    completed = None
+                    history = None
+                    try:
+                        with record_run_history(
+                            REPOSITORY_ROOT / "experiments/01_ghl_main/logs/run_history/model_attempts",
+                            identity={
+                                "kind": "model_attempt", "budget_id": budget["budget_id"],
+                                "project_commit": project_commit, "series": f"{series:02d}",
+                                "model": spec["model"], "config_id": spec["config_id"],
+                                "ratio": spec["ratio"], "seed": spec["seed"],
+                                "attempt": attempt, "device": device,
+                            },
+                        ) as history:
+                            completed = _run_one_spec(
+                                spec, panel_row, inputs, series=series, device=device,
+                                environment=environment, input_manifest_path=input_manifest_path,
+                                retry_count=attempt, budget_id=budget["budget_id"], history=history,
+                            )
+                            history["result"] = completed
+                    except Exception as error:
+                        if (completed is not None or isinstance(error, RunResultPersistenceError)
+                                or (history and (history.get("model_execution_complete")
+                                                 or has_run_persistence_failure(history)))):
+                            # 저장·이력 오류로 재학습하지 않는다. 완료 영수증은 다음 명령에서 복구한다.
+                            raise
+                        failed = [{
+                            "series": f"{series:02d}", "family": inputs["family"],
+                            "tier": spec["tier"], "model": spec["model"],
+                            "config_id": spec["config_id"], "physical_ratio": spec["ratio"],
+                            "seed": spec["seed"], "score_variant": variant,
+                            "primary_score": str(
+                                variant in panel_row["primary_score_variants"]
+                            ).lower(),
+                            "status": "failed",
+                            "status_reason": f"{type(error).__name__}: {error}",
+                            "score_file": "", "score_sha256": "", "metadata_file": "",
+                            "metadata_sha256": "", "budget_id": budget["budget_id"],
+                            "retry_count": attempt,
+                        } for variant in _expected_variants(panel_row)]
+                        manifest_rows = _replace_manifest_rows(manifest_rows, failed, manifest_path)
+                        if recommendation_store is not None:
+                            recommendation_store.sync_results(failed, manifest_path=manifest_path)
+                        if attempt + 1 == maximum_attempts:
+                            raise
+                        continue
+                    finally:
+                        if history and history["elapsed_seconds"] is not None:
+                            execution_timing["model_attempt_seconds"] += history["elapsed_seconds"]
+                    manifest_rows = _replace_manifest_rows(manifest_rows, completed, manifest_path)
+                    if recommendation_store is not None:
+                        recommendation_store.sync_results(completed, manifest_path=manifest_path)
+                    break
+                _require_same_worktree(project_commit)
+        return manifest_rows
 
 
 def _load_dev18_labels(entry: dict, data_root) -> numpy.ndarray:
@@ -1990,6 +2610,108 @@ def _detect_available_memory_bytes() -> int | None:
     return min(candidates) if candidates else None
 
 
+def _collect_scoring_cpu_environment() -> dict:
+    import platform
+
+    environment = {
+        "cpu_model": None, "cpu_model_source": None, "os_logical_cpu_count": None,
+        "affinity_cpu_ids": None, "affinity_cpu_count": None, "cgroup_cpu_quota": None,
+    }
+    try:
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace").splitlines():
+            name, separator, value = line.partition(":")
+            if separator and name.strip().lower() in {"model name", "hardware"} and value.strip():
+                environment.update(cpu_model=value.strip(), cpu_model_source="/proc/cpuinfo")
+                break
+    except OSError:
+        pass
+    if environment["cpu_model"] is None:
+        try:
+            processor = platform.processor()
+            if processor:
+                environment.update(cpu_model=processor, cpu_model_source="platform.processor")
+        except OSError:
+            pass
+    try:
+        environment["os_logical_cpu_count"] = os.cpu_count()
+    except OSError:
+        pass
+    try:
+        affinity = sorted(os.sched_getaffinity(0))
+        environment.update(affinity_cpu_ids=affinity, affinity_cpu_count=len(affinity))
+    except (AttributeError, OSError):
+        pass
+
+    cgroup_roots = {
+        2: [Path("/sys/fs/cgroup")],
+        1: [Path("/sys/fs/cgroup/cpu"), Path("/sys/fs/cgroup/cpu,cpuacct"),
+            Path("/sys/fs/cgroup/cpuacct,cpu")],
+    }
+    directories = {version: list(roots) for version, roots in cgroup_roots.items()}
+    try:
+        for line in Path("/proc/self/cgroup").read_text(encoding="utf-8", errors="replace").splitlines():
+            _, controllers, group = line.split(":", 2)
+            version = 2 if controllers == "" else 1 if "cpu" in controllers.split(",") else None
+            if version is None:
+                continue
+            for root in cgroup_roots[version]:
+                directory = root / group.lstrip("/")
+                while root in directory.parents:
+                    directories[version].append(directory)
+                    directory = directory.parent
+    except (OSError, ValueError):
+        pass
+    for version, paths in directories.items():
+        limits = []
+        for directory in dict.fromkeys(paths):
+            try:
+                quota_path = directory / ("cpu.max" if version == 2 else "cpu.cfs_quota_us")
+                if version == 2:
+                    quota_text, period_text = quota_path.read_text(encoding="utf-8", errors="replace").split()
+                else:
+                    quota_text = quota_path.read_text(encoding="utf-8", errors="replace").strip()
+                    period_text = (directory / "cpu.cfs_period_us").read_text(
+                        encoding="utf-8", errors="replace",
+                    ).strip()
+                quota = None if quota_text in {"max", "-1"} else int(quota_text)
+                period = int(period_text)
+                if period <= 0 or (quota is not None and quota <= 0):
+                    continue
+                limits.append({
+                    "version": version, "source": str(quota_path),
+                    "quota_microseconds": quota, "period_microseconds": period,
+                    "limit_cpu_count": quota / period if quota is not None else None,
+                    "unlimited": quota is None,
+                })
+            except (OSError, ValueError):
+                continue
+        if limits:
+            environment["cgroup_cpu_quota"] = {
+                **min(limits, key=lambda item: item["limit_cpu_count"]
+                      if item["limit_cpu_count"] is not None else math.inf),
+                "scope": "minimum_readable_process_cgroup_and_ancestor_quota",
+            }
+            break
+    environment["null_reasons"] = {
+        name: "not_exposed_or_unreadable_by_runtime"
+        for name, value in environment.items() if value is None
+    }
+    return environment
+
+
+def _record_scoring_environment(history, *, workers, worker_count, pending_count) -> None:
+    if history is None:
+        return
+    history["scoring_environment"] = {
+        "requested_workers": workers, "actual_workers": worker_count,
+        "worker_count_scope": "resolved_concurrency_before_dispatch",
+        "pending_physical_scores": pending_count,
+        "scoring_status": "workers_selected" if pending_count else "no_new_scoring",
+        "cpu": _collect_scoring_cpu_environment(),
+    }
+    save_run_history(history)
+
+
 def _resolve_score_workers(
     workers, *, pending_count, cpu_count=None, available_memory_bytes=None,
 ) -> int:
@@ -2000,7 +2722,7 @@ def _resolve_score_workers(
     if cpu_count is None:
         try:
             cpu_count = len(os.sched_getaffinity(0))
-        except AttributeError:
+        except (AttributeError, OSError):
             cpu_count = os.cpu_count() or 1
     cpu_count = max(1, int(cpu_count))
     if available_memory_bytes is None:
@@ -2010,7 +2732,7 @@ def _resolve_score_workers(
     else:
         gibibyte = 1024 ** 3
         memory_limit = max(1, (int(available_memory_bytes) - 2 * gibibyte) // gibibyte)
-    safe_limit = min(16, cpu_count, memory_limit, pending_count)
+    safe_limit = min(8, cpu_count, memory_limit, pending_count)
     return safe_limit if workers == 0 else min(workers, safe_limit)
 
 
@@ -2149,12 +2871,17 @@ def _score_primary_row(task: dict) -> dict:
     }
 
 
-def _score_primary_rows(tasks, labels_by_series, workers) -> dict:
+def _score_primary_rows(tasks, labels_by_series, workers, *, scoring_history=None) -> dict:
     tasks = sorted(
         tasks,
         key=lambda task: (-task["estimated_cost"], _manifest_key(task["manifest_row"])),
     )
-    worker_count = _resolve_score_workers(workers, pending_count=len(tasks))
+    worker_count = _resolve_score_workers(workers, pending_count=len(tasks)) if tasks else 0
+    _record_scoring_environment(
+        scoring_history, workers=workers, worker_count=worker_count, pending_count=len(tasks),
+    )
+    if not tasks:
+        return {}
     print(
         f"VUS-PR 채점 시작: physical={len(tasks)}, workers={worker_count}",
         flush=True,
@@ -2195,7 +2922,7 @@ def _score_primary_rows(tasks, labels_by_series, workers) -> dict:
         except BaseException:
             for future in futures:
                 future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
+            executor.shutdown(wait=True, cancel_futures=True)
             raise
         else:
             executor.shutdown(wait=True)
@@ -2224,9 +2951,10 @@ def _expand_primary_score(
 def build_trial_score_ledger(
     manifest_rows, *, data_root=DEFAULT_DATA_ROOT, output_path=None, workers=1,
     checkpoint_directory=DEFAULT_VUS_CHECKPOINT_DIRECTORY, project_commit=None,
+    budget=None, reused_ledger=(), scoring_history=None,
 ) -> list[dict]:
     """완료된 primary score만 라벨에 연결해 18×89 채점 원표를 만든다."""
-    budget = _read_json(DEFAULT_BUDGET_PATH)
+    budget = budget or _read_json(DEFAULT_BUDGET_PATH)
     input_manifest_path = REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
     input_manifest_sha256 = file_sha256(input_manifest_path)
     environment_sha256 = file_sha256(REPOSITORY_ROOT / "configs" / "environment.yaml")
@@ -2240,6 +2968,9 @@ def build_trial_score_ledger(
 
     manifest = yaml.safe_load(input_manifest_path.read_text(encoding="utf-8"))
     entries = {entry["series"]: entry for entry in manifest["datasets"]["DEV18"]["files"]}
+    if budget.get("series_ids"):
+        entries = {series: entry for series, entry in entries.items()
+                   if series in budget["series_ids"]}
     l_max_by_series = {row["series"]: row["l_max_samples"] for row in ell_max["series"]}
     panel_by_key = {
         (row["model"], row["config_id"], str(row["physical_ratio"]), str(row["seed"])): row
@@ -2250,15 +2981,14 @@ def build_trial_score_ledger(
     )
     from tests.ghl_main.run_registered_models import _verify_manifest_file
 
-    for entry in entries.values():
-        _verify_manifest_file(
-            Path(data_root) / entry["source_directory"] / entry["name"], entry,
-        )
-    labels_by_series = {
-        series: _load_dev18_labels(entry, data_root) for series, entry in entries.items()
-    }
+    reused = _reuse_trial_scores(
+        primary_rows, reused_ledger, evaluator_sha256=vus_report["evaluator_sha256"],
+        ell_max_id=ell_max["ell_max_id"],
+    )
     tasks = []
     for manifest_row in primary_rows:
+        if _manifest_key(manifest_row) in reused:
+            continue
         series = manifest_row["series"]
         entry = entries[series]
         tasks.append({
@@ -2278,7 +3008,21 @@ def build_trial_score_ledger(
                 entry["row_count"] - entry["training_boundary"]
             ) * (l_max_by_series[series] + 1),
         })
-    scored = _score_primary_rows(tasks, labels_by_series, workers)
+    needed_series = {task["manifest_row"]["series"] for task in tasks}
+    for series in needed_series:
+        entry = entries[series]
+        _verify_manifest_file(
+            Path(data_root) / entry["source_directory"] / entry["name"], entry,
+        )
+    labels_by_series = {
+        series: _load_dev18_labels(entries[series], data_root) for series in needed_series
+    }
+    scored = dict(reused)
+    if tasks or scoring_history is not None:
+        scored.update(_score_primary_rows(
+            tasks, labels_by_series, workers,
+            **({"scoring_history": scoring_history} if scoring_history is not None else {}),
+        ))
     ledger = []
     for manifest_row in sorted(primary_rows, key=_manifest_key):
         panel = panel_by_key[(
@@ -2294,7 +3038,7 @@ def build_trial_score_ledger(
             evaluator_sha256=vus_report["evaluator_sha256"],
             ell_max_id=ell_max["ell_max_id"],
         ))
-    expected_rows = 18 * budget["primary_logical_score_row_count"]
+    expected_rows = budget.get("expected_ledger_rows", len(entries) * budget["primary_logical_score_row_count"])
     if len(ledger) != expected_rows:
         raise ValueError(f"Dev18 tuning ledger 행 수가 다르다: {len(ledger)} != {expected_rows}")
     if output_path is not None:
@@ -2303,6 +3047,26 @@ def build_trial_score_ledger(
         _write_csv(temporary_path, ledger)
         temporary_path.replace(output_path)
     return ledger
+
+
+def _reuse_trial_scores(manifest_rows, ledger, *, evaluator_sha256, ell_max_id):
+    """같은 점수 파일과 채점 신원을 가진 완료값만 물리 key에 다시 연결한다."""
+    by_score = {}
+    for row in ledger:
+        if (row["status"] != "complete" or row["evaluator_sha256"] != evaluator_sha256
+                or row["ell_max_id"] != ell_max_id or row["normalization"] != "trainnorm"):
+            raise ValueError("재사용 ledger의 채점 신원이 다르다")
+        value = float(row["vus_pr"])
+        if not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError("재사용 VUS-PR 값이 잘못됐다")
+        key = (row["score_file"], row["score_sha256"])
+        result = {"normalization": row["normalization"], "vus_pr": value, "reused": True}
+        if key in by_score and by_score[key] != result:
+            raise ValueError("같은 점수 파일의 재사용 채점값이 서로 다르다")
+        by_score[key] = result
+    return {_manifest_key(row): by_score[(row["score_file"], row["score_sha256"])]
+            for row in manifest_rows
+            if (row["score_file"], row["score_sha256"]) in by_score}
 
 
 def _policy_csv_rows(rows):
@@ -2360,8 +3124,9 @@ def finish_selection_from_ledger(
         ledger, registry, budget, evaluator_sha256=ledger[0]["evaluator_sha256"],
     )
     membership = build_final_membership_rows(selection, registry)
-    if len(membership) != 294:
-        raise ValueError(f"final membership 행 수가 다르다: {len(membership)} != 294")
+    expected_membership_count = (len(registry["models"]) + 2 * len(selection["tier_fixed"])) * len(SUPPORTED_RATIO_PERCENTS) * len(FINAL_SPLIT_ROLES)
+    if len(membership) != expected_membership_count:
+        raise ValueError(f"final membership 행 수가 다르다: {len(membership)} != {expected_membership_count}")
 
     result_directory = Path(result_directory)
     result_directory.mkdir(parents=True, exist_ok=True)

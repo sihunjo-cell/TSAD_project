@@ -7,6 +7,7 @@ from pathlib import Path
 from src.common.equal_trial_budget import build_equal_trial_budget
 from src.common.execution_identity import file_sha256, sealed_crlf_text_sha256
 from src.common.model_registry import load_model_registry_with_sha
+from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +18,7 @@ DEFAULT_FEASIBILITY_DIRECTORY = (
 DEFAULT_OUTPUT_PATH = DEFAULT_FEASIBILITY_DIRECTORY / "dev18_budget_manifest.json"
 
 
-def _load_current_feasibility(repository_root: Path, directory: Path, registry_sha: str):
+def _load_current_feasibility(repository_root: Path, directory: Path, registry_sha: str, *, config_count: int):
     ledger_path = directory / "dev18_feasibility_ledger.csv"
     summary_path = directory / "dev18_feasibility_summary.json"
     audit_root = (
@@ -54,7 +55,9 @@ def _load_current_feasibility(repository_root: Path, directory: Path, registry_s
             raise ValueError(f"Dev18 feasibility {field}가 현재 파일과 다르다")
     if summary.get("status") != "complete_with_declared_static_unavailability":
         raise ValueError("Dev18 feasibility summary가 완료 상태가 아니다")
-    if summary.get("row_count") != 3276 or summary.get("labels_or_scores_read") is not False:
+    if (summary.get("config_count") != config_count
+            or summary.get("row_count") != config_count * 18 * len(SUPPORTED_RATIO_PERCENTS)
+            or summary.get("labels_or_scores_read") is not False):
         raise ValueError("Dev18 feasibility summary 핵심 계약이 잘못됐다")
     return ledger_path, summary_path, summary
 
@@ -71,6 +74,7 @@ def build_dev18_budget_artifact(
     registry, registry_sha = load_model_registry_with_sha(repository_root)
     ledger_path, summary_path, summary = _load_current_feasibility(
         repository_root, feasibility_directory, registry_sha,
+        config_count=sum(len(model["candidates"]) for model in registry["models"].values()),
     )
     budget = build_equal_trial_budget(registry, summary)
     selection = registry["selection"]

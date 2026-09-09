@@ -1,8 +1,10 @@
 """Strict TSPulse raw-head adapter contract tests."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy
@@ -20,6 +22,7 @@ from src.models.tier3.tspulse import (
     load_tspulse_components,
     score_tspulse_official,
     score_tspulse,
+    score_tspulse_paper,
     verify_tspulse_checkpoint,
 )
 
@@ -42,10 +45,11 @@ class RecordingModel:
 
 
 class RecordingUtility:
-    def __init__(self, model, *, mode, aggregation_length):
+    def __init__(self, model, *, mode, aggregation_length, **settings):
         self.model = model
         self.mode = mode
         self.aggregation_length = aggregation_length
+        self.settings = settings
 
 
 class RawScoreUtility:
@@ -67,6 +71,213 @@ class RawScoreUtility:
 
 
 class TestTSPulse(unittest.TestCase):
+    def test_paper_loader_uses_benchmark_score_calibration_parameters(self):
+        _, utility = load_tspulse_components(
+            aggregation_window=96, channel_count=2, official_protocol=True,
+            model_class=RecordingModel, utility_class=RecordingUtility,
+            hub_download=lambda **arguments: str(Path("snapshot") / arguments["filename"]),
+            file_verifier=lambda path, **arguments: arguments["expected_sha256"],
+        )
+        self.assertEqual(utility.settings, {
+            "least_significant_scale": 0.0, "least_significant_score": 1.0,
+        })
+
+    def test_paper_heads_match_official_postprocess_and_use_full_input_statistics(self):
+        import pandas
+        from sklearn.preprocessing import MinMaxScaler, StandardScaler
+        from tsfm_public.models.tspulse.utils.ad_helpers import TSPulseADUtility
+        from tsfm_public.toolkit.time_series_anomaly_detection_pipeline import (
+            TimeSeriesAnomalyDetectionPipeline, score_smoothing,
+        )
+
+        values = numpy.column_stack((numpy.arange(20, dtype=float) ** 2, numpy.full(20, 7.0)))
+        original = values.copy()
+        input_scaler = StandardScaler().fit(values)
+        normalized = input_scaler.transform(values)
+        raw_heads = {
+            "time": numpy.array([0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+            "fft": numpy.array([0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0], dtype=float),
+            "pred": numpy.array([0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=float),
+        }
+        utility = TSPulseADUtility(
+            SimpleNamespace(config=SimpleNamespace(context_length=8, patch_length=2)),
+            mode=["time", "fft", "forecast"], aggregation_length=4,
+            least_significant_scale=0.0, least_significant_score=1.0,
+        )
+
+        def raw_head_function(input_values, *, aggregation_window):
+            self.assertEqual(aggregation_window, 4)
+            numpy.testing.assert_allclose(input_values, normalized)
+            self.assertNotAlmostEqual(input_values[:8, 0].mean(), 0)
+            return raw_heads
+
+        outputs = score_tspulse_paper(
+            values, raw_head_function=raw_head_function, utility=utility,
+            aggregation_window=4, context_length=8,
+        )
+        self.assertEqual(set(outputs), {"time", "fft", "pred", "ensemble"})
+        for head in outputs:
+            official_raw = {
+                "forecast" if name == "pred" else name: scores
+                for name, scores in raw_heads.items() if head == "ensemble" or name == head
+            }
+            frame = pandas.DataFrame(normalized, columns=["first", "constant"])
+            pipeline = SimpleNamespace(
+                _TimeSeriesAnomalyDetectionPipeline__context_memory={"data": frame, "reference": frame},
+                _model_processor=utility, aggr_function=numpy.max,
+            )
+            expected = TimeSeriesAnomalyDetectionPipeline.postprocess(
+                pipeline, official_raw, target_columns=list(frame.columns), smoothing_length=8,
+            )["anomaly_score"].to_numpy()
+            maximum = float(numpy.nanmax(expected))
+            expected /= maximum + 1e-5
+            output_scaler = MinMaxScaler().fit(expected.reshape(-1, 1))
+            expected = output_scaler.transform(expected.reshape(-1, 1)).ravel()
+            numpy.testing.assert_allclose(outputs[head]["scores"], expected)
+            self.assertTrue(outputs[head]["native_postprocessing"])
+            self.assertEqual(outputs[head]["input_normalization_scope"], "full_evaluation")
+            calibration = outputs[head]["native_calibration"]
+            self.assertEqual(calibration["score_head"], head)
+            self.assertEqual(calibration["source_end_exclusive"], len(values))
+            self.assertEqual(calibration["input_standard_scaler"], {
+                "mean": input_scaler.mean_.tolist(), "variance": input_scaler.var_.tolist(),
+                "scale": input_scaler.scale_.tolist(), "sample_count": len(values),
+            })
+            self.assertEqual(set(calibration["head_minmax"]),
+                             set(raw_heads) if head == "ensemble" else {head})
+            for name, state in calibration["head_minmax"].items():
+                self.assertEqual(state, {
+                    "data_min": float(raw_heads[name].min()), "data_max": float(raw_heads[name].max()),
+                    "data_range": float(numpy.ptp(raw_heads[name])), "sample_count": len(values),
+                    "transform": "sklearn.preprocessing.MinMaxScaler()",
+                    "score_exponent": 1.0, "least_significant_scale": 0.0, "least_significant_score": 1.0,
+                })
+            self.assertEqual(calibration["output_maximum"], maximum)
+            self.assertEqual(calibration["output_maximum_epsilon"], 1e-5)
+            self.assertEqual(calibration["output_maximum_divisor"], maximum + 1e-5)
+            self.assertEqual(calibration["output_minmax_scaler"], {
+                "data_min": output_scaler.data_min_.tolist(), "data_max": output_scaler.data_max_.tolist(),
+                "data_range": output_scaler.data_range_.tolist(), "scale": output_scaler.scale_.tolist(),
+                "offset": output_scaler.min_.tolist(), "sample_count": len(values),
+            })
+            input_state = calibration["input_standard_scaler"]
+            numpy.testing.assert_allclose((values - input_state["mean"]) / input_state["scale"], normalized)
+            restored_heads = []
+            for name, state in calibration["head_minmax"].items():
+                boundary_scaler = MinMaxScaler().fit(numpy.array([state["data_min"], state["data_max"]]).reshape(-1, 1))
+                restored = boundary_scaler.transform(align_tspulse_scores(raw_heads[name], head=name,
+                    context_length=8, aggregation_window=4).reshape(-1, 1)).ravel()
+                if name != "pred":
+                    restored = score_smoothing(restored.reshape(-1, 1), smoothing_window_size=8).reshape(-1)
+                restored_heads.append(restored)
+            restored = numpy.maximum.reduce(restored_heads) / calibration["output_maximum_divisor"]
+            state = calibration["output_minmax_scaler"]
+            restored = restored * state["scale"][0] + state["offset"][0]
+            numpy.testing.assert_allclose(restored, outputs[head]["scores"])
+        self.assertEqual(numpy.count_nonzero(outputs["pred"]["scores"]), 1)
+        numpy.testing.assert_array_equal(values, original)
+        from src.common.execution_evidence import FULL_PREFIX_MEASUREMENT_PROTOCOL_ID, build_execution_evidence
+        from src.common.model_registry import load_model_registry_with_sha
+        from src.common.save_model_artifacts import save_model_score
+
+        registry, registry_sha = load_model_registry_with_sha()
+        duration = {"observed_duration_seconds": None, "duration_basis": "unavailable"}
+        evidence = build_execution_evidence(None, {field: 0.0 for field in (
+            "split_preprocess_seconds", "model_setup_seconds", "training_seconds",
+            "calibration_inference_seconds", "test_inference_seconds")},
+            spec={"dataset_role": "development", "target_use": "strict_zero_shot", "ratio": 100},
+            measurement_protocol_id=FULL_PREFIX_MEASUREMENT_PROTOCOL_ID, retry_count=0,
+            training_session_durations=[], test_input_sessions=(values,), test_session_durations=[duration],
+            peak_memory_mb=0.0, model_artifact_bytes=0)
+        with tempfile.TemporaryDirectory() as directory:
+            for head, output in outputs.items():
+                saved = save_model_score(output, Path(directory) / head,
+                    dataset="DEV18", series=1, model="TSPulse", target_use="strict_zero_shot",
+                    tier="t3", ratio=100, seed=0, config_id=registry["models"]["TSPulse"]["candidates"][0]["config_id"],
+                    common_recipe=registry["common_recipe"], common_recipe_id=registry["common_recipe_id"],
+                    normalization_scope="full_evaluation", score_variant=head,
+                    config_registry_sha256=registry_sha, execution_evidence=evidence,
+                    execution_identity={"dataset_role": "development", "split_role": "dev18_selection",
+                                        "input_manifest_sha256": "a" * 64, "final_policy_membership_sha256": None})
+                metadata = json.loads(Path(saved["metadata_path"]).read_text(encoding="utf-8"))
+                self.assertEqual(metadata["native_calibration"], output["native_calibration"])
+                for path in saved["score_paths"]:
+                    numpy.testing.assert_array_equal(numpy.load(path), output["scores"])
+
+    def test_paper_calibration_reconstructs_constant_and_near_constant_head_minmax(self):
+        from sklearn.preprocessing import MinMaxScaler, StandardScaler
+        from tsfm_public.models.tspulse.utils.ad_helpers import TSPulseADUtility
+
+        values = numpy.arange(40, dtype=float).reshape(20, 2)
+        raw_heads = {"time": numpy.resize([1.0, numpy.nextafter(1.0, 2.0)], 12),
+                     "fft": numpy.full(12, 3.0), "pred": numpy.arange(12, dtype=float)}
+        utility = TSPulseADUtility(
+            SimpleNamespace(config=SimpleNamespace(context_length=8, patch_length=2)),
+            mode=["time", "fft", "forecast"], aggregation_length=4,
+            least_significant_scale=0.0, least_significant_score=1.0,
+        )
+        outputs = score_tspulse_paper(values, raw_head_function=lambda *args, **kwargs: raw_heads,
+            utility=utility, aggregation_window=4, context_length=8)
+        states = outputs["ensemble"]["native_calibration"]["head_minmax"]
+        for head, state in states.items():
+            scaler = MinMaxScaler().fit(numpy.array([state["data_min"], state["data_max"]]).reshape(-1, 1))
+            restored = scaler.transform(align_tspulse_scores(raw_heads[head], head=head,
+                context_length=8, aggregation_window=4).reshape(-1, 1))
+            expected = utility.adjust_boundary("forecast" if head == "pred" else head, raw_heads[head],
+                reference=StandardScaler().fit_transform(values))
+            numpy.testing.assert_array_equal(restored, expected)
+            if head in {"time", "fft"}:
+                self.assertEqual(scaler.scale_.tolist(), [1.0])
+        self.assertGreater(states["time"]["data_range"], 0.0)
+        self.assertEqual(states["fft"]["data_range"], 0.0)
+
+    def test_paper_builder_forwards_protocol_once_and_rejects_context_normalization(self):
+        loader_arguments = []
+        utility = RawScoreUtility()
+
+        def component_loader(**arguments):
+            loader_arguments.append(arguments)
+            return object(), utility
+
+        with patch("src.models.tier3.tspulse.score_tspulse_paper", return_value={"ensemble": {}}) as paper_score:
+            scorer = build_tspulse_official_scorer(
+                aggregation_window=96, channel_count=2, official_protocol=True,
+                component_loader=component_loader,
+            )
+            for _ in range(2):
+                scorer(numpy.ones((520, 2)))
+        self.assertEqual(len(loader_arguments), 1)
+        self.assertTrue(loader_arguments[0]["official_protocol"])
+        self.assertEqual(paper_score.call_count, 2)
+        with self.assertRaisesRegex(ValueError, "per-context"):
+            build_tspulse_official_scorer(
+                aggregation_window=96, channel_count=2, official_protocol=True,
+                inference_context_normalization=True, component_loader=component_loader,
+            )
+        self.assertEqual(len(loader_arguments), 1)
+
+    def test_paper_short_session_has_full_ensemble_without_common_native_range(self):
+        from tsfm_public.models.tspulse.utils.ad_helpers import TSPulseADUtility
+
+        utility = TSPulseADUtility(
+            SimpleNamespace(config=SimpleNamespace(context_length=8, patch_length=2)),
+            mode=["time", "fft", "forecast"], aggregation_length=4,
+            least_significant_scale=0.0, least_significant_score=1.0,
+        )
+        result = score_tspulse_paper(
+            numpy.arange(18, dtype=float).reshape(9, 2),
+            raw_head_function=lambda values, **arguments: {
+                head: numpy.array([1.0]) for head in ("time", "fft", "pred")
+            },
+            utility=utility, aggregation_window=4, context_length=8,
+        )
+        ensemble = result["ensemble"]
+        self.assertEqual(ensemble["scores"].shape, (9,))
+        self.assertLess(ensemble["native_source_start"], ensemble["native_source_end_exclusive"])
+        for output in result.values():
+            self.assertEqual(output["native_calibration"]["output_minmax_scaler"]["data_range"], [0.0])
+            self.assertEqual(output["native_calibration"]["output_minmax_scaler"]["scale"], [1.0])
+
     def test_aligns_official_raw_head_boundaries(self):
         raw = numpy.array([1.0, 2.0, 3.0, 4.0])
 
@@ -337,6 +548,57 @@ class TestTSPulse(unittest.TestCase):
                 outputs[0][head]["scores"], outputs[1][head]["scores"],
             )
 
+    def test_context_normalization_uses_only_each_past_window_for_future_and_metadata(self):
+        values = numpy.array([
+            [10, 100], [12, 100], [14, 100], [16, 100],
+            [1000, 130], [1200, 160], [1400, 190],
+        ], dtype=numpy.float32)
+        original = values.copy()
+        utility = RawScoreUtility()
+        raw_head_function = build_tspulse_raw_head_function(
+            utility, aggregation_window=2, context_length=4, batch_size=2,
+            inference_context_normalization=True,
+        )
+        outputs = score_tspulse(
+            values, raw_head_function=raw_head_function,
+            aggregation_window=2, context_length=4,
+        )
+
+        first_payload = utility.payloads[0][0]
+        numpy.testing.assert_allclose(
+            first_payload["past_values"][0, :, 0], numpy.array([-3, -1, 1, 3]) / numpy.sqrt(5),
+            rtol=1e-6,
+        )
+        numpy.testing.assert_array_equal(first_payload["past_values"][0, :, 1], 0)
+        numpy.testing.assert_allclose(
+            first_payload["future_values"][0, 0], [987 / numpy.sqrt(5), 30], rtol=1e-6,
+        )
+        for output in outputs.values():
+            self.assertEqual(output["normalization_scope"], "none")
+            self.assertEqual(output["input_normalization"], "inference_context_zscore")
+            self.assertEqual(output["input_normalization_scope"], "past_context")
+            self.assertFalse(output["persistent_target_fit"])
+        numpy.testing.assert_array_equal(values, original)
+
+        other_utility = RawScoreUtility()
+        other_function = build_tspulse_raw_head_function(
+            other_utility, aggregation_window=2, context_length=4, batch_size=1,
+            inference_context_normalization=True,
+        )
+        other_outputs = score_tspulse(
+            values, raw_head_function=other_function, aggregation_window=2, context_length=4,
+        )
+        for head in outputs:
+            numpy.testing.assert_array_equal(outputs[head]["scores"], other_outputs[head]["scores"])
+        changed = values.copy()
+        changed[4:] *= 1000
+        other_utility.payloads.clear()
+        other_function(changed, aggregation_window=2)
+        torch.testing.assert_close(
+            first_payload["past_values"][0], other_utility.payloads[0][0]["past_values"][0],
+            rtol=0, atol=0,
+        )
+
     def test_prepared_scorer_loads_components_once(self):
         utility = RawScoreUtility()
         loader_calls = []
@@ -354,6 +616,28 @@ class TestTSPulse(unittest.TestCase):
             self.assertEqual(set(result), {"time", "fft", "pred", "raw_max"})
         self.assertEqual(len(loader_calls), 1)
 
+    def test_normalized_prediction_full_range_is_independent_of_aggregation_window(self):
+        timeline = numpy.arange(1536, dtype=numpy.float32)
+        values = numpy.column_stack((timeline ** 2, 3 * timeline + 7))
+        predictions = []
+        metadata = []
+        for aggregation_window in (64, 96, 128):
+            result = score_tspulse_official(
+                values, aggregation_window=aggregation_window, batch_size=8,
+                inference_context_normalization=True,
+                component_loader=lambda **arguments: (object(), RawScoreUtility()),
+            )
+            prediction = result["pred"]
+            predictions.append(prediction["scores"])
+            metadata.append({key: value for key, value in prediction.items() if key != "scores"})
+        for prediction, details in zip(predictions, metadata):
+            numpy.testing.assert_array_equal(prediction, predictions[0])
+            self.assertEqual(len(prediction), len(values))
+            self.assertEqual(details, metadata[0])
+            self.assertEqual(details["native_source_start"], 512)
+            self.assertEqual(details["native_source_end_exclusive"], len(values))
+            self.assertEqual(details["boundary_repeat"], {"left": 512, "right": 0})
+
     def test_official_entrypoint_connects_loader_raw_utility_and_alignment(self):
         utility = RawScoreUtility()
 
@@ -367,13 +651,15 @@ class TestTSPulse(unittest.TestCase):
             numpy.arange(24, dtype=numpy.float32).reshape(12, 2),
             aggregation_window=4, context_length=8, batch_size=3,
             device="cpu", component_loader=component_loader,
+            inference_context_normalization=True,
         )
 
         self.assertEqual(set(result), {"time", "fft", "pred", "raw_max"})
         self.assertTrue(all(output["scores"].shape == (12,) for output in result.values()))
+        self.assertTrue(all(output["input_normalization_scope"] == "past_context" for output in result.values()))
 
     def test_pins_and_verifies_official_source_and_checkpoint(self):
-        self.assertEqual(TSPULSE_SOURCE_COMMIT, "9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d")
+        self.assertEqual(TSPULSE_SOURCE_COMMIT, "fe7a35697723e2a2f5246ae979474bfc554e26c0")
         self.assertEqual(TSPULSE_CHECKPOINT_REVISION, "2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2")
         self.assertEqual(TSPULSE_CHECKPOINT_SHA256, "57fa03b67d1473a7253ac37801b24c391d1fa931395db986743e2f59e556b9ac")
         with tempfile.TemporaryDirectory() as directory:

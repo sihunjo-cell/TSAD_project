@@ -28,10 +28,11 @@ class TestVerifyRunContext(unittest.TestCase):
         for relative_path in (
             "configs/model_registry.yaml",
             "src/models/tier1/mwvar.py",
+            "src/models/tier1/one_liner_ensemble.py",
+            "src/models/tier1/sqdiff.py",
             "src/models/tier1/sqdiff_last3.py",
             "src/models/tier1/pca_legacy.py",
             "src/models/tier2/paano/adapter.py",
-            "src/models/tier2/alora/adapter.py",
             "src/models/tier2/gdn_official/adapter.py",
             "src/models/tier3/time_rcd.py",
             "src/models/tier3/tspulse.py",

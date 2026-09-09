@@ -1,8 +1,10 @@
 """후속 비용 최적화가 소비할 실행 원자료를 검증한다."""
 
+import json
 import math
 import re
 from collections.abc import Mapping
+from copy import deepcopy
 
 from src.data_split.split_ratio_prefix import compute_prefix_counts
 
@@ -10,15 +12,23 @@ from src.data_split.split_ratio_prefix import compute_prefix_counts
 EXECUTION_PHASES = {
     "development_hpo", "final_retraining", "target_free_inference",
 }
-TARGET_USES = {"fit_validation", "training_free", "strict_zero_shot"}
+TARGET_USES = {"fit_validation", "fit_full_prefix", "training_free", "strict_zero_shot"}
 TARGET_FREE_USES = {"training_free", "strict_zero_shot"}
 DEV18_MEASUREMENT_PROTOCOL_ID = "dev18_registered_runner.v2"
+LEGACY_FULL_PREFIX_MEASUREMENT_PROTOCOL_ID = "dev18_registered_runner.full_prefix_v2"
+FULL_PREFIX_MEASUREMENT_PROTOCOL_ID = "dev18_registered_runner.full_prefix_v3"
+FULL_PREFIX_STORAGE_SCHEMA_VERSION = "full_prefix_storage.v1"
 TIMING_FIELDS = (
     "split_preprocess_seconds",
     "model_setup_seconds",
     "training_seconds",
     "validation_inference_seconds",
     "test_inference_seconds",
+)
+LEGACY_FULL_PREFIX_TIMING_FIELDS = (*TIMING_FIELDS, "calibration_inference_seconds")
+FULL_PREFIX_TIMING_FIELDS = (
+    *(field for field in TIMING_FIELDS if field != "validation_inference_seconds"),
+    "calibration_inference_seconds",
 )
 EVIDENCE_FIELDS = {
     "measurement_protocol_id", "execution_phase", "status", "retry_count",
@@ -28,6 +38,9 @@ EVIDENCE_FIELDS = {
 TRAINING_SESSION_FIELDS = {
     "available_count", "fit_count", "validation_count", "observation_count",
     "observed_duration_seconds", "duration_basis",
+}
+FULL_PREFIX_TRAINING_SESSION_FIELDS = {
+    "training_boundary", "observed_row", "observed_duration_seconds", "duration_basis",
 }
 TEST_SESSION_FIELDS = {
     "observation_count", "observed_duration_seconds", "duration_basis",
@@ -113,6 +126,30 @@ def _normalize_training_session(values: Mapping, index: int) -> dict:
     return {**counts, **_normalize_duration(values, name)}
 
 
+def _normalize_prefix_session(values: Mapping, index: int) -> dict:
+    name = f"training_sessions[{index}]"
+    values = _require_mapping(values, name)
+    _require_exact_fields(values, FULL_PREFIX_TRAINING_SESSION_FIELDS, name)
+    counts = {field: _nonnegative_int(values[field], f"{name}.{field}")
+              for field in ("training_boundary", "observed_row")}
+    if not 0 < counts["observed_row"] <= counts["training_boundary"]:
+        raise ValueError(f"{name}의 observed_row는 정상 학습 경계 안의 양수여야 한다")
+    return {**counts, **_normalize_duration(values, name)}
+
+
+def _training_session_normalizer(protocol_id: str):
+    return (_normalize_prefix_session if protocol_id == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID
+            else _normalize_training_session)
+
+
+def _timing_fields(protocol_id: str) -> tuple:
+    if protocol_id == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID:
+        return FULL_PREFIX_TIMING_FIELDS
+    if protocol_id == LEGACY_FULL_PREFIX_MEASUREMENT_PROTOCOL_ID:
+        return LEGACY_FULL_PREFIX_TIMING_FIELDS
+    return TIMING_FIELDS
+
+
 def _normalize_test_session(values: Mapping, index: int) -> dict:
     name = f"test_sessions[{index}]"
     values = _require_mapping(values, name)
@@ -134,18 +171,19 @@ def _normalize_session_list(values, name: str, normalizer) -> list[dict]:
     return [normalizer(row, index) for index, row in enumerate(values)]
 
 
-def _normalize_timing(values: Mapping) -> dict:
+def _normalize_timing(values: Mapping, protocol_id: str = "") -> dict:
     values = _require_mapping(values, "timing")
-    _require_exact_fields(values, set(TIMING_FIELDS), "timing")
+    fields = _timing_fields(protocol_id)
+    _require_exact_fields(values, set(fields), "timing")
     return {
         field: _nonnegative_number(values[field], f"timing.{field}")
-        for field in TIMING_FIELDS
+        for field in fields
     }
 
 
 def _sum_timing(timing: Mapping) -> float:
     try:
-        total = math.fsum(timing[field] for field in TIMING_FIELDS)
+        total = math.fsum(timing.values())
     except (KeyError, OverflowError) as error:
         raise ValueError("다섯 timing 값의 합은 유한해야 한다") from error
     if not math.isfinite(total):
@@ -167,8 +205,12 @@ def derive_execution_phase(dataset_role: str, target_use: str) -> str:
 def validate_execution_evidence(values: Mapping) -> dict:
     """완료 score에 붙일 증거만 plain JSON-safe 값으로 반환한다."""
     values = _require_mapping(values, "execution_evidence")
-    _require_exact_fields(values, EVIDENCE_FIELDS, "execution_evidence")
-    protocol_id = _stable_id(values["measurement_protocol_id"], "measurement_protocol_id")
+    protocol_id = _stable_id(values.get("measurement_protocol_id"), "measurement_protocol_id")
+    current_storage = protocol_id == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID
+    fields = EVIDENCE_FIELDS | {"storage_schema_version", "resource_usage"} if current_storage else EVIDENCE_FIELDS
+    _require_exact_fields(values, fields, "execution_evidence")
+    if current_storage and values["storage_schema_version"] != FULL_PREFIX_STORAGE_SCHEMA_VERSION:
+        raise ValueError("full-prefix 저장 schema가 다르다")
     phase = values["execution_phase"]
     if type(phase) is not str or phase not in EXECUTION_PHASES:
         raise ValueError(f"지원하지 않는 execution_phase이다: {phase!r}")
@@ -179,7 +221,7 @@ def validate_execution_evidence(values: Mapping) -> dict:
         )
     retry_count = _nonnegative_int(values["retry_count"], "retry_count")
     training_sessions = _normalize_session_list(
-        values["training_sessions"], "training_sessions", _normalize_training_session,
+        values["training_sessions"], "training_sessions", _training_session_normalizer(protocol_id),
     )
     test_sessions = _normalize_session_list(
         values["test_sessions"], "test_sessions", _normalize_test_session,
@@ -191,12 +233,17 @@ def validate_execution_evidence(values: Mapping) -> dict:
     if not test_sessions:
         raise ValueError("complete score에는 test session이 필요하다")
 
-    timing = _normalize_timing(values["timing"])
+    timing = _normalize_timing(values["timing"], protocol_id)
+    if protocol_id == LEGACY_FULL_PREFIX_MEASUREMENT_PROTOCOL_ID:
+        if any(session["fit_count"] != session["available_count"] or session["validation_count"] for session in training_sessions):
+            raise ValueError("full-prefix 증거는 fit=available, validation=0이어야 한다")
+        if timing["validation_inference_seconds"] != 0:
+            raise ValueError("full-prefix 실행에는 validation 추론 시간이 없다")
     runtime_seconds = _nonnegative_number(values["runtime_seconds"], "runtime_seconds")
     timing_sum = _sum_timing(timing)
     if not math.isclose(runtime_seconds, timing_sum, rel_tol=1e-12, abs_tol=1e-12):
         raise ValueError("runtime_seconds가 다섯 timing 값의 합과 다르다")
-    return {
+    result = {
         "measurement_protocol_id": protocol_id,
         "execution_phase": phase,
         "status": "complete",
@@ -205,13 +252,24 @@ def validate_execution_evidence(values: Mapping) -> dict:
         "test_sessions": test_sessions,
         "timing": timing,
         "runtime_seconds": timing_sum,
-        "peak_memory_mb": _nonnegative_number(
+        "peak_memory_mb": None if current_storage and values["peak_memory_mb"] is None else _nonnegative_number(
             values["peak_memory_mb"], "peak_memory_mb",
         ),
         "model_artifact_bytes": _nonnegative_int(
             values["model_artifact_bytes"], "model_artifact_bytes",
         ),
     }
+    if current_storage:
+        usage = _require_mapping(values["resource_usage"], "resource_usage")
+        if not usage:
+            raise ValueError("resource_usage에는 측정 범위 또는 미측정 사유가 필요하다")
+        try:
+            json.dumps(usage, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ValueError("resource_usage는 유한한 JSON 값이나 null이어야 한다") from error
+        result.update(storage_schema_version=FULL_PREFIX_STORAGE_SCHEMA_VERSION,
+                      resource_usage=deepcopy(dict(usage)))
+    return result
 
 
 def validate_execution_evidence_for_run(
@@ -224,14 +282,22 @@ def validate_execution_evidence_for_run(
         raise ValueError("execution_evidence.execution_phase가 실행 역할과 다르다")
     if target_use in TARGET_FREE_USES and evidence["training_sessions"]:
         raise ValueError("target-free 실행에는 training session을 기록하지 않는다")
-    if target_use == "fit_validation" and not evidence["training_sessions"]:
-        raise ValueError("fit_validation 실행에는 training session이 필요하다")
+    if target_use in {"fit_validation", "fit_full_prefix"} and not evidence["training_sessions"]:
+        raise ValueError(f"{target_use} 실행에는 training session이 필요하다")
+    if (evidence["measurement_protocol_id"] == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID
+            and target_use == "fit_validation"):
+        raise ValueError("새 full-prefix 저장에는 fit_validation을 사용할 수 없다")
+    if target_use == "fit_full_prefix" and evidence["measurement_protocol_id"] not in {
+        FULL_PREFIX_MEASUREMENT_PROTOCOL_ID, LEGACY_FULL_PREFIX_MEASUREMENT_PROTOCOL_ID,
+    }:
+        raise ValueError("fit_full_prefix 실행에는 full-prefix 측정 프로토콜이 필요하다")
     return evidence
 
 
 def validate_training_evidence_bindings(
     values: Mapping, *, ratio: int, validation_session_lengths,
     validation_source_starts=None,
+    target_use: str = "fit_validation", calibration_source: str = "validation",
 ) -> None:
     """학습 증거 count를 봉인 ratio와 ordered validation 입력 길이에 묶는다."""
     values = _require_mapping(values, "execution_evidence")
@@ -240,7 +306,7 @@ def validate_training_evidence_bindings(
     sessions = _normalize_session_list(
         values["training_sessions"],
         "training_sessions",
-        _normalize_training_session,
+        _training_session_normalizer(values.get("measurement_protocol_id", "")),
     )
     if type(validation_session_lengths) not in (list, tuple):
         raise ValueError("validation_session_lengths는 ordered sequence여야 한다")
@@ -259,28 +325,35 @@ def validate_training_evidence_bindings(
         raise ValueError("validation_source_starts는 ordered sequence여야 한다")
     if len(starts) != len(lengths):
         raise ValueError("validation score 길이와 source start 수가 다르다")
-    if len(sessions) != len(lengths):
+    full_prefix = target_use == "fit_full_prefix"
+    if calibration_source not in ({"none", "fit"} if full_prefix else {"validation"}):
+        raise ValueError("target_use와 calibration source가 다르다")
+    if calibration_source == "none" and (lengths or starts):
+        raise ValueError("calibration source=none에는 참조 점수가 없다")
+    if calibration_source != "none" and len(sessions) != len(lengths):
         raise ValueError(
             "execution_evidence training session 수와 validation session 수가 다르다"
         )
-    for index, (session, validation_length, source_start) in enumerate(
-        zip(sessions, lengths, starts)
-    ):
-        expected = compute_prefix_counts(session["observation_count"], ratio)
-        actual = tuple(
-            session[field]
-            for field in ("available_count", "fit_count", "validation_count")
-        )
+    for index, session in enumerate(sessions):
+        current_storage = values.get("measurement_protocol_id") == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID
+        boundary = session["training_boundary" if current_storage else "observation_count"]
+        expected = compute_prefix_counts(boundary, ratio, full_prefix=full_prefix)
+        actual = ((session["observed_row"], session["observed_row"], 0) if current_storage
+                  else tuple(session[field] for field in ("available_count", "fit_count", "validation_count")))
         if actual != expected:
             raise ValueError(
                 f"execution_evidence training_sessions[{index}] count가 spec ratio와 다르다"
             )
-        if source_start > session["validation_count"]:
+        if calibration_source == "none":
+            continue
+        validation_length, source_start = lengths[index], starts[index]
+        reference_count = session["observed_row" if current_storage else "fit_count" if full_prefix else "validation_count"]
+        if source_start > reference_count:
             raise ValueError(
                 f"execution_evidence training_sessions[{index}]의 validation source start가 "
                 "validation 길이를 벗어났다"
             )
-        if validation_length != session["validation_count"] - source_start:
+        if validation_length != reference_count - source_start:
             raise ValueError(
                 f"execution_evidence training_sessions[{index}].validation_count가 "
                 "validation score 정렬 범위와 다르다"
@@ -300,7 +373,7 @@ def _range(values: Mapping, field: str, name: str) -> tuple[int, int]:
     return start, end
 
 
-def _training_counts(split: Mapping, index: int, expected_ratio: int) -> dict:
+def _training_counts(split: Mapping, index: int, expected_ratio: int, *, full_prefix: bool = False) -> dict:
     name = f"split[{index}]"
     split = _require_mapping(split, name)
     normal = _range(split, "normal_range", name)
@@ -311,7 +384,7 @@ def _training_counts(split: Mapping, index: int, expected_ratio: int) -> dict:
     if split["ratio_percent"] != expected_ratio:
         raise ValueError(f"{name}.ratio_percent가 spec.ratio와 다르다")
     available_count, fit_count, validation_count = compute_prefix_counts(
-        normal[1], split["ratio_percent"],
+        normal[1], split["ratio_percent"], full_prefix=full_prefix,
     )
     expected_ranges = {
         "normal_range": (0, normal[1]),
@@ -354,6 +427,7 @@ def build_execution_evidence(
     test_session_durations: list,
     peak_memory_mb,
     model_artifact_bytes: int,
+    resource_usage: Mapping | None = None,
 ) -> dict:
     """등록 실행기의 split·timing을 완료 score 증거로 바꾼다."""
     spec = _require_mapping(spec, "spec")
@@ -387,8 +461,11 @@ def build_execution_evidence(
         _require_exact_fields(
             duration, DURATION_FIELDS, f"training_session_durations[{index}]",
         )
+        counts = _training_counts(session_split, index, ratio, full_prefix=target_use == "fit_full_prefix")
+        if measurement_protocol_id == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID:
+            counts = {"training_boundary": counts["observation_count"], "observed_row": counts["available_count"]}
         training_sessions.append({
-            **_training_counts(session_split, index, ratio),
+            **counts,
             **_normalize_duration(duration, f"training_session_durations[{index}]"),
         })
 
@@ -412,12 +489,16 @@ def build_execution_evidence(
         })
 
     runner_timing = _require_mapping(timing, "runner timing")
+    timing_fields = _timing_fields(measurement_protocol_id)
+    if (measurement_protocol_id == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID
+            and runner_timing.get("validation_inference_seconds", 0) != 0):
+        raise ValueError("full-prefix 실행에는 validation 추론 시간이 없다")
     evidence_timing = {
         field: runner_timing[field]
-        for field in TIMING_FIELDS
+        for field in timing_fields
         if field in runner_timing
     }
-    normalized_timing = _normalize_timing(evidence_timing)
+    normalized_timing = _normalize_timing(evidence_timing, measurement_protocol_id)
     evidence = {
         "measurement_protocol_id": measurement_protocol_id,
         "execution_phase": execution_phase,
@@ -430,6 +511,12 @@ def build_execution_evidence(
         "peak_memory_mb": peak_memory_mb,
         "model_artifact_bytes": model_artifact_bytes,
     }
+    if measurement_protocol_id == FULL_PREFIX_MEASUREMENT_PROTOCOL_ID:
+        evidence.update(
+            storage_schema_version=FULL_PREFIX_STORAGE_SCHEMA_VERSION,
+            resource_usage=dict(resource_usage) if resource_usage is not None
+            else {"status": "unavailable", "reason": "not_recorded"},
+        )
     return validate_execution_evidence_for_run(
         evidence, dataset_role=dataset_role, target_use=target_use,
     )

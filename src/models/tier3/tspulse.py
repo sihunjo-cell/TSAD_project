@@ -1,4 +1,4 @@
-"""Strict target-free TSPulse raw-head adapter."""
+"""Frozen TSPulse raw-head adapter."""
 
 import hashlib
 from pathlib import Path
@@ -7,7 +7,7 @@ import numpy
 import torch
 
 
-TSPULSE_SOURCE_COMMIT = "9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d"
+TSPULSE_SOURCE_COMMIT = "fe7a35697723e2a2f5246ae979474bfc554e26c0"
 TSPULSE_MODEL_NAME = "ibm-granite/granite-timeseries-tspulse-r1"
 TSPULSE_CHECKPOINT_REVISION = "2e64fcdc2a06d3565dfadaf0065c0ab5055f80f2"
 TSPULSE_CHECKPOINT_FILE = "model.safetensors"
@@ -51,8 +51,11 @@ def load_tspulse_components(
     *, aggregation_window, channel_count, device="cpu", model_class=None,
     utility_class=None, hub_download=None,
     file_verifier=verify_tspulse_checkpoint,
+    official_protocol=False,
 ):
     """Lazily load the pinned reconstruction model and its raw-score utility."""
+    if not isinstance(official_protocol, bool):
+        raise ValueError("official_protocol must be a boolean")
     if not isinstance(channel_count, int) or channel_count < 1:
         raise ValueError("channel_count must be a positive integer")
     downloader = hub_download or _download_from_hub
@@ -90,6 +93,8 @@ def load_tspulse_components(
     utility = utility_class(
         model, mode=list(TSPULSE_OFFICIAL_HEADS),
         aggregation_length=aggregation_window,
+        **({"least_significant_scale": 0.0, "least_significant_score": 1.0}
+           if official_protocol else {}),
     )
     return model, utility
 
@@ -97,12 +102,15 @@ def load_tspulse_components(
 def build_tspulse_raw_head_function(
     utility, *, aggregation_window, context_length=TSPULSE_CONTEXT_LENGTH,
     batch_size=128, device="cpu",
+    inference_context_normalization=False,
 ):
-    """공식 compute_score만 호출하는 stride-1 raw-head 함수를 만든다."""
+    """공식 compute_score에 stride-1 문맥을 전달하는 함수를 만든다."""
     if not isinstance(context_length, int) or context_length < 1:
         raise ValueError("context_length must be a positive integer")
     if not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
+    if not isinstance(inference_context_normalization, bool):
+        raise ValueError("inference_context_normalization must be a boolean")
     resolved_device = torch.device(device)
     if resolved_device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("TSPulse requires an available CUDA device")
@@ -126,6 +134,12 @@ def build_tspulse_raw_head_function(
                     values[start + context_length:start + context_length + 1]
                     for start in starts
                 ])
+                if inference_context_normalization:
+                    channel_mean = past_values.mean(axis=1, keepdims=True, dtype=numpy.float64)
+                    channel_scale = past_values.std(axis=1, keepdims=True, dtype=numpy.float64, ddof=0)
+                    channel_scale = numpy.where(channel_scale == 0, 1.0, channel_scale)
+                    past_values = ((past_values - channel_mean) / channel_scale).astype(numpy.float32)
+                    future_values = ((future_values - channel_mean) / channel_scale).astype(numpy.float32)
                 payload = {
                     "past_values": torch.from_numpy(past_values).to(resolved_device),
                     "future_values": torch.from_numpy(future_values).to(resolved_device),
@@ -156,6 +170,7 @@ def build_tspulse_raw_head_function(
         }
 
     aggregation_window_value = aggregation_window
+    compute_raw_heads.inference_context_normalization = inference_context_normalization
     return compute_raw_heads
 
 
@@ -189,8 +204,8 @@ def align_tspulse_scores(
     return numpy.pad(scores, (left, right), mode="edge")
 
 
-def _validate_session(session):
-    values = numpy.asarray(session, dtype=numpy.float32)
+def _validate_session(session, *, dtype=numpy.float32):
+    values = numpy.asarray(session, dtype=dtype)
     if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
         raise ValueError("TSPulse input must be a nonempty time-by-channel matrix")
     if not numpy.isfinite(values).all():
@@ -289,19 +304,137 @@ def score_tspulse(
         lookahead=half_window,
         maximum_effective_lookahead=context_length + half_window - 1,
     )
+    if getattr(raw_head_function, "inference_context_normalization", False):
+        for output in outputs.values():
+            output.update({
+                "normalization_scope": "none",
+                "input_normalization": "inference_context_zscore",
+                "input_normalization_scope": "past_context",
+                "persistent_target_fit": False,
+            })
+    return outputs
+
+
+def score_tspulse_paper(
+    session, *, raw_head_function, utility, aggregation_window,
+    context_length=TSPULSE_CONTEXT_LENGTH,
+):
+    """Apply the benchmark's full-input scaling and completed four-head scores."""
+    from sklearn.preprocessing import MinMaxScaler, StandardScaler
+    from tsfm_public.toolkit.time_series_anomaly_detection_pipeline import score_smoothing
+
+    values = _validate_session(session, dtype=numpy.float64)
+    if getattr(raw_head_function, "inference_context_normalization", False):
+        raise ValueError("official_protocol cannot use per-context normalization")
+    if len(values) <= context_length:
+        raise ValueError("TSPulse input must be longer than its context")
+    input_scaler = StandardScaler()
+    normalized = input_scaler.fit_transform(values)
+    raw_heads = raw_head_function(normalized, aggregation_window=aggregation_window)
+    if set(raw_heads) != set(TSPULSE_HEADS):
+        raise ValueError("TSPulse paper protocol requires time, fft and pred raw scores")
+
+    processed_heads = {}
+    head_minmax = {}
+    for head in TSPULSE_HEADS:
+        raw_scores = numpy.asarray(raw_heads[head], dtype=numpy.float64)
+        if raw_scores.shape != (len(values) - context_length,) or not numpy.isfinite(raw_scores).all():
+            raise ValueError(f"TSPulse {head} raw scores have invalid shape or values")
+        scores = utility.adjust_boundary(
+            "forecast" if head == "pred" else head, raw_scores, reference=normalized,
+        )
+        # Boundary repeats keep the fitted range; the official 0/1/1 settings leave raw scores unchanged.
+        head_minmax[head] = {
+            "data_min": float(raw_scores.min()), "data_max": float(raw_scores.max()),
+            "data_range": float(numpy.ptp(raw_scores)), "sample_count": len(values),
+            "transform": "sklearn.preprocessing.MinMaxScaler()",
+            "score_exponent": float(utility._score_exponent),
+            "least_significant_scale": float(utility._least_significant_scale),
+            "least_significant_score": float(utility._least_significant_score),
+        }
+        if head != "pred":
+            scores = score_smoothing(scores, smoothing_window_size=8)
+        processed_heads[head] = numpy.asarray(scores, dtype=numpy.float64).reshape(-1)
+    processed_heads["ensemble"] = numpy.maximum.reduce(list(processed_heads.values()))
+
+    outputs = {}
+    half_window = aggregation_window // 2
+    for head, scores in processed_heads.items():
+        if scores.shape != (len(values),) or not numpy.isfinite(scores).all():
+            raise ValueError(f"TSPulse {head} completed scores have invalid shape or values")
+        # The benchmark wrapper scales once more after native head fusion.
+        maximum = numpy.nanmax(scores)
+        divisor = maximum + 1e-5
+        scores = scores / divisor
+        output_scaler = MinMaxScaler()
+        scores = output_scaler.fit_transform(scores.reshape(-1, 1)).ravel()
+        native_start = context_length if head == "pred" else context_length - half_window
+        native_end = len(values) if head in ("pred", "ensemble") else len(values) - half_window
+        output = _make_score_output(
+            scores, f"official_{head}_score",
+            native_source_start=native_start, native_source_end_exclusive=native_end,
+            boundary_repeat={"left": native_start, "right": len(values) - native_end},
+            lookahead=len(values) - 1, maximum_effective_lookahead=len(values) - 1,
+        )
+        output.update({
+            "official_protocol": "paper_tuning_v4",
+            "native_postprocessing": True,
+            "calibration_mode": "official_full_evaluation",
+            "normalization_scope": "full_evaluation",
+            "input_normalization": "full_evaluation_standardscaler_then_model_revin",
+            "input_normalization_scope": "full_evaluation",
+            "persistent_target_fit": False,
+            "score_postprocessing": (
+                "head_minmax_then_output_minmax" if head == "pred" else
+                "head_minmax_then_centered8_except_pred_then_head_max_then_output_minmax"
+                if head == "ensemble" else "head_minmax_then_centered8_then_output_minmax"
+            ),
+            "native_smoothing_window": 0 if head == "pred" else 8,
+            "boundary_repeat_scope": "before_native_smoothing_and_output_scaling",
+            "alignment": "official_head_boundary_repeat_then_postprocessing",
+            "native_calibration": {
+                "schema_version": 1, "source": "full_evaluation", "source_start": 0,
+                "source_end_exclusive": len(values), "score_head": head,
+                "input_standard_scaler": {
+                    "mean": input_scaler.mean_.tolist(), "variance": input_scaler.var_.tolist(),
+                    "scale": input_scaler.scale_.tolist(), "sample_count": int(input_scaler.n_samples_seen_),
+                },
+                "head_minmax": {name: state for name, state in head_minmax.items()
+                                if head == "ensemble" or name == head},
+                "output_maximum": float(maximum), "output_maximum_epsilon": 1e-5,
+                "output_maximum_divisor": float(divisor),
+                "output_minmax_scaler": {
+                    "data_min": output_scaler.data_min_.tolist(), "data_max": output_scaler.data_max_.tolist(),
+                    "data_range": output_scaler.data_range_.tolist(), "scale": output_scaler.scale_.tolist(),
+                    "offset": output_scaler.min_.tolist(), "sample_count": int(output_scaler.n_samples_seen_),
+                },
+            },
+        })
+        if head == "ensemble":
+            output["alignment"] = "max_after_each_head_boundary_repeat_and_postprocessing"
+            output["boundary_repeat"] = {
+                "time": {"left": context_length - half_window, "right": half_window},
+                "fft": {"left": context_length - half_window, "right": half_window},
+                "pred": {"left": context_length, "right": 0},
+            }
+        outputs[head] = output
     return outputs
 
 
 def score_tspulse_official(
     session, *, aggregation_window, context_length=TSPULSE_CONTEXT_LENGTH,
     batch_size=128, device="cpu", component_loader=load_tspulse_components,
+    inference_context_normalization=False,
+    official_protocol=False,
 ):
-    """고정 source의 raw utility를 strict 전처리 경로에 연결한다."""
-    values = _validate_session(session)
+    """공식 raw utility에 선택한 문맥 전처리를 연결한다."""
+    values = _validate_session(session, dtype=numpy.float64 if official_protocol else numpy.float32)
     scorer = build_tspulse_official_scorer(
         aggregation_window=aggregation_window, channel_count=values.shape[1],
         context_length=context_length, batch_size=batch_size, device=device,
         component_loader=component_loader,
+        inference_context_normalization=inference_context_normalization,
+        official_protocol=official_protocol,
     )
     return scorer(values)
 
@@ -309,18 +442,31 @@ def score_tspulse_official(
 def build_tspulse_official_scorer(
     *, aggregation_window, channel_count, context_length=TSPULSE_CONTEXT_LENGTH,
     batch_size=128, device="cpu", component_loader=load_tspulse_components,
+    inference_context_normalization=False,
+    official_protocol=False,
 ):
     """Load the official utility once and return a scorer for matching sessions."""
+    if not isinstance(official_protocol, bool):
+        raise ValueError("official_protocol must be a boolean")
+    if official_protocol and inference_context_normalization:
+        raise ValueError("official_protocol cannot use per-context normalization")
     _, utility = component_loader(
         aggregation_window=aggregation_window, channel_count=channel_count,
         device=device,
+        **({"official_protocol": True} if official_protocol else {}),
     )
     raw_head_function = build_tspulse_raw_head_function(
         utility, aggregation_window=aggregation_window,
         context_length=context_length, batch_size=batch_size, device=device,
+        inference_context_normalization=inference_context_normalization,
     )
 
     def scorer(session):
+        if official_protocol:
+            return score_tspulse_paper(
+                session, raw_head_function=raw_head_function, utility=utility,
+                aggregation_window=aggregation_window, context_length=context_length,
+            )
         return score_tspulse(
             session, raw_head_function=raw_head_function,
             aggregation_window=aggregation_window, context_length=context_length,

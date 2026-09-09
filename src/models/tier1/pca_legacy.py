@@ -1,17 +1,21 @@
-"""Fit-only TSB-AD PCA component-distance score."""
+"""TSB-AD PCA official evaluation fit and the historical prefix-fit adapter."""
 
 import math
 import warnings
+from copy import deepcopy
+
 import numpy
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy.spatial.distance import cdist
 from scipy.stats import zscore
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils.validation import check_is_fitted
 
 
 PCA_COMPONENTS = (0.25, 0.5, 0.75, None)
 PCA_WINDOW = 100
+PCA_DISTANCE_CHUNK_ROWS = 1024
 
 
 def _as_matrix(values, *, minimum_rows=1):
@@ -60,6 +64,36 @@ class PcaLegacy:
         self._is_fitted = True
         return self
 
+    def checkpoint(self):
+        if not self._is_fitted:
+            raise RuntimeError("fit must be called before checkpoint")
+        return {
+            "model_config": {"n_components": self.n_components, "window": self.window},
+            "scaler": deepcopy(self.scaler),
+            "pca": deepcopy(self.pca),
+        }
+
+    @classmethod
+    def from_checkpoint(cls, checkpoint):
+        """Restore a trusted local checkpoint without fitting either estimator."""
+        config = checkpoint["model_config"]
+        if config.get("official_procedure"):
+            raise ValueError("official evaluation-fit checkpoints cannot restore the prefix-fit adapter")
+        if config["window"] != PCA_WINDOW:
+            raise ValueError("checkpoint window does not match the PCA recipe")
+        adapter = cls(n_components=config["n_components"])
+        adapter.scaler = deepcopy(checkpoint["scaler"])
+        adapter.pca = deepcopy(checkpoint["pca"])
+        check_is_fitted(adapter.scaler)
+        check_is_fitted(adapter.pca)
+        if (adapter.pca.n_components != adapter.n_components
+                or adapter.scaler.n_features_in_ != adapter.pca.n_features_in_):
+            raise ValueError("checkpoint fitted state does not match the PCA recipe")
+        adapter.selected_components_ = adapter.pca.components_
+        adapter.selected_w_components_ = adapter.pca.explained_variance_ratio_
+        adapter._is_fitted = True
+        return adapter
+
     def score(self, values):
         if not self._is_fitted:
             raise RuntimeError("fit must be called before score")
@@ -93,3 +127,76 @@ class PcaLegacy:
             "maximum_effective_lookahead": PCA_WINDOW - 1,
             "normalization_scope": "current_prefix_validation",
         }
+
+
+def score_pca_official(values, *, n_components=None, zero_pruning=True):
+    """Fit and score the same complete evaluation input as the official run_PCA."""
+    if n_components not in PCA_COMPONENTS:
+        raise ValueError(f"n_components must be one of {PCA_COMPONENTS}")
+    if zero_pruning is not True:
+        raise ValueError("official PCA requires zero_pruning=True")
+    values = _as_matrix(values, minimum_rows=PCA_WINDOW)
+    windows = _make_windows(values)
+    axis, degrees = (0, 0) if values.shape[1] == 1 else (1, 1)
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        normalized = numpy.nan_to_num(
+            (windows - windows.mean(axis=axis, keepdims=True))
+            / windows.std(axis=axis, ddof=degrees, keepdims=True),
+        )
+    del windows
+    scaler = StandardScaler().fit(normalized)
+    standardized = scaler.transform(normalized)
+    del normalized
+    nonzero = numpy.any(standardized != 0, axis=0)
+    if not numpy.any(nonzero):
+        raise ValueError("official PCA has no features after zero-pruned window columns")
+    fitted = standardized[:, nonzero]
+    del standardized
+    pca = PCA(n_components=n_components, random_state=0).fit(fitted)
+    weights = pca.explained_variance_ratio_
+    if not numpy.isfinite(weights).all() or numpy.any(weights == 0):
+        raise ValueError("official PCA component weights must be finite and nonzero")
+    window_scores = numpy.empty(len(fitted))
+    for start in range(0, len(fitted), PCA_DISTANCE_CHUNK_ROWS):
+        stop = start + PCA_DISTANCE_CHUNK_ROWS
+        window_scores[start:stop] = numpy.sum(
+            cdist(fitted[start:stop], pca.components_) / weights, axis=1,
+        )
+    if not numpy.isfinite(window_scores).all():
+        raise ValueError("official PCA weighted component distances are nonfinite")
+    left, right = math.ceil((PCA_WINDOW - 1) / 2), (PCA_WINDOW - 1) // 2
+    length = len(values)
+    return {
+        "scores": numpy.pad(window_scores, (left, right), mode="edge"),
+        "source_start": 0,
+        "source_end_exclusive": length,
+        "alignment": "centered_window_edge_repeat",
+        "primitive": "weighted_component_distance",
+        "calibration_mode": "none",
+        "native_source_start": left,
+        "native_source_end_exclusive": length - right,
+        "boundary_repeat": {"left": left, "right": right},
+        "evaluation_mode": "offline_noncausal",
+        "lookahead": length - 1,
+        "maximum_effective_lookahead": length - 1,
+        "normalization_scope": "full_evaluation_window_standardscaler",
+        "official_procedure": True,
+        "fit_source": "full_evaluation",
+        "actual_fit_row_count": length,
+        "fit_source_range": [0, length],
+        "window_normalization": "column_zscore_ddof0" if axis == 0 else "row_zscore_ddof1",
+        "zero_pruning": True,
+        "zero_pruned_window_feature_count": int((~nonzero).sum()),
+        "retained_window_feature_count": int(nonzero.sum()),
+        "checkpoint": {
+            "model_config": {
+                "n_components": n_components, "window": PCA_WINDOW,
+                "official_procedure": True, "zero_pruning": True,
+            },
+            "scaler": scaler,
+            "pca": pca,
+            "nonzero_window_features": nonzero,
+            "fit_source": "full_evaluation",
+            "fit_source_range": [0, length],
+        },
+    }

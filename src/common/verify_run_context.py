@@ -14,11 +14,10 @@ UPSTREAM_SOURCE_COMMITS = {
         "dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9"
     ),
     "jinnnju/PaAno": "d4c67116190efa4592dc6a8a157ced0def68b6af",
-    "CharisShimillas/ALoRa": "97dcc4a337710e6dc72c1a67893717c9538bae1a",
     "d-ailin/GDN": "9853899da860682669a134e4af315d036aab4eca",
     "thu-sail-lab/Time-RCD": "372bb980426b2f67007311c6f3165ab789c79bef",
-    "ibm-granite/granite-tsfm": "9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d",
-    "TheDatumOrg/TSB-AD": "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48",
+    "ibm-granite/granite-tsfm": "fe7a35697723e2a2f5246ae979474bfc554e26c0",
+    "TheDatumOrg/TSB-AD": "6beac72e11d1155ade40870492c00d0d1cfdcaaf",
 }
 
 LOCAL_MODEL_FILES = (
@@ -27,12 +26,12 @@ LOCAL_MODEL_FILES = (
     "src/common/save_model_artifacts.py",
     "src/data_split/split_ratio_prefix.py",
     "src/models/tier1/mwvar.py",
+    "src/models/tier1/one_liner_ensemble.py",
+    "src/models/tier1/sqdiff.py",
     "src/models/tier1/sqdiff_last3.py",
     "src/models/tier1/pca_legacy.py",
     "src/models/tier2/paano/official.py",
     "src/models/tier2/paano/adapter.py",
-    "src/models/tier2/alora/official.py",
-    "src/models/tier2/alora/adapter.py",
     "src/models/tier2/gdn_official/official.py",
     "src/models/tier2/gdn_official/adapter.py",
     "src/models/tier3/time_rcd.py",

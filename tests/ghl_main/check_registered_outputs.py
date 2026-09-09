@@ -14,6 +14,8 @@ from src.common.execution_identity import (
 )
 from src.common.execution_evidence import (
     DEV18_MEASUREMENT_PROTOCOL_ID,
+    FULL_PREFIX_MEASUREMENT_PROTOCOL_ID,
+    FULL_PREFIX_STORAGE_SCHEMA_VERSION,
     TARGET_FREE_USES,
     validate_execution_evidence_for_run,
     validate_training_evidence_bindings,
@@ -25,6 +27,7 @@ from src.common.load_final_membership import (
 from src.common.naming import build_score_filename
 from src.common.model_registry import load_model_registry_with_sha
 from src.common.normalization import estimate_median_iqr
+from src.common.save_model_artifacts import validate_gdn_native_channels, validate_tspulse_native_calibration
 
 
 def _check_calibration_reference(
@@ -33,11 +36,15 @@ def _check_calibration_reference(
     if "calibration_reference" not in metadata:
         raise ValueError("교정 기준 metadata가 없다")
     reference = metadata["calibration_reference"]
-    if metadata["calibration_mode"] == "none":
+    if metadata["calibration_mode"] == "fit_median_iqr" and (
+        not isinstance(reference, dict) or reference.get("source") != "fit"
+    ):
+        raise ValueError("fit 교정 기준에는 source=fit 근거가 필요하다")
+    if metadata["calibration_mode"] in {"none", "official_full_evaluation"}:
         if reference is not None:
-            raise ValueError("target-free 점수에 교정 기준이 선언됐다")
+            raise ValueError("외부 교정이 없는 점수에 교정 기준이 선언됐다")
         return (), ()
-    if metadata["calibration_mode"] != "validation_median_iqr":
+    if metadata["calibration_mode"] not in {"validation_median_iqr", "fit_median_iqr"}:
         raise ValueError("지원하지 않는 calibration_mode이다")
     required = {
         "file", "sha256", "session_shapes", "sample_count", "median", "iqr",
@@ -122,7 +129,7 @@ def check_registered_output(
     if spec.get("config_registry_sha256") != current_registry_sha:
         raise ValueError("spec의 registry SHA가 현재 봉인본과 다르다")
     target_use = spec.get("target_use")
-    if target_use not in {"training_free", "strict_zero_shot", "fit_validation"}:
+    if target_use not in {"training_free", "strict_zero_shot", "fit_validation", "fit_full_prefix"}:
         raise ValueError("spec의 target_use가 없거나 잘못됐다")
     model = registry.get("models", {}).get(spec.get("model"))
     if model is None or model.get("execution_status", "ready") != "ready":
@@ -142,7 +149,7 @@ def check_registered_output(
         if membership_sha256 != identity["final_policy_membership_sha256"]:
             raise ValueError("현재 final membership SHA-256이 spec과 다르다")
         execution_union = build_final_execution_union(
-            membership, identity["split_role"],
+            membership, identity["split_role"], series=series,
         )
         physical_key = (spec.get("model"), spec.get("config_id"), spec.get("ratio"))
         if physical_key not in execution_union:
@@ -195,18 +202,33 @@ def check_registered_output(
         metadata.get("execution_evidence"),
         dataset_role=identity["dataset_role"], target_use=target_use,
     )
-    if (
-        identity["dataset_role"] == "development"
-        and evidence["measurement_protocol_id"] != DEV18_MEASUREMENT_PROTOCOL_ID
-    ):
-        raise ValueError(
-            "Dev18 measurement_protocol_id가 dev18_registered_runner.v2가 아니다"
-        )
+    full_prefix = spec["common_recipe"].get("training_split") == "full_prefix_v2"
+    official = spec["common_recipe"].get("methodology_revision") == "paper_tuning_v4"
+    expected_protocol = FULL_PREFIX_MEASUREMENT_PROTOCOL_ID if full_prefix else DEV18_MEASUREMENT_PROTOCOL_ID
+    if identity["dataset_role"] == "development" and evidence["measurement_protocol_id"] != expected_protocol:
+        raise ValueError("Dev18 measurement_protocol_id가 현재 분할 프로토콜과 다르다")
+    if full_prefix and metadata.get("storage_schema_version") != FULL_PREFIX_STORAGE_SCHEMA_VERSION:
+        raise ValueError("metadata의 full-prefix 저장 schema가 현재 계약과 다르다")
     expected_calibration_mode = (
         "none" if target_use in TARGET_FREE_USES else "validation_median_iqr"
     )
+    if target_use == "fit_full_prefix" or official:
+        expected_calibration_mode = model["preprocess_recipe"]["calibration"]
     if metadata.get("calibration_mode") != expected_calibration_mode:
         raise ValueError("metadata의 target_use와 calibration_mode가 다르다")
+    if official:
+        if (metadata.get("native_postprocessing") is not True
+                or metadata.get("official_protocol") != "paper_tuning_v4"):
+            raise ValueError("공식 점수의 native 후처리 또는 절차 표시가 빠졌다")
+        if metadata.get("smoothing") != {"kind": "model_native", "window": 0, "boundary": "model_native"}:
+            raise ValueError("공식 점수에 공통 smoothing이 다시 선언됐다")
+    if (spec["common_recipe"].get("methodology_revision") == "source_faithful_v3"
+            and spec["model"] in {"TimeRCD", "TSPulse"}):
+        expected_scope = "valid_inference_block" if spec["model"] == "TimeRCD" else "past_context"
+        if (metadata.get("input_normalization") != "inference_context_zscore"
+                or metadata.get("input_normalization_scope") != expected_scope
+                or metadata.get("persistent_target_fit") is not False):
+            raise ValueError("Tier 3 metadata의 입력 정규화 범위가 registry와 다르다")
     if (
         len(evidence["test_sessions"]) != 1
         or evidence["test_sessions"][0]["observation_count"]
@@ -218,16 +240,34 @@ def check_registered_output(
     validation_session_lengths, validation_source_starts = _check_calibration_reference(
         output_directory, metadata, raw_name,
     )
+    calibration_arguments = {}
+    if target_use == "fit_full_prefix":
+        calibration_arguments = {
+            "target_use": target_use,
+            "calibration_source": "fit" if expected_calibration_mode == "fit_median_iqr" else "none",
+        }
     validate_training_evidence_bindings(
         evidence,
         ratio=spec["ratio"],
         validation_session_lengths=validation_session_lengths,
         validation_source_starts=validation_source_starts,
+        **calibration_arguments,
     )
 
     file_prefix = "__".join(raw_name.split("__")[:6]) + "__"
     score_paths = tuple(output_directory.glob(file_prefix + "*.npy"))
-    channel_scores = len(metadata["score_shape"]) == 2
+    native_gdn = official and spec["model"] == "GDN"
+    native_shape = metadata.get("native_channel_score_shape")
+    if native_gdn:
+        if (not isinstance(native_shape, list) or len(native_shape) != 2
+                or any(type(size) is not int or size < 1 for size in native_shape)
+                or native_shape[0] != metadata["score_length"]
+                or metadata["score_shape"] != [metadata["score_length"]]):
+            raise ValueError("GDN native_channel_score_shape가 scalar 범위와 다르다")
+        input_column = metadata.get("effective_execution", {}).get("input_column")
+        if input_column is not None and native_shape[1] != input_column:
+            raise ValueError("GDN native 채널 수가 실제 입력 채널 수와 다르다")
+    channel_scores = native_gdn or len(metadata["score_shape"]) == 2
     filename_arguments = {
         "dataset": metadata["dataset"], "series": metadata["series"],
         "model": metadata["model"], "tier": metadata["tier"],
@@ -246,10 +286,11 @@ def check_registered_output(
         raise ValueError(
             f"점수 파일명이 다르다: {sorted(actual_names)} != {sorted(expected_names)}"
         )
+    saved_scores = {}
     for path in score_paths:
         scores = numpy.load(path, allow_pickle=False)
         expected_shape = (
-            tuple(metadata["score_shape"])
+            tuple(native_shape if native_gdn else metadata["score_shape"])
             if path.stem.endswith("__channels")
             else (metadata["score_length"],)
         )
@@ -260,6 +301,24 @@ def check_registered_output(
             )
         if not numpy.isfinite(scores).all():
             raise ValueError(f"점수 배열이 metadata 계약을 어겼다: {path.name}")
+        if official:
+            saved_scores[path.name] = scores
+    if official:
+        for name, scores in saved_scores.items():
+            if "__raw__" in name and not numpy.array_equal(
+                scores, saved_scores[name.replace("__raw__", "__smoothed__")],
+            ):
+                raise ValueError("공식 native 점수의 raw·smoothed 저장값이 다르다")
+    if native_gdn:
+        validate_gdn_native_channels(
+            saved_scores[raw_name.replace(".npy", "__channels.npy")], saved_scores[raw_name],
+            metadata.get("native_calibration"), source_start=metadata["source_start"],
+            source_end_exclusive=metadata["source_end_exclusive"],
+        )
+    if official and spec["model"] == "TSPulse":
+        validate_tspulse_native_calibration(metadata.get("native_calibration"),
+            source_start=metadata["source_start"], source_end_exclusive=metadata["source_end_exclusive"],
+            score_variant=score_variant, input_column=metadata.get("effective_execution", {}).get("input_column"))
     return {
         "status": "complete",
         "metadata_path": str(metadata_path),
