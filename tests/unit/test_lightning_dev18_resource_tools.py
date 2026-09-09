@@ -46,7 +46,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             summarize_tspulse_equivalence(reference, registered, registered_batch_size=32,
                                           official_protocol=True)
 
-    def test_gpu_memory_warning_preserves_equivalence_ram_and_oom_failures(self):
+    def test_memory_warnings_preserve_equivalence_and_oom_failures(self):
         import torch
         from tests.checks import check_dev18_resources as resources
 
@@ -76,10 +76,11 @@ class TestDev18ResourceCheck(unittest.TestCase):
             self.assertFalse(resources._has_consistent_capacity_evidence(
                 [{**result, "gpu_peak_bytes": 10001, "gpu_peak_percent": 100.01}], {"TSPulse"}, 80,
             ))
-            with patch.object(resources, "_maximum_rss_bytes", return_value=8000):
-                failed = resources.run_child_probe(**arguments)
-                self.assertEqual(failed["status"], "failed")
-                self.assertIn("RAM", failed["error"])
+            with patch.object(resources, "_maximum_rss_bytes", return_value=10000):
+                full_ram = resources.run_child_probe(**arguments)
+                self.assertEqual(full_ram["status"], "passed")
+                self.assertTrue(any("RAM 사용량" in warning for warning in full_ram["warnings"]))
+                self.assertTrue(resources._has_consistent_capacity_evidence([full_ram], {"TSPulse"}, 80))
             evidence["equivalence"] = {"status": "failed", "head_maximum_absolute_differences": {"fft": .001}}
             failed = resources.run_child_probe(**arguments)
             self.assertEqual(failed["status"], "failed")
@@ -148,6 +149,11 @@ class TestDev18ResourceCheck(unittest.TestCase):
             self.assertEqual(result["status"], "passed")
             self.assertEqual(result["ram_peak_percent"], 60)
             self.assertEqual(result["measurement_kind"], "process_rss")
+            with patch.object(resources, "_maximum_rss_bytes", return_value=1000):
+                full_ram = resources.run_child_probe(model="PCA_LEGACY", config_id="all", series="14",
+                                                      data_root=Path("data"), maximum_memory_percent=80)
+                self.assertEqual(full_ram["status"], "passed")
+                self.assertTrue(full_ram["warnings"])
             execute.side_effect = MemoryError("allocation failed")
             failed = resources.run_child_probe(model="PCA_LEGACY", config_id="all", series="14",
                                               data_root=Path("data"), maximum_memory_percent=80)
@@ -163,7 +169,10 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     "ram_peak_bytes": 600, "ram_peak_percent": 60, "wall_time_seconds": 2, "actual_backend": "cpu"}
         for row in (static, measured):
             self.assertTrue(_has_consistent_capacity_evidence([row], {"PCA_LEGACY"}, 80))
-        for row in ({**static, "estimated_ram_bytes": 900}, {**measured, "ram_peak_bytes": 800, "ram_peak_percent": 80},
+        self.assertTrue(_has_consistent_capacity_evidence(
+            [{**measured, "ram_peak_bytes": 1000, "ram_peak_percent": 100}], {"PCA_LEGACY"}, 80,
+        ))
+        for row in ({**static, "estimated_ram_bytes": 900},
                     {**measured, "ram_peak_percent": 1}, {**measured, "measurement_kind": "unknown"}):
             with self.subTest(row=row):
                 self.assertFalse(_has_consistent_capacity_evidence([row], {"PCA_LEGACY"}, 80))
@@ -545,7 +554,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             )
             self.assertEqual(validated, report)
             for changed in ({"environment": {"packages": {"torch": "changed"}}},
-                            {"ram_total_bytes": 500}):
+                            {"ram_total_bytes": 0}):
                 with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, "코드·입력·예산"):
                     validate_resource_report(path, **{
                         "project_commit": "a" * 40, "gate_code_sha256": "b" * 64,

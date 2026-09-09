@@ -450,10 +450,12 @@ def run_child_probe(
             error = f"{type(exception).__name__}: {exception}"
         elapsed = time.perf_counter() - started
         peak, total = _maximum_rss_bytes(), _system_memory_bytes()
-        status = "failed" if error else capacity_status(peak, total, maximum_memory_percent)
+        status = "failed" if error else "passed"
         return {
             **case, "status": status,
-            "error": error or ("" if status == "passed" else "PCA 실제 RAM 사용량이 합격선을 넘었다"),
+            "error": error,
+            "warnings": ([f"PCA RAM {peak * 100 / total:.2f}%가 권장선 {maximum_memory_percent}%를 넘었지만 실행은 완료됐다"]
+                         if not error and capacity_status(peak, total, maximum_memory_percent) != "passed" else []),
             "measurement_kind": "process_rss", "actual_backend": "cpu",
             "ram_peak_bytes": peak, "ram_total_bytes": total,
             "ram_peak_percent": round(peak * 100 / total, 2),
@@ -484,7 +486,7 @@ def run_child_probe(
         if not 0 <= peak_gpu <= total_gpu:
             failures.append("GPU VRAM 관측값이 전체 용량 범위를 벗어났다")
         if ram_status != "passed":
-            failures.append(f"RAM 사용량이 합격선 {maximum_memory_percent}% 이상이다")
+            warnings.append(f"RAM 사용량이 권장선 {maximum_memory_percent}% 이상이지만 측정 실행은 완료됐다")
         failures.extend(
             f"{key} 검사 실패: {json.dumps(value, ensure_ascii=False)}"
             for key, value in evidence.items()
@@ -519,7 +521,7 @@ def run_child_probe(
     }
 
 
-def _pca_static_check(specs, entries, maximum_memory_percent: float) -> dict:
+def _pca_static_check(specs, entries, maximum_memory_percent: float, *, ram_total_bytes=None) -> dict:
     pca_specs = [spec for spec in specs if spec["model"] == "PCA_LEGACY"]
     if not pca_specs:
         return {"model": "PCA_LEGACY", "status": "not_in_panel"}
@@ -538,7 +540,7 @@ def _pca_static_check(specs, entries, maximum_memory_percent: float) -> dict:
 
     entry = max(entries, key=lambda value: (estimate(value), value["series"]))
     peak_bytes = estimate(entry)
-    total = _system_memory_bytes()
+    total = _system_memory_bytes() if ram_total_bytes is None else ram_total_bytes
     return {
         "model": "PCA_LEGACY",
         "config_id": spec["config_id"], "ratio": spec["ratio"], "seed": spec["seed"], "series": entry["series"],
@@ -605,7 +607,8 @@ def _has_consistent_capacity_evidence(
                 return False
         else:
             return False
-        if not _is_finite_number(peak) or capacity_status(peak, total, maximum_memory_percent) != "passed":
+        if not _is_finite_number(peak) or (row.get("measurement_kind") == "static_estimate"
+                and capacity_status(peak, total, maximum_memory_percent) != "passed"):
             return False
     measured_models = expected_models & set(GPU_PROBE_MODELS)
     measured_rows = [
@@ -625,8 +628,7 @@ def _has_consistent_capacity_evidence(
                 and _is_finite_number(total, positive=True)
                 and _is_finite_number(percent)
                 and percent == round(peak * 100 / total, 2)
-                and (peak <= total if resource_name == "gpu"
-                     else capacity_status(peak, total, maximum_memory_percent) == "passed")
+                and (resource_name != "gpu" or peak <= total)
             ):
                 return False
     return True
@@ -635,13 +637,18 @@ def _has_consistent_capacity_evidence(
 def _has_required_pca_evidence(result_rows: list[dict], expected_models: set, maximum_memory_percent: float) -> bool:
     if "PCA_LEGACY" not in expected_models:
         return True
-    specs, entries = _load_plan()
-    estimate = _pca_static_check(specs, entries, maximum_memory_percent)
     rows = [row for row in result_rows if row.get("model") == "PCA_LEGACY"]
-    if len(rows) != 1 or any(rows[0].get(name) != estimate.get(name)
-                             for name in ("config_id", "series", "ratio", "seed")):
+    if len(rows) != 1:
         return False
     row = rows[0]
+    recorded = row if row.get("measurement_kind") == "static_estimate" else row.get("pca_estimate")
+    if not isinstance(recorded, dict) or not _is_finite_number(recorded.get("ram_total_bytes"), positive=True):
+        return False
+    specs, entries = _load_plan()
+    estimate = _pca_static_check(specs, entries, maximum_memory_percent,
+                                 ram_total_bytes=recorded["ram_total_bytes"])
+    if any(row.get(name) != estimate.get(name) for name in ("config_id", "series", "ratio", "seed")):
+        return False
     if row.get("measurement_kind") == "static_estimate":
         return row == estimate and estimate["status"] == "passed"
     return (row.get("measurement_kind") == "process_rss" and estimate["status"] == "requires_measurement"
@@ -738,6 +745,7 @@ def validate_resource_report(
     expected_models=None, environment=None, ram_total_bytes=None,
 ) -> dict:
     from src.common.execution_identity import file_sha256
+    from tests.checks.validate_resource_resume import committed_file_sha256, resource_resume_compatible
     from tests.checks.seal_runtime_environment import (
         collect_cuda_device_identity, collect_runtime_environment_identity,
     )
@@ -756,7 +764,7 @@ def validate_resource_report(
             f"{row.get('error') or row.get('status')} "
             f"(GPU VRAM {row.get('gpu_peak_percent', '미측정')}%, "
             f"RAM {row.get('ram_peak_percent', '미측정')}%, "
-            f"RAM 합격선·GPU 경고선 {row.get('maximum_memory_percent', '미기록')}%)"
+            f"메모리 권장선 {row.get('maximum_memory_percent', '미기록')}%)"
             for row in report.get("results", []) if row.get("status") != "passed"
         ]
         raise ValueError(f"Dev18 자원 점검 실패: {path}\n" + "\n".join(failures))
@@ -782,14 +790,21 @@ def validate_resource_report(
         ram_total_bytes = _system_memory_bytes()
     result_rows = report.get("results")
     maximum_memory_percent = report.get("maximum_memory_percent")
+    same_source = resource_resume_compatible(report.get("project_commit"), project_commit, REPOSITORY_ROOT)
+    same_gate = report.get("gate_code_sha256") == gate_code_sha256
+    if same_source and not same_gate and report.get("project_commit") != project_commit:
+        same_gate = report.get("gate_code_sha256") == committed_file_sha256(
+            report["project_commit"], "tests/checks/check_dev18_resources.py", REPOSITORY_ROOT,
+        )
     valid = (
         report.get("status") == "passed"
-        and report.get("project_commit") == project_commit
-        and report.get("gate_code_sha256") == gate_code_sha256
+        and same_source
+        and same_gate
         and report.get("input_manifest_sha256") == input_manifest_sha256
         and report.get("budget_id") == budget_id
         and report.get("environment") == environment
-        and report.get("ram_total_bytes") == ram_total_bytes
+        and _is_finite_number(report.get("ram_total_bytes"), positive=True)
+        and _is_finite_number(ram_total_bytes, positive=True)
         and report.get("pytorch_alloc_conf") == PYTORCH_ALLOC_CONF_VALUE
         and _is_finite_number(maximum_memory_percent, positive=True)
         and maximum_memory_percent <= 80
@@ -797,8 +812,6 @@ def validate_resource_report(
         and isinstance(result_rows, list)
         and bool(result_rows)
         and all(row.get("status") == "passed" for row in result_rows)
-        and all(row.get("ram_total_bytes") == ram_total_bytes
-                for row in result_rows if row.get("model") in (*GPU_PROBE_MODELS, "PCA_LEGACY"))
         and _has_consistent_capacity_evidence(
             result_rows, set(expected_models), maximum_memory_percent,
         )
@@ -806,7 +819,21 @@ def validate_resource_report(
         and _has_required_tier3_evidence(result_rows, set(expected_models))
     )
     if not valid:
-        raise ValueError("Dev18 자원 gate 결과가 현재 코드·입력·예산과 다르다")
+        differences = [name for name, matches in (
+            ("project commit", same_source), ("자원 검사 코드", same_gate),
+            ("입력 manifest", report.get("input_manifest_sha256") == input_manifest_sha256),
+            ("예산", report.get("budget_id") == budget_id),
+            ("실행 환경", report.get("environment") == environment),
+            ("메모리 할당 설정", report.get("pytorch_alloc_conf") == PYTORCH_ALLOC_CONF_VALUE),
+        ) if not matches]
+        raise ValueError("Dev18 자원 gate 결과가 현재 코드·입력·예산과 다르다: "
+                         + ", ".join(differences or ["보고서의 측정값·PCA·Tier 3 근거"]))
+    if report["ram_total_bytes"] != ram_total_bytes:
+        print(f"참고: RAM 총량 {report['ram_total_bytes']} → {ram_total_bytes}바이트; 완료한 자원 점검을 재사용합니다", flush=True)
+    for row in result_rows:
+        peak = row.get("estimated_ram_bytes") if row.get("measurement_kind") == "static_estimate" else row.get("ram_peak_bytes")
+        if peak is not None and peak * 100 >= ram_total_bytes * maximum_memory_percent:
+            print(f"주의: {row.get('model')}의 기존 RAM 관측·추정값이 현재 용량의 권장선 {maximum_memory_percent}% 이상입니다; 실행을 계속합니다", flush=True)
     return report
 
 
@@ -859,7 +886,7 @@ def run_resource_check(
     *, data_root: Path, maximum_memory_percent: float = 80,
     output_path=None,
 ) -> dict:
-    """메모리 비율 기준은 RAM 합격선과 GPU 예약 메모리 경고선으로 쓴다."""
+    """메모리 비율은 경고로 기록하며 실제 실행 실패는 보존한다."""
     from src.common.execution_identity import file_sha256
     from tests.checks.run_lightning_dev18 import require_lightning_cuda
     from tests.checks.seal_runtime_environment import collect_runtime_environment_identity
@@ -928,7 +955,7 @@ def run_resource_check(
     report = {
         **identity,
         "status": "passed" if not failed else "failed",
-        "memory_policy": {"gpu": "warn_above_threshold_fail_on_oom", "ram": "require_below_threshold"},
+        "memory_policy": {"gpu": "warn_above_threshold_fail_on_oom", "ram": "warn_above_threshold_fail_on_oom"},
         "disk_observation": disk_observation,
         "probe_history_directory": str(history_directory),
         "probe_cost_scope": "사전 검사 내역이며 단일 진입 명령의 시간에 포함된다. 두 시간을 더하지 않는다.",

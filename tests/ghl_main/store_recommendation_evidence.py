@@ -252,6 +252,19 @@ class RecommendationEvidence:
             if stored is None:
                 raise ValueError("recommendation database has no sealed experiment identity")
             if stored[0] != _json(self.identity):
+                from tests.checks.validate_resource_resume import committed_file_sha256, resource_resume_compatible
+
+                previous_identity = json.loads(stored[0])
+                if (previous_identity.get("project_commit") != identity["project_commit"]
+                        and resource_resume_compatible(previous_identity.get("project_commit"), identity["project_commit"], REPOSITORY_ROOT)):
+                    previous_source = committed_file_sha256(previous_identity["project_commit"],
+                        "tests/ghl_main/store_recommendation_evidence.py", REPOSITORY_ROOT)
+                    comparable = {**self.identity, "project_commit": previous_identity["project_commit"],
+                                  "storage_source_sha256": previous_source}
+                    if _json(comparable) == stored[0]:
+                        self.identity = previous_identity
+                        self.contract["identity"] = previous_identity
+            if stored[0] != _json(self.identity):
                 raise ValueError("recommendation database belongs to another experiment identity")
             with self.connection:
                 for model, settings in registry["models"].items():

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from src.common.execution_identity import SHA256_PATTERN, file_sha256
 from src.common.execution_evidence import FULL_PREFIX_STORAGE_SCHEMA_VERSION
+from tests.checks.validate_resource_resume import resource_resume_compatible
 from tests.ghl_main.record_run_history import _load_histories, record_run_history
 
 
@@ -79,7 +80,7 @@ def _package_recommendation_handoff(report, *, current_history_file):
     saved_recommendation = read_json(recommendation["receipt_file"], sha256=recommendation["receipt_sha256"])
     if (not saved_recommendation.get("recommendation_complete")
             or saved_recommendation["identity"]["budget_id"] != report["budget_id"]
-            or saved_recommendation["identity"]["project_commit"] != report["project_commit"]):
+            or not resource_resume_compatible(saved_recommendation["identity"]["project_commit"], report["project_commit"], root)):
         raise ValueError("추천 영수증이 완료한 실험 신원과 다르다")
     for key in ("database", "exports"):
         if recommendation[key] != saved_recommendation[key]:
@@ -152,13 +153,15 @@ def _package_recommendation_handoff(report, *, current_history_file):
                          "environment": {key: value for key, value in saved_recommendation["environment"].items()
                                          if key != "runtime_snapshot"}}
     resource_rows = resource_report.get("results")
-    if (any(resource_report.get(key) != value for key, value in resource_identity.items())
+    if (not resource_resume_compatible(resource_report.get("project_commit"), report["project_commit"], root)
+            or any(resource_report.get(key) != value for key, value in resource_identity.items() if key != "project_commit")
             or resource_report.get("status") != "passed"
             or set(resource_report.get("checked_models", [])) != {row["model"] for row in budget["execution_panel"]}
             or not isinstance(resource_rows, list) or not resource_rows
             or any(not isinstance(row, dict) or row.get("status") != "passed" for row in resource_rows)
             or {row["model"] for row in resource_rows if row.get("model")} != set(resource_report["checked_models"])):
         raise ValueError("전달 자원 검사가 완료한 실험의 소스·환경·예산과 다르다")
+    resource_identity["project_commit"] = resource_report["project_commit"]
     probe_directory = resource_directory / "resource_probe_history"
     if Path(resource_report.get("probe_history_directory", "")).resolve() != probe_directory:
         raise ValueError("자원 probe 이력 폴더가 저장 계약과 다르다")
@@ -259,7 +262,7 @@ def _package_recommendation_handoff(report, *, current_history_file):
                 reference(score_path.with_name(score_path.stem + "__channels.npy"), include=False, kind=f"{variant}_channel_score")
         snapshot_ref = metadata["run_snapshot"]
         snapshot = read_json(snapshot_ref["file"], sha256=snapshot_ref["sha256"])
-        if (snapshot["project_commit"] != report["project_commit"]
+        if (not resource_resume_compatible(snapshot["project_commit"], report["project_commit"], root)
                 or snapshot["storage_schema_version"] != FULL_PREFIX_STORAGE_SCHEMA_VERSION
                 or snapshot["environment"] != saved_recommendation["environment"]):
             raise ValueError("전달 snapshot의 소스·환경·저장 계약이 다르다")

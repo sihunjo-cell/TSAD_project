@@ -26,6 +26,12 @@ from tests.unit.test_recommendation_evidence import fixture, loader, write_sourc
 
 class RecommendationStorageIntegrationTests(unittest.TestCase):
     def test_saved_output_passes_database_backup_and_handoff_without_mocked_verifiers(self):
+        self._exercise_storage_pipeline(resume_after_resource_fix=False)
+
+    def test_resource_fix_reuses_scores_database_and_handoff_without_rewriting_old_sources(self):
+        self._exercise_storage_pipeline(resume_after_resource_fix=True)
+
+    def _exercise_storage_pipeline(self, *, resume_after_resource_fix):
         registered = load_model_registry()
         model = registered["models"]["PaAno"]
         candidate = model["candidates"][0]
@@ -151,6 +157,7 @@ class RecommendationStorageIntegrationTests(unittest.TestCase):
             write_source(manifest_path, rows)
             write_source(ledger_path, ledger)
             identity = {"schema_version": evidence.SCHEMA_VERSION, "project_commit": report["project_commit"],
+                        "storage_source_sha256": "d" * 64,
                         "budget_id": budget["budget_id"], "input_manifest_sha256": input_reference["sha256"],
                         "feasibility_ledger": {"file": tuning._relative(snapshot_directory / "dev18_feasibility_ledger.csv"),
                                                "sha256": file_sha256(snapshot_directory / "dev18_feasibility_ledger.csv")}}
@@ -163,6 +170,31 @@ class RecommendationStorageIntegrationTests(unittest.TestCase):
                 self.assertFalse(store.status()["scoring_complete"])
                 store.sync_results(rows, ledger_rows=ledger, manifest_path=manifest_path, ledger_path=ledger_path)
                 recommendation = store.finalize()
+            if resume_after_resource_fix:
+                from tests.checks import validate_resource_resume as resume
+
+                original_commit = identity["project_commit"]
+                current_commit = "9" * 40
+                stack.enter_context(patch.object(resume, "_has_resource_resume_source",
+                    side_effect=lambda commit, _root: commit in {original_commit, current_commit}))
+                stack.enter_context(patch.object(resume, "committed_file_sha256", return_value="d" * 64))
+                current_identity = {**identity, "project_commit": current_commit, "storage_source_sha256": "e" * 64}
+                preserved_snapshot = snapshot.read_bytes()
+                with evidence.RecommendationEvidence(store_directory, identity=current_identity, registry=registry,
+                                                     budget=budget, entries=entries) as resumed:
+                    self.assertEqual(resumed.identity["project_commit"], original_commit)
+                    self.assertEqual(resumed.identity["storage_source_sha256"], "d" * 64)
+                    resumed.bind_environment(environment)
+                    resumed.prepare_features(lambda _entry: self.fail("cached prefixes must be reused"))
+                    resumed.sync_results(rows, ledger_rows=ledger, manifest_path=manifest_path, ledger_path=ledger_path)
+                    recommendation = resumed.finalize()
+                self.assertTrue(tuning._completed_run(
+                    rows, spec=spec, panel_row=panel, series=1, input_manifest_path=input_manifest,
+                    expected_project_commit=current_commit, compatible_project_commit=None,
+                    expected_environment=environment,
+                ))
+                self.assertEqual(snapshot.read_bytes(), preserved_snapshot)
+                report["project_commit"] = current_commit
             self.assertTrue(recommendation["recommendation_complete"])
             with closing(sqlite3.connect(recommendation["database"]["file"])) as backup:
                 self.assertEqual(backup.execute("SELECT count(*) FROM recommendation_inputs").fetchone()[0], 126)

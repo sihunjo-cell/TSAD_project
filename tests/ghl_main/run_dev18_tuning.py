@@ -1754,11 +1754,16 @@ def _validate_bound_run_files(
         compatible_project_commit = None
         allow_compatible_history = False
     if expected_project_commit is not None or expected_environment is not None:
+        from tests.checks.validate_resource_resume import resource_resume_compatible
+
         accepted_commits = {expected_project_commit, compatible_project_commit} - {None}
         if accepted_commits and snapshot.get("project_commit") not in accepted_commits:
-            if not allow_compatible_history:
-                raise ValueError("Dev18 재개 snapshot의 project commit이 현재 HEAD와 다르다")
-            _validate_resume_source(snapshot.get("project_commit"), expected_project_commit)
+            if not (current_storage and resource_resume_compatible(
+                snapshot.get("project_commit"), expected_project_commit, REPOSITORY_ROOT,
+            )):
+                if not allow_compatible_history:
+                    raise ValueError("Dev18 재개 snapshot의 project commit이 현재 HEAD와 다르다")
+                _validate_resume_source(snapshot.get("project_commit"), expected_project_commit)
         if (
             expected_environment is not None and not allow_compatible_history
             and snapshot.get("environment") != expected_environment
