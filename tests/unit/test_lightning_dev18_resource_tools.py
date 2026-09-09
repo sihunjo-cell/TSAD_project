@@ -514,6 +514,29 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     environment=report["environment"], ram_total_bytes=1000,
                 )
 
+    def test_failed_resource_report_shows_model_error_before_identity_checks(self):
+        report = {"status": "failed", "results": [
+            {"model": "GDN", "status": "passed"},
+            {"model": "TSPulse", "config_id": "c1", "series": "13", "status": "failed",
+             "error": "OutOfMemoryError: CUDA out of memory", "gpu_peak_percent": 98.9,
+             "ram_peak_percent": 3.34, "maximum_memory_percent": 80},
+            {"model": "TSPulse", "config_id": "c2", "series": "13", "status": "failed",
+             "error": "실행 정책 또는 자원 합격선을 통과하지 못했다", "gpu_peak_percent": 85,
+             "ram_peak_percent": 4, "maximum_memory_percent": 80},
+        ]}
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tests.checks.check_dev18_resources._git_head",
+            side_effect=AssertionError("실패 보고서는 신원 검사 전에 원인을 알려야 한다"),
+        ):
+            path = Path(directory) / "resource_gate.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaises(ValueError) as raised:
+                validate_resource_report(path)
+            message = str(raised.exception)
+            for detail in ("TSPulse", "c1", "c2", "13", "CUDA out of memory", "98.9", "85", "80"):
+                self.assertIn(detail, message)
+            self.assertNotIn("코드·입력·예산", message)
+
     def test_resource_report_rejects_missing_or_failed_tier3_evidence(self):
         time_rcd = {
             "model": "TimeRCD", "config_id": "c1c5aeea6f7d3",

@@ -210,7 +210,7 @@ models:
     checkpoint_license: Apache-2.0
     local_relationship: package_backed_adapter
     target_use: strict_zero_shot
-    preprocess_recipe: {recipe_id: tspulse_official_procedure_v4, official_protocol: true, normalization: full_evaluation_standardscaler_then_model_revin, calibration: official_full_evaluation, target_statistics_fit: true, inference_batch_size: 128, native_smoothing_window: 8, native_smoothing_scope: time_fft_before_ensemble, aggregation: model_native_scalar_heads, evaluation_mode: offline_noncausal, context_policy: official_head_boundary_repeat_then_postprocessing, head_alignment: model_native, ensemble: max_after_head_minmax_and_native_smoothing_then_output_minmax}
+    preprocess_recipe: {recipe_id: tspulse_official_procedure_v4, official_protocol: true, normalization: full_evaluation_standardscaler_then_model_revin, calibration: official_full_evaluation, target_statistics_fit: true, inference_batch_size: 32, native_smoothing_window: 8, native_smoothing_scope: time_fft_before_ensemble, aggregation: model_native_scalar_heads, evaluation_mode: offline_noncausal, context_policy: official_head_boundary_repeat_then_postprocessing, head_alignment: model_native, ensemble: max_after_head_minmax_and_native_smoothing_then_output_minmax}
     candidate_basis: 논문 부록 A.11.3의 aggregation 64·96·128과 공식 time·fft·pred·ensemble 점수를 모두 보존한다. 승인한 파일별 time·fft 동일 가중 평균으로 공통 창을 고른 뒤 공식 데이터셋별 파일 평균으로 head를 선택한다. 공통 창의 평균식은 프로젝트 보완이다.
     fixed: {context_length: 512, patch_size: 8, heads: [time, fft, pred, ensemble]}
     grid:

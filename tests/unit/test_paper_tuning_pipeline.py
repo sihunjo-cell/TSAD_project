@@ -10,7 +10,9 @@ import numpy
 
 from src.common.execution_evidence import FULL_PREFIX_MEASUREMENT_PROTOCOL_ID, build_execution_evidence
 from src.common.model_registry import load_model_registry_with_sha
-from src.common.run_registered_model import build_entrypoint_arguments, execute_registered_model
+from src.common.run_registered_model import (
+    build_entrypoint_arguments, build_registered_execution_policy, execute_registered_model,
+)
 from src.common.save_model_artifacts import save_model_score
 from src.data_split.split_ratio_prefix import split_ratio_prefix
 
@@ -55,7 +57,9 @@ class PaperTuningPipelineTests(unittest.TestCase):
                         self.assertNotIn("inference_context_normalization", arguments)
                         self.assertEqual(arguments["context_length"], candidate["hyperparameters"]["context_length"])
                     if name == "TSPulse":
-                        self.assertEqual(arguments["batch_size"], 128)
+                        self.assertEqual(arguments["batch_size"], 32)
+                        self.assertEqual(arguments["batch_size"], model["preprocess_recipe"]["inference_batch_size"])
+                        self.assertEqual(build_registered_execution_policy(spec)["batch_size"], arguments["batch_size"])
                         self.assertEqual(arguments["aggregation_window"], candidate["hyperparameters"]["aggregation_window"])
 
     def test_gdn_receives_each_q_prefix_before_its_internal_window_split(self):

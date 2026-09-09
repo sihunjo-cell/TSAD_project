@@ -2,6 +2,15 @@
 
 갱신일: 2026-09-09
 
+## TSPulse 추론 배치는 L4에서 32로 제한
+
+2026-09-09 Lightning의 248채널 입력에서 TSPulse 세 설정이 CUDA OOM으로 실패했다.
+공식 경로가 기존 배치 제한을 덮어쓰지 않게 하고 추론 배치 32를 registry와 실행 정책에 기록한다.
+이는 승인된 자원 조정 범위의 실행 분할이며 후보·창·head·학습 또는 점수식을 바꾸지 않는다.
+[봉인한 공식 compute_score](https://github.com/ibm-granite/granite-tsfm/blob/fe7a35697723e2a2f5246ae979474bfc554e26c0/tsfm_public/models/tspulse/utils/ad_helpers.py)의
+창별 집계를 유지하고 기존 원격 검사에서 배치 1과 수치를 대조한다. 32의 L4 통과는 확인 전이며
+실제 OOM과 80% 자원 기준을 우회하지 않는다. 실패 보고서는 모델의 원래 오류와 관측치를 먼저 알린다.
+
 ## 시작 환경은 Python 3.11·3.12를 허용
 
 2026-09-09 Lightning 준비 실패 수정 요청으로 Python 3.11.14 단일 고정을 3.11.x·3.12.x 허용으로

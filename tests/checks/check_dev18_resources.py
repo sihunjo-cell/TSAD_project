@@ -738,6 +738,17 @@ def validate_resource_report(
             "Dev18 자원 gate 결과가 없다. check_dev18_resources.py를 먼저 실행한다"
         )
     report = json.loads(path.read_text(encoding="utf-8"))
+    if report.get("status") == "failed":
+        failures = [
+            f"{row.get('model', row.get('resource', 'unknown'))} "
+            f"{row.get('config_id', '')} / series {row.get('series', '-')}: "
+            f"{row.get('error') or row.get('status')} "
+            f"(GPU {row.get('gpu_peak_percent', '미측정')}%, "
+            f"RAM {row.get('ram_peak_percent', '미측정')}%, "
+            f"기준 {row.get('maximum_memory_percent', '미기록')}%)"
+            for row in report.get("results", []) if row.get("status") != "passed"
+        ]
+        raise ValueError(f"Dev18 자원 점검 실패: {path}\n" + "\n".join(failures))
     if project_commit is None:
         project_commit = _git_head()
     if gate_code_sha256 is None:

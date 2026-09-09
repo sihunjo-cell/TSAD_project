@@ -239,7 +239,7 @@ def build_entrypoint_arguments(spec: dict, *, device: str, channel_count: int) -
         return {
             "aggregation_window": parameters["aggregation_window"],
             "context_length": parameters["context_length"],
-            "batch_size": 128 if official else TSPULSE_INFERENCE_BATCH_SIZE, "device": device,
+            "batch_size": TSPULSE_INFERENCE_BATCH_SIZE, "device": device,
             **({"official_protocol": True} if official else {}),
             **({"inference_context_normalization": True}
                if spec["common_recipe"].get("methodology_revision") == "source_faithful_v3" else {}),
@@ -261,8 +261,7 @@ def build_registered_execution_policy(spec: dict) -> dict:
         return {
             "context_length": parameters["context_length"],
             "aggregation_window": parameters["aggregation_window"],
-            "batch_size": (128 if spec.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4"
-                           else TSPULSE_INFERENCE_BATCH_SIZE),
+            "batch_size": TSPULSE_INFERENCE_BATCH_SIZE,
         }
     return {}
 
