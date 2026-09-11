@@ -16,10 +16,12 @@ RESOURCE_RESUME_BLOBS = {
         "f610da99a9ce6e922ec269909c32fbd08af7acf4", "693a26cd1d74c4cc8be013b42c737a58c191fc8c",
         "0154ee9a6b2201c911a25c861e5ed1e7f0ec7c90",
         "8fc66a26ecd267dd730d2aaf3305f06a8da076b9",
+        "25497ebd3ef92eb257e14a2669bf8ee55fdc196b",
     ),
     "src/models/tier1/pca_legacy.py": (
         "f6a5a21ef1b8f01fa3c1b83d0e7c091af6ca15d0", "0470ab13ea5a1143a205fe990695143c94b0d781",
         "3e61552c10de8976c5cd157fffd332d480ee7bdd",
+        "a3aa48f4473b21b7790b54e2694c9cc0903ebff3",
     ),
     "tests/ghl_main/record_run_history.py": "d55fa556f0dd0239bdc29272d99693086b0c4774",
     "tests/ghl_main/run_ratio_tuning.py": (
@@ -27,7 +29,9 @@ RESOURCE_RESUME_BLOBS = {
         "6b42ce921bf8f70d1bfbdd42c7a82d26da78f928",
     ),
     "tests/ghl_main/build_tuning_support.py": "dc542fb68d61249cdd6436c45374a35638fc9004",
-    "tests/ghl_main/compare_execution_runtimes.py": "57ecfbe46e2e690bbad08ce1085f778267ba4fd5",
+    "tests/ghl_main/compare_execution_runtimes.py": (
+        "57ecfbe46e2e690bbad08ce1085f778267ba4fd5", "c8308f114ba9018d763ed4c22a0d21b5f9d95a3d",
+    ),
     "tests/ghl_main/store_recommendation_evidence.py": "2a5d13463d29c93c42c719ee1729fab7629856f7",
     "tests/ghl_main/package_recommendation_handoff.py": "b58df2e69334686e972c72847093b82ec8818f21",
 }

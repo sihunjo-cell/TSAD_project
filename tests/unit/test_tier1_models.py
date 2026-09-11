@@ -4,6 +4,7 @@ import io
 import runpy
 import unittest
 import warnings
+from threading import Barrier
 from unittest.mock import patch
 
 import numpy
@@ -430,6 +431,34 @@ class TestPcaLegacy(unittest.TestCase):
 
 
 class TestPcaOfficial(unittest.TestCase):
+    def test_component_distances_overlap_workers_and_preserve_every_row_and_weight(self):
+        generator = numpy.random.default_rng(92)
+        fitted = numpy.asfortranarray(generator.normal(size=(5, 9)))
+        components = numpy.asfortranarray(generator.normal(size=(7, 9)))
+        weights = numpy.geomspace(1e-30, 1, 7)
+        expected = numpy.sum(cdist(fitted, components) / weights, axis=1)
+        for array in (fitted, components, weights):
+            array.flags.writeable = False
+        rendezvous = Barrier(2, timeout=10)
+
+        def concurrent_distances(rows, vectors):
+            rendezvous.wait()
+            return cdist(rows, vectors)
+
+        with patch.object(pca_legacy, "PCA_DISTANCE_CHUNK_ROWS", 3), \
+                patch.object(pca_legacy, "cdist", side_effect=concurrent_distances):
+            actual, workers = pca_legacy._score_component_distances(
+                fitted, components, weights, workers=16,
+            )
+        self.assertEqual(workers, 2)
+        numpy.testing.assert_array_equal(actual, expected)
+        for error in (MemoryError("distance failed"), KeyboardInterrupt("distance interrupted")):
+            with self.subTest(error=type(error).__name__), \
+                    patch.object(pca_legacy, "PCA_DISTANCE_CHUNK_ROWS", 3), \
+                    patch.object(pca_legacy, "cdist", side_effect=error):
+                with self.assertRaises(type(error)):
+                    pca_legacy._score_component_distances(fitted, components, weights, workers=16)
+
     def test_fit_uses_allocated_cpus_once_and_restores_threads_on_success_and_failure(self):
         values = numpy.random.default_rng(71).normal(size=(115, 3))
         original_fit = PCA.fit
@@ -454,6 +483,10 @@ class TestPcaOfficial(unittest.TestCase):
                     numpy.testing.assert_allclose(result["scores"], serial["scores"])
                     self.assertEqual(threadpool_info(), before)
                     self.assertEqual(result["pca_parallelism"]["fit_blas_threads_requested"], available_cpus)
+                    self.assertEqual(result["pca_parallelism"]["distance_workers_requested"], available_cpus)
+                    self.assertEqual(result["pca_parallelism"]["distance_workers"], 1)
+                    self.assertEqual(result["pca_parallelism"]["selected_component_count"],
+                                     result["checkpoint"]["pca"].n_components_)
                     self.assertEqual(set(result["pca_parallelism"]["phase_wall_seconds"]),
                                      {"preprocessing", "fit", "component_distances"})
                     self.assertTrue(all(value >= 0 for value in result["pca_parallelism"]["phase_wall_seconds"].values()))
@@ -492,7 +525,7 @@ class TestPcaOfficial(unittest.TestCase):
                         result = score_pca_official(values, n_components=component)
 
                     numpy.testing.assert_allclose(result["scores"], expected)
-                    self.assertEqual([len(call.args[0]) for call in distances.call_args_list],
+                    self.assertCountEqual([len(call.args[0]) for call in distances.call_args_list],
                                      [3, 3, 3, 3, 3, 1])
                     numpy.testing.assert_array_equal(values, original)
                     self.assertEqual(result["fit_source"], "full_evaluation")

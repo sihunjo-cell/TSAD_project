@@ -25,7 +25,8 @@ class TestScoringEnvironment(unittest.TestCase):
             }, environment)
             snapshot = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(snapshot["execution_resources"], {
-            "pca_fit_blas_threads_requested": 16, "cpu": observed_cpu,
+            "pca_fit_blas_threads_requested": 16, "pca_distance_workers_requested": 16,
+            "cpu": observed_cpu,
         })
         self.assertEqual(snapshot["environment"], environment)
         self.assertEqual(snapshot["execution_policy"], {})

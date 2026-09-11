@@ -42,11 +42,14 @@ def _legacy_single_thread(commit, repository_root):
 
 
 def _threads(snapshot, repository_root):
-    requested = snapshot.get("execution_resources", {}).get("pca_fit_blas_threads_requested")
-    if type(requested) is int and requested > 0:
-        return requested, "recorded_thread_policy"
+    resources = snapshot.get("execution_resources", {})
+    requested = resources.get("pca_fit_blas_threads_requested")
+    distance_workers = resources.get("pca_distance_workers_requested", 1)
+    if (type(requested) is int and requested > 0
+            and type(distance_workers) is int and distance_workers > 0):
+        return (requested, distance_workers), "recorded_thread_policy"
     if _legacy_single_thread(snapshot.get("project_commit"), str(repository_root)):
-        return 1, "legacy_source_policy"
+        return (1, 1), "legacy_source_policy"
     return None, "unrecorded_thread_policy"
 
 
@@ -107,9 +110,10 @@ def compare_execution_runtime(snapshot, runtime_seconds, references, *, reposito
         return result
     threads, thread_basis = _threads(snapshot, repository_root)
     details = result["comparison_runtime_details"]
-    details.update(reference_pca_threads=1, actual_pca_threads=threads, thread_basis=thread_basis,
+    details.update(reference_pca_threads=1, actual_pca_threads=threads[0] if threads else None,
+                   actual_pca_distance_workers_requested=threads[1] if threads else None, thread_basis=thread_basis,
                    hardware_basis="sealed_environment_and_user_stated_machine_continuity")
-    if threads == 1:
+    if threads == (1, 1):
         result["comparison_runtime_basis"] = "single_thread_measurement"
         return result
     result.update(comparison_runtime_seconds=None, comparison_runtime_status="unavailable",
@@ -145,14 +149,14 @@ def compare_execution_runtime(snapshot, runtime_seconds, references, *, reposito
             )
         return result
 
-    exact = (target_input, target_config, 1)
+    exact = (target_input, target_config, (1, 1))
     if exact in durations:
         return finish(durations[exact], "reused_single_thread_measurement", [exact])
     predictions, used_keys = [], []
-    if threads is not None and threads > 1 and _seconds(runtime_seconds):
+    if threads is not None and threads != (1, 1) and _seconds(runtime_seconds):
         for key, serial in durations.items():
             parallel = (key[0], target_config, threads)
-            if key[1:] == (target_config, 1) and durations.get(parallel, 0) > 0 and serial > 0:
+            if key[1:] == (target_config, (1, 1)) and durations.get(parallel, 0) > 0 and serial > 0:
                 ratio = serial / durations[parallel]
                 predictions.append({"input": key[0], "time_ratio": ratio,
                                     "predicted_seconds": runtime_seconds * ratio})
@@ -161,13 +165,13 @@ def compare_execution_runtime(snapshot, runtime_seconds, references, *, reposito
             return finish(median(item["predicted_seconds"] for item in predictions),
                           "estimated_from_paired_pca_thread_timings", used_keys, predictions)
 
-    anchors = [key for key in durations if key[0] == target_input and key[2] == 1 and durations[key] > 0]
+    anchors = [key for key in durations if key[0] == target_input and key[2] == (1, 1) and durations[key] > 0]
     for donor, target_seconds in durations.items():
-        if donor[1:] != (target_config, 1) or donor[0] == target_input or target_seconds <= 0:
+        if donor[1:] != (target_config, (1, 1)) or donor[0] == target_input or target_seconds <= 0:
             continue
         transfers = []
         for anchor in anchors:
-            partner = (donor[0], anchor[1], 1)
+            partner = (donor[0], anchor[1], (1, 1))
             if durations.get(partner, 0) <= 0:
                 continue
             ratio = target_seconds / durations[partner]

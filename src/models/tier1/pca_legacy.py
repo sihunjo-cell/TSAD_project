@@ -4,6 +4,7 @@ import math
 import time
 import warnings
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy
 from joblib import cpu_count
@@ -133,6 +134,36 @@ class PcaLegacy:
         }
 
 
+def _score_component_distances(fitted, components, weights, *, workers):
+    starts = range(0, len(fitted), PCA_DISTANCE_CHUNK_ROWS)
+    workers = min(workers, len(starts))
+    window_scores = numpy.empty(len(fitted))
+    print(f"PCA 성분 거리 작업: workers={workers}, 묶음={len(starts)}", flush=True)
+
+    def score_rows(start):
+        distances = cdist(fitted[start:start + PCA_DISTANCE_CHUNK_ROWS], components)
+        distances /= weights
+        return start, numpy.sum(distances, axis=1)
+
+    executor = ThreadPoolExecutor(max_workers=workers)
+    last_report = time.perf_counter()
+    try:
+        futures = [executor.submit(score_rows, start) for start in starts]
+        for completed, future in enumerate(as_completed(futures), 1):
+            start, scores = future.result()
+            window_scores[start:start + len(scores)] = scores
+            now = time.perf_counter()
+            if now - last_report >= 30 or completed == len(starts):
+                print(f"PCA 성분 거리 진행: {completed}/{len(starts)} 묶음", flush=True)
+                last_report = now
+    except BaseException:
+        executor.shutdown(wait=True, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
+    return window_scores, workers
+
+
 def score_pca_official(values, *, n_components=None, zero_pruning=True):
     """Fit and score the same complete evaluation input as the official run_PCA."""
     preprocessing_started = time.perf_counter()
@@ -158,10 +189,13 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
     fitted = standardized[:, nonzero]
     del standardized
     fit_started = time.perf_counter()
+    print(f"PCA 분해 시작: shape={fitted.shape}, n_components={n_components}, "
+          f"요청 스레드={PCA_FIT_BLAS_THREADS}", flush=True)
     with threadpool_limits(limits=PCA_FIT_BLAS_THREADS, user_api="blas"):
         parallelism = {
-            "scope": "pca_fit_only",
+            "scope": "pca_fit_and_component_distances",
             "fit_blas_threads_requested": PCA_FIT_BLAS_THREADS,
+            "distance_workers_requested": PCA_FIT_BLAS_THREADS,
             "blas_libraries": [
                 {key: library.get(key) for key in ("internal_api", "version", "num_threads")}
                 for library in threadpool_info() if library["user_api"] == "blas"
@@ -187,12 +221,14 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
         "initial_zero_weight_count": initial_zero_weight_count,
     }
     distance_started = time.perf_counter()
-    window_scores = numpy.empty(len(fitted))
-    for start in range(0, len(fitted), PCA_DISTANCE_CHUNK_ROWS):
-        stop = start + PCA_DISTANCE_CHUNK_ROWS
-        window_scores[start:stop] = numpy.sum(
-            cdist(fitted[start:stop], pca.components_) / weights, axis=1,
-        )
+    print(f"PCA 분해 완료: {(fit_finished - fit_started) / 60:.2f}분, "
+          f"선택 성분={len(weights)}; 성분 거리 계산 시작", flush=True)
+    window_scores, distance_workers = _score_component_distances(
+        fitted, pca.components_, weights, workers=PCA_FIT_BLAS_THREADS,
+    )
+    parallelism.update(distance_workers=distance_workers,
+                       distance_chunk_rows=PCA_DISTANCE_CHUNK_ROWS,
+                       selected_component_count=len(weights), window_row_count=len(fitted))
     parallelism["phase_wall_seconds"] = {
         "preprocessing": fit_started - preprocessing_started,
         "fit": fit_finished - fit_started,

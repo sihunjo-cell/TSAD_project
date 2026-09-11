@@ -1577,6 +1577,7 @@ def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, enviro
         from src.models.tier1.pca_legacy import PCA_FIT_BLAS_THREADS
 
         execution_resources["pca_fit_blas_threads_requested"] = PCA_FIT_BLAS_THREADS
+        execution_resources["pca_distance_workers_requested"] = PCA_FIT_BLAS_THREADS
         execution_resources["cpu"] = _collect_scoring_cpu_environment()
     if current_storage and spec["target_use"] == "fit_full_prefix":
         training_boundary = len(inputs["normal_training"])

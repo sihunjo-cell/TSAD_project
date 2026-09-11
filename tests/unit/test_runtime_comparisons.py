@@ -104,6 +104,28 @@ class TestRuntimeComparisons(unittest.TestCase):
         with patch.object(comparison, "_legacy_single_thread", return_value=True):
             self.assertEqual(self.compare(target, [unknown])["comparison_runtime_seconds"], 100)
 
+    def test_distance_parallelism_uses_its_own_pairs_but_keeps_historical_serial_evidence(self):
+        target = reference("target", "B", 20, threads=16)
+        target["snapshot"]["execution_resources"]["pca_distance_workers_requested"] = 16
+        references = [reference("donor", "B", 120), reference("donor", "B", 60, threads=16)]
+        self.assertIsNone(self.compare(target, references)["comparison_runtime_seconds"])
+        paired = deepcopy(references[1])
+        paired["snapshot"]["execution_resources"]["pca_distance_workers_requested"] = 16
+        paired["runtime_seconds"] = 15
+        paired["reference"]["run_id"] = "parallel-distances"
+        references.append(paired)
+        actual = self.compare(target, references)
+        self.assertEqual(actual["comparison_runtime_seconds"], 160)
+        self.assertNotIn(references[1]["reference"], actual["comparison_runtime_sources"])
+        historical = [reference("target", "A", 100), reference("donor", "A", 10), references[0]]
+        self.assertEqual(self.compare(target, historical)["comparison_runtime_seconds"], 1200)
+        references.append(reference("target", "B", 150))
+        self.assertEqual(self.compare(target, references)["comparison_runtime_seconds"], 150)
+        self.assertEqual(self.compare(target, references)["comparison_runtime_status"], "measured")
+        distance_only = deepcopy(target)
+        distance_only["snapshot"]["execution_resources"]["pca_fit_blas_threads_requested"] = 1
+        self.assertIsNone(self.compare(distance_only, [distance_only])["comparison_runtime_seconds"])
+
     def test_loader_uses_model_timing_and_deduplicates_only_completed_physical_runs(self):
         source = reference("target", "A", 10)
         record = {"run_id": "once", "identity": {"budget_id": "budget"}, "status": "complete",
