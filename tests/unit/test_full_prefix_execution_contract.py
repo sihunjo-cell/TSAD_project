@@ -12,6 +12,67 @@ from tests.ghl_main.run_dev18_tuning import _validate_primary_manifest_rows
 
 
 class FullPrefixExecutionContractTests(unittest.TestCase):
+    def test_pca_blas_recovery_preserves_attempts_and_allows_only_one_more(self):
+        spec = {"model": "PCA_LEGACY", "tier": "t1", "config_id": "cb3ca230f385a",
+                "ratio": 100, "seed": 0, "hyperparameters": {}}
+        panel_key = (spec["model"], spec["config_id"], 100, 0)
+        panel = {"primary_score_variants": [""], "diagnostic_score_variants": []}
+        entry = {"series": "13", "row_count": 1000, "feature_count": 2, "order": 1}
+        budget = {"budget_id": "b2f61f74691c6", "failure_rules": {"maximum_total_attempts": 3}}
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory).resolve()
+            histories = root / "experiments/01_ghl_main/logs/run_history/model_attempts"
+            histories.mkdir(parents=True)
+            preserved = {}
+            for attempt in range(3):
+                path = histories / f"prior_{attempt}.json"
+                path.write_text(json.dumps({
+                    "identity": {"kind": "model_attempt", "budget_id": budget["budget_id"],
+                                 "series": "13", **{key: spec[key] for key in
+                                 ("model", "config_id", "ratio", "seed")}, "attempt": attempt},
+                    "status": "running",
+                }), encoding="utf-8")
+                preserved[path] = path.read_bytes()
+            stack.enter_context(patch.object(tuning, "REPOSITORY_ROOT", root))
+            for name, value in (
+                ("_require_cuda_or_remote", None), ("prepare_tuning", {"environment": {}}),
+                ("_specs_for_budget", ([spec], {panel_key: panel})), ("_load_score_manifest", []),
+                ("load_input_manifest_role", ({"datasets": {"DEV18": {"files": [entry]}}}, "sha")),
+                ("_git_head", "repaired"), ("_compatible_resume_source", None), ("_completed_run", False),
+                ("_load_completion_receipt", None),
+            ):
+                stack.enter_context(patch.object(tuning, name, return_value=value))
+            stack.enter_context(patch("tests.ghl_main.run_registered_models.build_output_directory",
+                                      return_value=root / "scores"))
+            stack.enter_context(patch("tests.ghl_main.run_registered_models.load_registered_inputs",
+                                      return_value={"family": "synthetic", "test_sessions": ()}))
+            execute = stack.enter_context(patch.object(tuning, "_run_one_spec", side_effect=KeyboardInterrupt()))
+            with self.assertRaises(KeyboardInterrupt):
+                tuning.execute_panel(budget=budget, device="cpu", manifest_path=root / "manifest.csv")
+            execute.assert_called_once()
+            self.assertEqual(execute.call_args.kwargs["retry_count"], 3)
+            added = set(histories.glob("*.json")) - preserved.keys()
+            self.assertEqual(len(added), 1)
+            recovered = json.loads(added.pop().read_text(encoding="utf-8"))
+            self.assertEqual(recovered["identity"]["execution_recovery"]["maximum_total_attempts"], 4)
+            with self.assertRaisesRegex(RuntimeError, "최대 시도 횟수"):
+                tuning.execute_panel(budget=budget, device="cpu", manifest_path=root / "manifest.csv")
+            execute.assert_called_once()
+            self.assertEqual(budget["failure_rules"]["maximum_total_attempts"], 3)
+            for path, content in preserved.items():
+                self.assertEqual(path.read_bytes(), content)
+
+    def test_pca_blas_recovery_does_not_extend_other_trials_or_repeat(self):
+        key = ("13", "PCA_LEGACY", "cb3ca230f385a", "100", "0")
+        arguments = {"budget_id": "b2f61f74691c6", "trial_key": key,
+                     "attempts_used": 3, "maximum_attempts": 3}
+        self.assertIsNotNone(tuning._pca_blas_recovery(**arguments))
+        for changed in ({"budget_id": "other"}, {"attempts_used": 2}, {"attempts_used": 4},
+                        {"trial_key": ("12", *key[1:])}, {"trial_key": (*key[:2], "other", *key[3:])},
+                        {"trial_key": (key[0], "GDN", *key[2:])}, {"maximum_attempts": 4}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(tuning._pca_blas_recovery(**{**arguments, **changed}))
+
     def test_pca_cpu_time_survives_success_and_interrupt_without_scaling_wall_time(self):
         spec = {"model": "PCA_LEGACY", "config_id": "c123456789abc", "ratio": 100, "seed": 0,
                 "common_recipe": {"training_split": "full_prefix_v2"}}

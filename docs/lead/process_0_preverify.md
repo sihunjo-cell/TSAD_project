@@ -2,6 +2,26 @@
 
 갱신일: 2026-09-12
 
+## Lightning 회귀 통과 후 실제 실행 충돌 — 2026-09-12
+
+같은 2048×1024 합성 행렬의 SciPy SVD가 시작/실행 스레드 1/1에서는 0.99초,
+16/16에서는 1.78초에 통과하고 1/16에서만 SIGSEGV(-11)로 종료됐다. NumPy 2.3.2와
+SciPy 1.16.1, 각각의 OpenBLAS 0.3.30·0.3.28을 확인했다. CPU 16개 자체나 전체 RAM 부족으로
+결론 내리지 않고 1스레드 초기화 뒤 확대하는 실행 경로를 수정했다. 작은 행렬의 시간으로
+실제 PCA 가속률을 추정하지 않는다.
+
+진입점에서 두 BLAS를 affinity CPU 수로 초기화한 뒤 평상시와 자식 환경은 1스레드로 둔다.
+PCA fit의 CPU quota 반영과 스레드 복원, VUS worker 수, 비교 시간 계산은 유지한다.
+확인된 trial에 한 번의 복구 시도를 허용하고 새 attempt identity에 사유·원래 한도·실제 한도를
+기록한다. 이전 시도·봉인 예산·완료 결과를 수정하지 않는다. 새 프로세스 SVD·복원·worker와
+재개 한도 회귀를 추가했으며 원격 실행은 남아 있다.
+
+앞선 `241d703`의 회귀 53개는 3.736초에 통과했지만 실제 실행의 faulthandler 스택은
+`score_pca_official`의 첫 `PCA.fit` → sklearn `_fit_full` → SciPy `svd` 중 종료됐다.
+메모리 계측 스레드는 대기 중이었다. CPU는 AMD EPYC 7R13, affinity 16개, CPU quota는
+무제한이었으며 관측한 cgroup의 OOM·OOM kill은 0이었다. 진단에서 확인한 실패 시도는
+PCA series 13·`cb3ca230f385a`·r100·seed 0의 attempt 1이다. 로컬 Python·테스트는 실행하지 않았다.
+
 ## 가용 CPU 확대 — 2026-09-12
 
 사용자 화면에 L4 16 vCPU가 표시됐으나 기존 코드는 PCA fit과 VUS-PR 채점을 모두 최대 8개로

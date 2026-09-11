@@ -17,6 +17,19 @@ if str(REPOSITORY_ROOT) not in sys.path:
 for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     os.environ[variable] = "1"
 
+# OpenBLAS를 1스레드로 초기화한 뒤 늘리면 일부 빌드의 SVD가 충돌한다.
+try:
+    blas_capacity = len(os.sched_getaffinity(0))
+except (AttributeError, OSError):
+    blas_capacity = os.cpu_count() or 1
+os.environ["OPENBLAS_NUM_THREADS"] = str(blas_capacity)
+import numpy
+import scipy.linalg
+from threadpoolctl import threadpool_limits
+
+_BLAS_SERIAL_LIMIT = threadpool_limits(limits=1, user_api="blas")
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
 from src.common.execution_identity import file_sha256
 from src.common.execution_evidence import FULL_PREFIX_STORAGE_SCHEMA_VERSION
 from src.common.model_registry import load_model_registry_with_sha

@@ -15,6 +15,7 @@ RESOURCE_RESUME_BLOBS = {
     "tests/ghl_main/run_dev18_tuning.py": (
         "f610da99a9ce6e922ec269909c32fbd08af7acf4", "693a26cd1d74c4cc8be013b42c737a58c191fc8c",
         "0154ee9a6b2201c911a25c861e5ed1e7f0ec7c90",
+        "8fc66a26ecd267dd730d2aaf3305f06a8da076b9",
     ),
     "src/models/tier1/pca_legacy.py": (
         "f6a5a21ef1b8f01fa3c1b83d0e7c091af6ca15d0", "0470ab13ea5a1143a205fe990695143c94b0d781",
@@ -23,6 +24,7 @@ RESOURCE_RESUME_BLOBS = {
     "tests/ghl_main/record_run_history.py": "d55fa556f0dd0239bdc29272d99693086b0c4774",
     "tests/ghl_main/run_ratio_tuning.py": (
         "b3672e16931916dd5dbedf753f997adfb2398aa0", "0a827b4ece81129488c131b3c0605715d2220dba",
+        "6b42ce921bf8f70d1bfbdd42c7a82d26da78f928",
     ),
     "tests/ghl_main/build_tuning_support.py": "dc542fb68d61249cdd6436c45374a35638fc9004",
     "tests/ghl_main/compare_execution_runtimes.py": "57ecfbe46e2e690bbad08ce1085f778267ba4fd5",

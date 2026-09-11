@@ -2047,6 +2047,20 @@ def _authorized_attempt_limit(
     return max(maximum_attempts, DEV18_RECOVERY_RETRY_COUNT + 1)
 
 
+def _pca_blas_recovery(*, budget_id, trial_key, attempts_used, maximum_attempts):
+    if (budget_id != "b2f61f74691c6"
+            or trial_key != ("13", "PCA_LEGACY", "cb3ca230f385a", "100", "0")
+            or attempts_used != 3 or maximum_attempts != 3):
+        return None
+    return {
+        "reason": "openblas_initialization_sigsegv",
+        "affected_project_commit": "241d703e1afe04fe3f8bf0d709025d15da3382dc",
+        "previous_attempts_preserved": attempts_used,
+        "sealed_maximum_total_attempts": maximum_attempts,
+        "maximum_total_attempts": 4,
+    }
+
+
 class RunResultPersistenceError(RuntimeError):
     """학습·추론 증거의 저장 실패를 모델 재시도와 구분한다."""
 
@@ -2531,6 +2545,12 @@ def execute_panel(
                         recovery_row,
                         recovery_project_commit=project_commit,
                     )
+                pca_recovery = _pca_blas_recovery(
+                    budget_id=budget["budget_id"], trial_key=tuple(map(str, (f"{series:02d}", *key))),
+                    attempts_used=attempts_used, maximum_attempts=maximum_attempts,
+                )
+                if pca_recovery is not None:
+                    maximum_attempts = pca_recovery["maximum_total_attempts"]
                 if attempts_used >= maximum_attempts:
                     raise RuntimeError("Dev18 trial이 봉인된 최대 시도 횟수에 도달했다")
                 if inputs is None:
@@ -2550,6 +2570,7 @@ def execute_panel(
                                 "model": spec["model"], "config_id": spec["config_id"],
                                 "ratio": spec["ratio"], "seed": spec["seed"],
                                 "attempt": attempt, "device": device,
+                                **({"execution_recovery": pca_recovery} if pca_recovery is not None else {}),
                             },
                         ) as history:
                             completed = _run_one_spec(
