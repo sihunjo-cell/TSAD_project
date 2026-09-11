@@ -11,6 +11,7 @@ from scipy.spatial.distance import cdist
 from scipy.stats import zscore
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from threadpoolctl import threadpool_info, threadpool_limits
 
 from src.models.tier1 import (
     PCA_COMPONENTS,
@@ -427,6 +428,36 @@ class TestPcaLegacy(unittest.TestCase):
 
 
 class TestPcaOfficial(unittest.TestCase):
+    def test_fit_uses_eight_blas_threads_and_restores_them_on_success_and_failure(self):
+        from src.models.tier1 import pca_legacy
+
+        values = numpy.random.default_rng(71).normal(size=(115, 3))
+        original_fit = PCA.fit
+
+        def checked_fit(estimator, fitted, y=None):
+            libraries = [item for item in threadpool_info() if item["user_api"] == "blas"]
+            self.assertTrue(libraries)
+            self.assertTrue(all(item["num_threads"] == 8 for item in libraries))
+            return original_fit(estimator, fitted, y)
+
+        with threadpool_limits(limits=1, user_api="blas"):
+            before = threadpool_info()
+            with patch.object(pca_legacy, "PCA_FIT_BLAS_THREADS", 1):
+                serial = score_pca_official(values, n_components=0.5)
+            with patch.object(PCA, "fit", checked_fit):
+                result = score_pca_official(values, n_components=0.5)
+            numpy.testing.assert_allclose(result["scores"], serial["scores"])
+            self.assertEqual(threadpool_info(), before)
+            self.assertEqual(result["pca_parallelism"]["fit_blas_threads_requested"], 8)
+            self.assertEqual(set(result["pca_parallelism"]["phase_wall_seconds"]),
+                             {"preprocessing", "fit", "component_distances"})
+            self.assertTrue(all(value >= 0 for value in result["pca_parallelism"]["phase_wall_seconds"].values()))
+            self.assertEqual(result["checkpoint"]["pca_parallelism"], result["pca_parallelism"])
+            with patch.object(pca_legacy.PCA, "fit", side_effect=RuntimeError("fit failed")):
+                with self.assertRaisesRegex(RuntimeError, "fit failed"):
+                    score_pca_official(values, n_components=0.5)
+            self.assertEqual(threadpool_info(), before)
+
     def test_matches_official_full_evaluation_fit_score_for_both_input_scopes(self):
         generator = numpy.random.default_rng(53)
         for channel_count in (1, 3):
@@ -444,7 +475,8 @@ class TestPcaOfficial(unittest.TestCase):
                     standardized = scaler.transform(normalized)
                     nonzero = numpy.any(standardized != 0, axis=0)
                     fitted = standardized[:, nonzero]
-                    pca = PCA(n_components=component, random_state=0).fit(fitted)
+                    with threadpool_limits(limits=8, user_api="blas"):
+                        pca = PCA(n_components=component, random_state=0).fit(fitted)
                     expected = numpy.sum(cdist(fitted, pca.components_) / pca.explained_variance_ratio_, axis=1)
                     expected = numpy.pad(expected, (50, 49), mode="edge")
 
@@ -494,7 +526,8 @@ class TestPcaOfficial(unittest.TestCase):
         self.assertEqual(len(fit_inputs), 2)
         numpy.testing.assert_array_equal(fit_inputs[0], fit_inputs[1])
         fitted = fit_inputs[0]
-        reference = PCA(n_components=None, random_state=0, svd_solver="full").fit(fitted)
+        with threadpool_limits(limits=8, user_api="blas"):
+            reference = PCA(n_components=None, random_state=0, svd_solver="full").fit(fitted)
         expected = numpy.sum(cdist(fitted, reference.components_) / reference.explained_variance_ratio_, axis=1)
         numpy.testing.assert_allclose(result["scores"], numpy.pad(expected, (50, 49), mode="edge"))
         self.assertEqual(checkpoint["pca"].n_components_, reference.n_components_)

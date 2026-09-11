@@ -246,6 +246,41 @@ class TestTuningSupport(unittest.TestCase):
         execution = next(iter(report["executions"].values()))
         self.assertEqual(execution["execution_evidence"]["training_sessions"], [])
 
+    def test_comparison_runtime_is_shared_without_replacing_measured_evidence(self):
+        references = [{"run_id": "previous-run"}]
+        comparison = {
+            "actual_runtime_seconds": 0.0,
+            "comparison_runtime_seconds": 7.0,
+            "comparison_runtime_status": "estimated",
+            "comparison_runtime_basis": "fixture_reference",
+            "comparison_runtime_sources": references,
+            "comparison_runtime_details": {"reference_count": 1},
+        }
+        with TemporaryDirectory() as directory, patch.object(tuning, "REPOSITORY_ROOT", Path(directory)):
+            root = Path(directory)
+            inputs = make_evidence(root, target_free=True)
+            add_tier_selection(inputs[0])
+            metadata_path = root / inputs[-1][0]["metadata_file"]
+            metadata_before = metadata_path.read_bytes()
+            with patch("tests.ghl_main.build_tuning_support.load_runtime_references",
+                       return_value=references) as load_references, patch(
+                "tests.ghl_main.build_tuning_support.compare_execution_runtime", return_value=comparison,
+            ) as compare:
+                report = build_tuning_support(*inputs)
+            load_references.assert_called_once_with(
+                root / "experiments/01_ghl_main/logs/run_history/model_attempts", "budget",
+            )
+            compare.assert_called_once_with(
+                json.loads((root / "snapshot_0.json").read_text()), 0.0, references,
+                repository_root=root,
+            )
+            self.assertEqual(metadata_path.read_bytes(), metadata_before)
+        self.assertEqual(len(report["executions"]), 1)
+        self.assertEqual(len({tuple(point["execution_ids"]) for point in report["points"]}), 1)
+        execution = next(iter(report["executions"].values()))
+        self.assertEqual({key: execution[key] for key in comparison}, comparison)
+        self.assertEqual(execution["execution_evidence"]["runtime_seconds"], 0.0)
+
     def test_missing_seed_or_changed_score_identity_is_rejected(self):
         with TemporaryDirectory() as directory, patch.object(tuning, "REPOSITORY_ROOT", Path(directory)):
             inputs = make_evidence(Path(directory))

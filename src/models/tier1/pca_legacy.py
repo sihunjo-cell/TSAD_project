@@ -1,6 +1,7 @@
 """TSB-AD PCA official evaluation fit and the historical prefix-fit adapter."""
 
 import math
+import time
 import warnings
 from copy import deepcopy
 
@@ -11,11 +12,13 @@ from scipy.stats import zscore
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.validation import check_is_fitted
+from threadpoolctl import threadpool_info, threadpool_limits
 
 
 PCA_COMPONENTS = (0.25, 0.5, 0.75, None)
 PCA_WINDOW = 100
 PCA_DISTANCE_CHUNK_ROWS = 1024
+PCA_FIT_BLAS_THREADS = 8
 
 
 def _as_matrix(values, *, minimum_rows=1):
@@ -131,6 +134,7 @@ class PcaLegacy:
 
 def score_pca_official(values, *, n_components=None, zero_pruning=True):
     """Fit and score the same complete evaluation input as the official run_PCA."""
+    preprocessing_started = time.perf_counter()
     if n_components not in PCA_COMPONENTS:
         raise ValueError(f"n_components must be one of {PCA_COMPONENTS}")
     if zero_pruning is not True:
@@ -152,15 +156,26 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
         raise ValueError("official PCA has no features after zero-pruned window columns")
     fitted = standardized[:, nonzero]
     del standardized
-    pca = PCA(n_components=n_components, random_state=0).fit(fitted)
-    weights = pca.explained_variance_ratio_
-    initial_solver = pca._fit_svd_solver
-    initial_zero_weight_count = int(numpy.count_nonzero(weights == 0))
-    if (initial_solver == "covariance_eigh" and initial_zero_weight_count
-            and numpy.isfinite(weights).all()):
-        # Covariance eigendecomposition can round a small variance to zero.
-        pca.set_params(svd_solver="full").fit(fitted)
+    fit_started = time.perf_counter()
+    with threadpool_limits(limits=PCA_FIT_BLAS_THREADS, user_api="blas"):
+        parallelism = {
+            "scope": "pca_fit_only",
+            "fit_blas_threads_requested": PCA_FIT_BLAS_THREADS,
+            "blas_libraries": [
+                {key: library.get(key) for key in ("internal_api", "version", "num_threads")}
+                for library in threadpool_info() if library["user_api"] == "blas"
+            ],
+        }
+        pca = PCA(n_components=n_components, random_state=0).fit(fitted)
         weights = pca.explained_variance_ratio_
+        initial_solver = pca._fit_svd_solver
+        initial_zero_weight_count = int(numpy.count_nonzero(weights == 0))
+        if (initial_solver == "covariance_eigh" and initial_zero_weight_count
+                and numpy.isfinite(weights).all()):
+            # Covariance eigendecomposition can round a small variance to zero.
+            pca.set_params(svd_solver="full").fit(fitted)
+            weights = pca.explained_variance_ratio_
+    fit_finished = time.perf_counter()
     if not numpy.isfinite(weights).all() or numpy.any(weights == 0):
         raise ValueError(
             "official PCA component weights must be finite and nonzero "
@@ -170,12 +185,18 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
         "requested": "auto", "initial": initial_solver, "actual": pca._fit_svd_solver,
         "initial_zero_weight_count": initial_zero_weight_count,
     }
+    distance_started = time.perf_counter()
     window_scores = numpy.empty(len(fitted))
     for start in range(0, len(fitted), PCA_DISTANCE_CHUNK_ROWS):
         stop = start + PCA_DISTANCE_CHUNK_ROWS
         window_scores[start:stop] = numpy.sum(
             cdist(fitted[start:stop], pca.components_) / weights, axis=1,
         )
+    parallelism["phase_wall_seconds"] = {
+        "preprocessing": fit_started - preprocessing_started,
+        "fit": fit_finished - fit_started,
+        "component_distances": time.perf_counter() - distance_started,
+    }
     if not numpy.isfinite(window_scores).all():
         raise ValueError("official PCA weighted component distances are nonfinite")
     left, right = math.ceil((PCA_WINDOW - 1) / 2), (PCA_WINDOW - 1) // 2
@@ -203,6 +224,7 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
         "zero_pruned_window_feature_count": int((~nonzero).sum()),
         "retained_window_feature_count": int(nonzero.sum()),
         "pca_solver": solver_record,
+        "pca_parallelism": parallelism,
         "checkpoint": {
             "model_config": {
                 "n_components": n_components, "window": PCA_WINDOW,
@@ -211,6 +233,7 @@ def score_pca_official(values, *, n_components=None, zero_pruning=True):
             "scaler": scaler,
             "pca": pca,
             "pca_solver": solver_record.copy(),
+            "pca_parallelism": deepcopy(parallelism),
             "nonzero_window_features": nonzero,
             "fit_source": "full_evaluation",
             "fit_source_range": [0, length],

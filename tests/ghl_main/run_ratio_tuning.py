@@ -36,8 +36,10 @@ from tests.ghl_main.record_run_history import (
     record_run_stage,
     save_run_history,
     summarize_run_history,
+    summarize_pca_compute,
     hold_tuning_lock,
 )
+from tests.ghl_main.compare_execution_runtimes import load_runtime_references, summarize_runtime_comparisons
 
 
 def _paths(*, full_prefix=False):
@@ -628,11 +630,15 @@ def main():
         finally:
             if history and history.get("result_directory"):
                 budget_id = history["identity"]["budget_id"]
+                runtime_references = load_runtime_references(directory.parent / "model_attempts", budget_id)
                 _write_json(Path(history["result_directory"]) / "tuning_cost_history.json", {
                     "budget_id": budget_id, "cost_scope": "hpo_development",
                     "command_wall": summarize_run_history(directory, budget_id),
                     "unassigned_command_wall": summarize_run_history(directory, None),
                     "model_attempt_wall": summarize_run_history(directory.parent / "model_attempts", budget_id),
+                    "pca_cpu_accounting": summarize_pca_compute(directory.parent / "model_attempts", budget_id),
+                    "runtime_comparisons": summarize_runtime_comparisons(
+                        runtime_references, repository_root=tuning.REPOSITORY_ROOT),
                     "accounting_rule": "command and model-attempt clocks overlap; never add them; unassigned commands are not charged to this budget",
                     "excluded_stages": ["handoff_archive_and_hash"],
                     "scope": "recorded command time, not provider billing or deployment cost",

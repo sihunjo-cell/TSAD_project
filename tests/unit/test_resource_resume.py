@@ -90,6 +90,16 @@ class TestResourceResume(unittest.TestCase):
                 try:
                     self.assertTrue(resume.resource_resume_compatible(original, repaired, root))
                     self.assertTrue(resume.resource_resume_compatible(repaired, original, root))
+                    (root / "gate.py").write_text("STRICT_RAM = False\nPCA_THREADS = 8\n", encoding="utf-8")
+                    git("add", ".")
+                    git("commit", "--quiet", "-m", "PCA execution resources")
+                    parallel = git("rev-parse", "HEAD")
+                    with patch.object(resume, "RESOURCE_RESUME_BLOBS", {
+                        "gate.py": (approved_blob, git("rev-parse", "HEAD:gate.py")),
+                    }):
+                        self.assertTrue(resume.resource_resume_compatible(original, parallel, root))
+                        self.assertTrue(resume.resource_resume_compatible(repaired, parallel, root))
+                        self.assertTrue(resume.resource_resume_compatible(parallel, repaired, root))
                     (root / "gate.py").write_text("STRICT_RAM = 'unreviewed'\n", encoding="utf-8")
                     git("add", ".")
                     git("commit", "--quiet", "-m", "other gate edit")

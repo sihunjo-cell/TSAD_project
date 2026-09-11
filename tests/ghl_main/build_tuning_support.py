@@ -11,6 +11,7 @@ from src.common.execution_evidence import (
 )
 from src.common.tuning_support import resolve_policy_score_variant
 from tests.ghl_main import run_dev18_tuning as tuning
+from tests.ghl_main.compare_execution_runtimes import compare_execution_runtime, load_runtime_references
 from tests.ghl_main.select_ratio_tuning import _validate_full_prefix_trials
 
 
@@ -43,7 +44,7 @@ def _read_evidence(reference, cache):
     return cache[key]
 
 
-def _read_execution(row, registry, budget, entry, cache):
+def _read_execution(row, registry, budget, entry, cache, runtime_references=None):
     metadata_reference = {"file": row.get("metadata_file"), "sha256": row.get("metadata_sha256")}
     metadata = _read_evidence(metadata_reference, cache)
     snapshot_reference = metadata.get("run_snapshot")
@@ -114,6 +115,10 @@ def _read_execution(row, registry, budget, entry, cache):
         "resource_usage": evidence["resource_usage"],
         "input_identity": input_identity, "source_ranges": ranges,
         "environment": environment, "environment_id": _digest(environment), "execution_evidence": evidence,
+        **compare_execution_runtime(
+            snapshot, evidence["runtime_seconds"], runtime_references or [],
+            repository_root=tuning.REPOSITORY_ROOT,
+        ),
     }
 
 
@@ -183,6 +188,9 @@ def build_tuning_support(selection, registry, budget, ledger, manifest_rows):
                     key = (execution["model"], execution["config_id"], ratio, series, variant)
                     physical_by_logical.setdefault(key, []).append(execution)
     points, executions, cache = [], {}, {}
+    runtime_references = load_runtime_references(
+        tuning.REPOSITORY_ROOT / "experiments/01_ghl_main/logs/run_history/model_attempts", budget["budget_id"],
+    )
     seen_groups, seen_policies = set(), set()
     policies = [(kind, policy) for kind in ("model_ratio", "tier_adaptive")
                 for policy in selection.get(kind, [])]
@@ -249,7 +257,9 @@ def build_tuning_support(selection, registry, budget, ledger, manifest_rows):
                     raise ValueError("선택한 seed의 완료 manifest·ledger 점수 신원이 다르다")
                 execution_id = "e" + _digest([row.get("metadata_file"), row.get("metadata_sha256")])
                 if execution_id not in executions:
-                    executions[execution_id] = _read_execution(row, registry, budget, entry, cache)
+                    executions[execution_id] = _read_execution(
+                        row, registry, budget, entry, cache, runtime_references,
+                    )
                 observed = executions[execution_id]
                 if any(str(observed[field]) != str(row[field]) for field in (
                     "series", "model", "config_id", "physical_ratio", "seed", "score_variant",

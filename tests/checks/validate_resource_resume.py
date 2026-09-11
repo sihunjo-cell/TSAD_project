@@ -1,4 +1,4 @@
-"""검사만 수정한 소스와 중단된 Dev18 실행의 호환성을 확인한다."""
+"""승인된 자원 검사·PCA 실행 자원 변경 전후의 Dev18 재개를 확인한다."""
 
 import hashlib
 import re
@@ -9,10 +9,21 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RESOURCE_RESUME_SOURCE = "57e91eb8de2d130fab0fae437041beb8eccd73ee"
-# 검토한 재개 연결 변경만 허용하며 다른 계산 코드 변경은 거부한다.
+# 검토한 변경의 파일 내용만 허용하며 후보·점수식의 다른 변경은 거부한다.
 RESOURCE_RESUME_BLOBS = {
     "tests/checks/check_dev18_resources.py": "efc502ea0f307d887527662294b60a19c355a9ef",
-    "tests/ghl_main/run_dev18_tuning.py": "f610da99a9ce6e922ec269909c32fbd08af7acf4",
+    "tests/ghl_main/run_dev18_tuning.py": (
+        "f610da99a9ce6e922ec269909c32fbd08af7acf4", "693a26cd1d74c4cc8be013b42c737a58c191fc8c",
+    ),
+    "src/models/tier1/pca_legacy.py": (
+        "f6a5a21ef1b8f01fa3c1b83d0e7c091af6ca15d0", "0470ab13ea5a1143a205fe990695143c94b0d781",
+    ),
+    "tests/ghl_main/record_run_history.py": "d55fa556f0dd0239bdc29272d99693086b0c4774",
+    "tests/ghl_main/run_ratio_tuning.py": (
+        "b3672e16931916dd5dbedf753f997adfb2398aa0", "0a827b4ece81129488c131b3c0605715d2220dba",
+    ),
+    "tests/ghl_main/build_tuning_support.py": "dc542fb68d61249cdd6436c45374a35638fc9004",
+    "tests/ghl_main/compare_execution_runtimes.py": "57ecfbe46e2e690bbad08ce1085f778267ba4fd5",
     "tests/ghl_main/store_recommendation_evidence.py": "2a5d13463d29c93c42c719ee1729fab7629856f7",
     "tests/ghl_main/package_recommendation_handoff.py": "b58df2e69334686e972c72847093b82ec8818f21",
 }
@@ -34,9 +45,10 @@ def _has_resource_resume_source(commit, repository_root):
             if path.startswith(("docs/", "tests/unit/")) or path == "tests/checks/validate_resource_resume.py":
                 continue
             expected = RESOURCE_RESUME_BLOBS.get(path)
-            if expected is None or subprocess.check_output(
+            accepted = (expected,) if isinstance(expected, str) else (expected or ())
+            if subprocess.check_output(
                 ["git", "rev-parse", f"{commit}:{path}"], cwd=repository_root, text=True,
-            ).strip() != expected:
+            ).strip() not in accepted:
                 return False
         return True
     except (OSError, subprocess.CalledProcessError):

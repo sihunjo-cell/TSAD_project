@@ -1570,6 +1570,12 @@ def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, enviro
     path = output_directory / "run_snapshot.json"
     current_storage = spec.get("common_recipe", {}).get("training_split") == "full_prefix_v2"
     prefix_observation = {}
+    execution_resources = {}
+    if (spec["model"] == "PCA_LEGACY"
+            and spec.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4"):
+        from src.models.tier1.pca_legacy import PCA_FIT_BLAS_THREADS
+
+        execution_resources["pca_fit_blas_threads_requested"] = PCA_FIT_BLAS_THREADS
     if current_storage and spec["target_use"] == "fit_full_prefix":
         training_boundary = len(inputs["normal_training"])
         prefix_observation = {
@@ -1581,6 +1587,7 @@ def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, enviro
         **({"storage_schema_version": FULL_PREFIX_STORAGE_SCHEMA_VERSION}
            if current_storage else {}),
         **prefix_observation,
+        **({"execution_resources": execution_resources} if execution_resources else {}),
         "project_commit": _git_head(),
         "spec": spec,
         "execution_policy": build_registered_execution_policy(spec),
@@ -2154,6 +2161,8 @@ def _run_one_spec(
     memory_sampler = None
     tracemalloc.start()
     execution_started = time.perf_counter()
+    pca_cpu_started = time.process_time() if spec["model"] == "PCA_LEGACY" else None
+    pca_resources = {}
     try:
         memory_sampler = start_process_memory_sampling(_read_process_memory)
         result = execute_registered_model(
@@ -2166,6 +2175,7 @@ def _run_one_spec(
             )} if spec["model"] in {"PaAno", "GDN"} else {}),
         )
     except BaseException:
+        pca_cpu_seconds = time.process_time() - pca_cpu_started if pca_cpu_started is not None else None
         history.update(model_execution_complete=False,
                        model_execution_seconds=time.perf_counter() - execution_started)
         try:
@@ -2178,11 +2188,22 @@ def _run_one_spec(
             }
         raise
     else:
+        pca_cpu_seconds = time.process_time() - pca_cpu_started if pca_cpu_started is not None else None
         history.update(model_execution_complete=True,
                        model_execution_seconds=time.perf_counter() - execution_started)
         _, peak_bytes = tracemalloc.get_traced_memory()
         save_run_history(history)
     finally:
+        if pca_cpu_started is not None:
+            pca_resources["pca_compute"] = {
+                "wall_seconds": history["model_execution_seconds"],
+                "cpu_core_seconds": pca_cpu_seconds,
+                "scope": "registered_model_call_all_process_threads_excluding_children",
+                "single_core_equivalent_basis": "measured_cpu_core_seconds_including_parallel_overhead",
+                "single_thread_wall_seconds": None,
+                "single_thread_wall_seconds_reason": "not_measured_cannot_recover_from_parallel_run",
+            }
+            history.setdefault("resource_usage", {}).update(pca_resources)
         tracemalloc.stop()
         sampled_resources = memory_sampler.stop() if memory_sampler is not None else {
             "cpu_rss_sampled_peak_bytes": None, "cpu_rss_sampling_status": "unavailable",
@@ -2191,9 +2212,14 @@ def _run_one_spec(
         history.setdefault("resource_usage", {}).update(sampled_resources)
         history["resource_usage"]["includes_training_evidence_storage"] = "training_complete" in history
     try:
+        if pca_resources:
+            pca_resources["pca_compute"]["parallelism"] = [
+                output.get("pca_parallelism") for output in result["test_outputs"]
+            ]
         history["model_timing"] = dict(result["timing"])
         resource_usage = {**_finish_run_resources(resource_start, result, python_peak_bytes=peak_bytes),
                           **sampled_resources,
+                          **pca_resources,
                           "includes_training_evidence_storage": "training_complete" in history}
         history["resource_usage"] = resource_usage
         with record_run_stage(history, "save_result"):

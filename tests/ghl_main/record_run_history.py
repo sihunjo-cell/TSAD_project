@@ -153,6 +153,41 @@ def summarize_run_history(directory, budget_id):
             "unknown_elapsed_run_ids": unknown, "history_files": references}
 
 
+def summarize_pca_compute(directory, budget_id):
+    """CPU 시간 합계만 1코어 계산량으로 환산하고 과거 미측정은 비워 둔다."""
+    runs, unmeasured = [], []
+    known_cpu_seconds = 0.0
+    for path, _, record in _load_histories(directory, budget_id):
+        identity = record["identity"]
+        if identity.get("model") != "PCA_LEGACY":
+            continue
+        compute = record.get("resource_usage", {}).get("pca_compute", {})
+        cpu_seconds = compute.get("cpu_core_seconds")
+        if type(cpu_seconds) not in (int, float) or not math.isfinite(cpu_seconds) or cpu_seconds < 0:
+            cpu_seconds = None
+            unmeasured.append(record["run_id"])
+        else:
+            known_cpu_seconds += cpu_seconds
+        runs.append({
+            "run_id": record["run_id"], "history_file": str(path), "status": record["status"],
+            **{key: identity.get(key) for key in ("series", "config_id", "ratio", "seed", "attempt")},
+            "wall_seconds": record.get("model_execution_seconds"),
+            "fit_blas_threads_requested": record.get("run_snapshot", {}).get(
+                "execution_resources", {}).get("pca_fit_blas_threads_requested"),
+            "single_core_equivalent_seconds": cpu_seconds,
+            "single_thread_wall_seconds": None,
+        })
+    return {
+        "basis": "measured_process_cpu_time_all_threads_including_parallel_overhead",
+        "scope": "recorded_PCA_model_calls_including_failed_and_interrupted_attempts",
+        "known_cpu_core_seconds": known_cpu_seconds,
+        "total_cpu_core_seconds": None if unmeasured else known_cpu_seconds,
+        "unmeasured_run_ids": unmeasured, "runs": runs,
+        "single_thread_wall_seconds_reason": "not_measured_cannot_recover_from_parallel_run",
+        "accounting_rule": "CPU core-seconds are not serial wall seconds or provider billing; never multiply wall seconds by the thread limit",
+    }
+
+
 def preserve_run_receipt(receipt_path, directory):
     """같은 완료 영수증은 한 번 보존하고 내용이 바뀌면 새 파일로 남긴다."""
     receipt_path = Path(receipt_path)

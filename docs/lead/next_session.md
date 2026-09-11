@@ -2,6 +2,53 @@
 
 ## 현재 게이트
 
+2026-09-12 기존 시간 비교가 빠진 PCA 병렬화 수정을 보완했다. `comparison_runtime_seconds`는
+다른 모델과 기존 1스레드 PCA의 실측을 유지하고, 새 PCA에는 같은 입력·설정의 기존 실측을
+먼저 연결한다. 없으면 같은 설정의 1/8스레드 관측 비율, 그마저 없으면 같은 입력의 다른 PCA
+설정과 다른 입력들에서 관측한 설정 간 시간비로 추정한다. 타 모델의 시간비는 쓰지 않는다.
+추정에는 근거 파일·SHA·입력별 예측값과 예측 범위를 남긴다. 범위는 신뢰구간이 아니다.
+이 값은 `tuning_support.json`의 실행 근거와 `tuning_cost_history.json.runtime_comparisons`에
+연결했다. 실제 시간·점수·DB는 고쳐 쓰지 않으며 기록이 없다는 이유로 실행을 막지 않는다.
+현재 게이트는 비교값 연결 수정·정적 검토 완료, 원격 회귀와 실제 기록 대조 전이다.
+
+2026-09-12 사용자는 기존 수행시간·비용 기록이 이미 충분히 쌓였으므로 먼저 활용하라고 강조했다.
+1스레드 기준 비교에는 같은 입력·설정·실행 방식·장비의 기존 실측을 우선 연결한다. 현행 PCA는
+q별 prefix 학습이 아니라 전체 평가 입력 fit이며, 한 physical_ratio=100 실행을 여러 q에서
+참조한다. q10·40·60의 참조 행을 독립 실행 표본이나 데이터 크기별 측정으로 세지 않는다.
+기존 실측이 있는 조건은 재측정하지 않는다. 누락 조건의 추정과 실제 새 실행시간은 구분하며,
+원격 원기록을 대조하기 전에는 전체 조건이 실측으로 채워졌다고 확정하지 않는다.
+
+2026-09-11 사용자가 PCA만 CPU 8스레드로 실행하고 1코어 기준 비용 근거를 남기도록 요청했다.
+PCA fit의 BLAS 병렬 수 조정, 실제 경과시간·프로세스 CPU 시간 기록과 기존 결과의 재개 연결을
+수정하고 정적으로 검토했다. CPU 시간 합계는 1코어 환산 계산량이며 실제 1스레드 경과시간으로 바꾸어 쓰지
+않는다. 과거 CPU 시간 미측정 때문에 재개를 막지 않는다. 로컬 실행 없이 수정·정적 검토 후
+관련 회귀와 점수 대조를 Lightning에서 확인한다. 실행 중인 원격 코드와 산출물은 건드리지 않는다.
+
+검토한 로컬 변경을 커밋·push한다. Lightning에서는 현재 프로세스를 정상 중단하거나 완료한 뒤
+같은 커밋을 받는다.
+기존 완료 결과·DB·snapshot은 보존한다. 현재 실행 중인 PCA는 중간 분해 상태를 저장하지 않으므로
+정상 중단 후에도 해당 trial은 처음부터 다시 실행한다. 새 환경이나 추가 패키지는 필요 없다.
+다음 최소 회귀를 원격에서 확인한 뒤 기존 `run_ratio_tuning --workers 0` 명령으로 재개한다.
+
+```bash
+python -m unittest \
+  tests.unit.test_tier1_models.TestPcaOfficial \
+  tests.unit.test_run_history \
+  tests.unit.test_runtime_comparisons \
+  tests.unit.test_tuning_support \
+  tests.unit.test_resource_resume \
+  tests.unit.test_full_prefix_execution_contract.FullPrefixExecutionContractTests.test_pca_cpu_time_survives_success_and_interrupt_without_scaling_wall_time
+```
+
+새 PCA의 환산 계산량은 `tuning_cost_history.json`의
+`pca_cpu_accounting.runs[].single_core_equivalent_seconds`에 기록한다.
+이 CPU 계산량은 보조 지표다. 모델 간 기준 시간 비교에는 `comparison_runtime_seconds`와
+`comparison_runtime_status`를 함께 읽는다. 원래 `runtime_seconds`는 실제 실행시간으로 보존한다.
+새 8스레드 실행 자체의 `single_thread_wall_seconds`는 미측정이며 기존 실측·추정의 출처를
+가리키는 비교 필드로 대신 연결한다. 비교시간을 실제 HPO 총시간에 합산하지 않는다.
+
+## 직전 게이트
+
 2026-09-10 Lightning 회귀 29개 중 27개가 통과했다. RAM 변동·100% 실측 경고·OOM 거절과
 기존 점수·DB·인수 재사용 회귀는 통과했다. 남은 2개는 테스트 설정의 common_recipe 누락과
 과거 가짜 보고서를 현행 실험 계획에 대조한 문제다. 테스트 입력만 보완하고 RAM 99% 실패라는

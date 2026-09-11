@@ -14,12 +14,35 @@ from tests.ghl_main.record_run_history import (
     save_run_history,
     load_attempt_counts,
     summarize_run_history,
+    summarize_pca_compute,
     record_run_stage,
     hold_tuning_lock,
 )
 
 
 class TestRunHistory(unittest.TestCase):
+    def test_pca_cpu_accounting_keeps_wall_time_and_missing_old_measurements(self):
+        with TemporaryDirectory() as directory:
+            for index, (model, status, wall, cpu) in enumerate((
+                ("PCA_LEGACY", "complete", 10.0, 27.0),
+                ("PCA_LEGACY", "interrupted", 2.0, 5.0),
+                ("PCA_LEGACY", "complete", 70.0, None),
+                ("GDN", "complete", 100.0, 100.0),
+            )):
+                record = {"run_id": str(index), "identity": {"model": model, "budget_id": "b1"},
+                          "status": status, "model_execution_seconds": wall}
+                if cpu is not None:
+                    record["resource_usage"] = {"pca_compute": {"wall_seconds": wall, "cpu_core_seconds": cpu}}
+                Path(directory, f"{index}.json").write_text(json.dumps(record), encoding="utf-8")
+            summary = summarize_pca_compute(directory, "b1")
+            self.assertEqual(summary["known_cpu_core_seconds"], 32.0)
+            self.assertIsNone(summary["total_cpu_core_seconds"])
+            self.assertEqual(summary["unmeasured_run_ids"], ["2"])
+            self.assertEqual([row["wall_seconds"] for row in summary["runs"]], [10.0, 2.0, 70.0])
+            self.assertEqual(summary["runs"][0]["single_core_equivalent_seconds"], 27.0)
+            self.assertTrue(all(row["single_thread_wall_seconds"] is None for row in summary["runs"]))
+            self.assertEqual(summarize_pca_compute(directory, "other")["runs"], [])
+
     def test_failed_preflight_is_preserved_before_retry(self):
         from tests.ghl_main.run_ratio_tuning import _pending_check
 

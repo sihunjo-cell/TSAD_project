@@ -5,13 +5,58 @@ import json
 import tempfile
 from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tests.ghl_main import run_dev18_tuning as tuning
 from tests.ghl_main.run_dev18_tuning import _validate_primary_manifest_rows
 
 
 class FullPrefixExecutionContractTests(unittest.TestCase):
+    def test_pca_cpu_time_survives_success_and_interrupt_without_scaling_wall_time(self):
+        spec = {"model": "PCA_LEGACY", "config_id": "c123456789abc", "ratio": 100, "seed": 0,
+                "common_recipe": {"training_split": "full_prefix_v2"}}
+        result = {"timing": {}, "test_outputs": ({"pca_parallelism": {"fit_blas_threads_requested": 8}},)}
+        for error, stop_error in ((None, None), (KeyboardInterrupt(), None), (None, KeyboardInterrupt())):
+            with self.subTest(model_error=error, stop_error=stop_error), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                root = Path(directory).resolve()
+                snapshot = root / "run_snapshot.json"
+                snapshot.write_text("{}", encoding="utf-8")
+                stack.enter_context(patch.object(tuning, "REPOSITORY_ROOT", root))
+                stack.enter_context(patch.object(tuning, "_write_run_snapshot", return_value=snapshot))
+                stack.enter_context(patch.object(tuning, "_start_run_resources", return_value={}))
+                stack.enter_context(patch.object(tuning, "_finish_run_resources", return_value={"gpu_allocated_peak_bytes": None}))
+                stack.enter_context(patch.object(tuning, "_finish_failed_run_resources", return_value={}))
+                stack.enter_context(patch.object(tuning, "start_process_memory_sampling", return_value=Mock(
+                    stop=Mock(return_value={}, side_effect=stop_error),
+                )))
+                stack.enter_context(patch.object(tuning.time, "process_time", side_effect=[100.0, 127.0]))
+                stack.enter_context(patch.object(tuning.tracemalloc, "start"))
+                stack.enter_context(patch.object(tuning.tracemalloc, "stop"))
+                stack.enter_context(patch.object(tuning.tracemalloc, "get_traced_memory", return_value=(0, 0)))
+                stack.enter_context(patch("tests.ghl_main.run_registered_models.build_output_directory", return_value=root))
+                stack.enter_context(patch("src.common.run_registered_model.execute_registered_model", return_value=result, side_effect=error))
+                save_result = stack.enter_context(patch.object(tuning, "_save_run_result", return_value=[]))
+
+                def run():
+                    with tuning.record_run_history(root / "history", identity={"budget_id": "sealed"}) as history:
+                        tuning._run_one_spec(spec, {}, {"test_sessions": ()}, series=1, device="cpu",
+                                             environment={}, input_manifest_path=root / "manifest.yaml",
+                                             retry_count=0, budget_id="sealed", history=history)
+                    return history
+
+                if error is None and stop_error is None:
+                    history = run()
+                    self.assertEqual(save_result.call_args.kwargs["resource_usage"]["pca_compute"]["cpu_core_seconds"], 27.0)
+                else:
+                    with self.assertRaises(KeyboardInterrupt):
+                        run()
+                    history = json.loads(next((root / "history").glob("*.json")).read_text(encoding="utf-8"))
+                    save_result.assert_not_called()
+                compute = history["resource_usage"]["pca_compute"]
+                self.assertEqual(compute["cpu_core_seconds"], 27.0)
+                self.assertEqual(compute["wall_seconds"], history["model_execution_seconds"])
+                self.assertIsNone(compute["single_thread_wall_seconds"])
+
     def test_training_storage_failure_stays_blocked_after_restart_without_blocking_model_retries(self):
         spec = {"model": "PaAno", "tier": "t2", "config_id": "c123456789abc",
                 "ratio": 40, "seed": 0, "hyperparameters": {}}
