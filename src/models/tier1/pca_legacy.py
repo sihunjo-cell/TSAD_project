@@ -6,6 +6,7 @@ import warnings
 from copy import deepcopy
 
 import numpy
+from joblib import cpu_count
 from numpy.lib.stride_tricks import sliding_window_view
 from scipy.spatial.distance import cdist
 from scipy.stats import zscore
@@ -18,7 +19,7 @@ from threadpoolctl import threadpool_info, threadpool_limits
 PCA_COMPONENTS = (0.25, 0.5, 0.75, None)
 PCA_WINDOW = 100
 PCA_DISTANCE_CHUNK_ROWS = 1024
-PCA_FIT_BLAS_THREADS = 8
+PCA_FIT_BLAS_THREADS = cpu_count()
 
 
 def _as_matrix(values, *, minimum_rows=1):

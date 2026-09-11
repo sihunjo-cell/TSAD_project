@@ -2,6 +2,14 @@
 
 ## 현재 게이트
 
+2026-09-12 사용자가 현재 서버의 가용 CPU를 PCA fit과 VUS-PR 채점에 모두 사용하도록 요청했다.
+PCA fit은 프로세스 시작 때 CPU affinity·컨테이너 할당을 반영한 스레드 수를 정하고,
+VUS-PR의 `--workers 0`은 같은 CPU 감지 방식으로 고정 상한 8 없이 작업을 배분한다.
+채점의 가용 RAM·남은 작업 수 제한과 worker 내부 1스레드는 유지한다. 다른 모델의 실행 설정,
+기존 1스레드 비교 기준과 실제 비용 기록은 바꾸지 않는다. PCA snapshot에는 CPU 관측도 남긴다.
+승인된 자원 변경 사이에는 기존 VUS 체크포인트를 재사용하며 원본의 실행 신원과 검증값을 보존한다.
+현재 게이트는 수정·정적 검토 완료, Lightning 회귀 전이다. 로컬 Python·테스트·모델은 실행하지 않았다.
+
 2026-09-12 기존 시간 비교가 빠진 PCA 병렬화 수정을 보완했다. `comparison_runtime_seconds`는
 다른 모델과 기존 1스레드 PCA의 실측을 유지하고, 새 PCA에는 같은 입력·설정의 기존 실측을
 먼저 연결한다. 없으면 같은 설정의 1/8스레드 관측 비율, 그마저 없으면 같은 입력의 다른 PCA
@@ -33,6 +41,12 @@ PCA fit의 BLAS 병렬 수 조정, 실제 경과시간·프로세스 CPU 시간 
 ```bash
 python -m unittest \
   tests.unit.test_tier1_models.TestPcaOfficial \
+  tests.unit.test_dev18_tuning.TestDev18Tuning.test_cpu_scoring_worker_count_respects_cpu_memory_and_pending_work \
+  tests.unit.test_dev18_tuning.TestDev18Tuning.test_vus_checkpoint_is_atomic_and_rejects_tampering \
+  tests.unit.test_dev18_tuning.TestDev18Tuning.test_vus_checkpoint_reuses_approved_legacy_commit_without_rewriting_it \
+  tests.unit.test_dev18_tuning.TestDev18Tuning.test_vus_compatible_commit_search_is_cached_and_keeps_the_anchor \
+  tests.unit.test_dev18_tuning.TestDev18Tuning.test_primary_score_reuses_checkpoint_after_revalidating_artifacts \
+  tests.unit.test_scoring_environment \
   tests.unit.test_run_history \
   tests.unit.test_runtime_comparisons \
   tests.unit.test_tuning_support \

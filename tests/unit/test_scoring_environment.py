@@ -11,6 +11,25 @@ from tests.ghl_main import run_dev18_tuning as tuning
 
 
 class TestScoringEnvironment(unittest.TestCase):
+    def test_pca_snapshot_records_cpu_observations_without_changing_the_sealed_environment(self):
+        environment = {"packages": "sealed", "cuda_device": "L4"}
+        observed_cpu = {"affinity_cpu_count": 16, "cgroup_cpu_quota": {"limit_cpu_count": 16}}
+        spec = {"model": "PCA_LEGACY", "target_use": "training_free",
+                "common_recipe": {"training_split": "full_prefix_v2", "methodology_revision": "paper_tuning_v4"}}
+        with TemporaryDirectory() as directory, patch.object(tuning, "_git_head", return_value="commit"), \
+                patch.object(tuning, "_collect_scoring_cpu_environment", return_value=observed_cpu), \
+                patch("src.models.tier1.pca_legacy.PCA_FIT_BLAS_THREADS", 16), \
+                patch("src.common.run_registered_model.build_registered_execution_policy", return_value={}):
+            path = tuning._write_run_snapshot(Path(directory), spec, {
+                "input_identity": {"sha256": "input"}, "source_ranges": {"test_sessions": [[100, 300]]},
+            }, environment)
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(snapshot["execution_resources"], {
+            "pca_fit_blas_threads_requested": 16, "cpu": observed_cpu,
+        })
+        self.assertEqual(snapshot["environment"], environment)
+        self.assertEqual(snapshot["execution_policy"], {})
+
     def test_ledger_records_pending_workers_and_zero_after_all_scores_are_reused(self):
         panel = {"model": "M", "config_id": "c1", "physical_ratio": 40, "logical_ratios": [40],
                  "seed": 0, "primary_score_variants": [""], "diagnostic_score_variants": []}
@@ -57,7 +76,7 @@ class TestScoringEnvironment(unittest.TestCase):
             "series": "01", "model": "M", "config_id": f"c{index}",
             "physical_ratio": 100, "seed": 0, "score_variant": "",
         }} for index in range(12)]
-        for requested, memory, expected in ((0, 12, 8), (16, 5, 3), (1, 12, 1)):
+        for requested, memory, expected in ((0, 12, 10), (16, 5, 3), (1, 12, 1)):
             with self.subTest(requested=requested), TemporaryDirectory() as directory:
                 def fail_after_reading_history(*arguments, **keywords):
                     saved = json.loads(Path(history["history_file"]).read_text(encoding="utf-8"))
@@ -71,6 +90,7 @@ class TestScoringEnvironment(unittest.TestCase):
 
                 with patch.object(tuning.os, "sched_getaffinity", return_value=set(range(32)), create=True), \
                         patch.object(tuning.os, "cpu_count", return_value=32), \
+                        patch.object(tuning, "available_cpu_count", return_value=32), \
                         patch.object(tuning, "_detect_available_memory_bytes", return_value=memory * 1024 ** 3), \
                         patch.object(tuning, "_score_primary_row", side_effect=fail_after_reading_history), \
                         patch.object(tuning.concurrent.futures, "ProcessPoolExecutor",
@@ -103,6 +123,7 @@ class TestScoringEnvironment(unittest.TestCase):
             with tuning.record_run_history(directory, identity={"kind": "tuning_command"}) as history:
                 with patch.object(tuning.Path, "read_text", side_effect=OSError("not exposed")), \
                         patch.object(tuning.os, "cpu_count", return_value=None), \
+                        patch.object(tuning, "available_cpu_count", return_value=1), \
                         patch.object(tuning.os, "sched_getaffinity", side_effect=OSError("not exposed"), create=True), \
                         patch.object(platform, "processor", return_value=""), \
                         patch.object(tuning, "_score_primary_row", return_value=result):

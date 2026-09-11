@@ -1,6 +1,7 @@
 """Tier 1 공식 동작과 누수 방지 계약을 검증한다."""
 
 import io
+import runpy
 import unittest
 import warnings
 from unittest.mock import patch
@@ -18,6 +19,7 @@ from src.models.tier1 import (
     PCA_WINDOW,
     MWVAR_WINDOW,
     PcaLegacy,
+    pca_legacy,
     score_mwvar,
     score_mwvar96_sqdiff_centered5,
     score_mwvar96_sqdiff_last3,
@@ -428,35 +430,39 @@ class TestPcaLegacy(unittest.TestCase):
 
 
 class TestPcaOfficial(unittest.TestCase):
-    def test_fit_uses_eight_blas_threads_and_restores_them_on_success_and_failure(self):
-        from src.models.tier1 import pca_legacy
-
+    def test_fit_uses_allocated_cpus_once_and_restores_threads_on_success_and_failure(self):
         values = numpy.random.default_rng(71).normal(size=(115, 3))
         original_fit = PCA.fit
-
-        def checked_fit(estimator, fitted, y=None):
-            libraries = [item for item in threadpool_info() if item["user_api"] == "blas"]
-            self.assertTrue(libraries)
-            self.assertTrue(all(item["num_threads"] == 8 for item in libraries))
-            return original_fit(estimator, fitted, y)
-
         with threadpool_limits(limits=1, user_api="blas"):
             before = threadpool_info()
             with patch.object(pca_legacy, "PCA_FIT_BLAS_THREADS", 1):
                 serial = score_pca_official(values, n_components=0.5)
-            with patch.object(PCA, "fit", checked_fit):
-                result = score_pca_official(values, n_components=0.5)
-            numpy.testing.assert_allclose(result["scores"], serial["scores"])
-            self.assertEqual(threadpool_info(), before)
-            self.assertEqual(result["pca_parallelism"]["fit_blas_threads_requested"], 8)
-            self.assertEqual(set(result["pca_parallelism"]["phase_wall_seconds"]),
-                             {"preprocessing", "fit", "component_distances"})
-            self.assertTrue(all(value >= 0 for value in result["pca_parallelism"]["phase_wall_seconds"].values()))
-            self.assertEqual(result["checkpoint"]["pca_parallelism"], result["pca_parallelism"])
-            with patch.object(pca_legacy.PCA, "fit", side_effect=RuntimeError("fit failed")):
-                with self.assertRaisesRegex(RuntimeError, "fit failed"):
-                    score_pca_official(values, n_components=0.5)
-            self.assertEqual(threadpool_info(), before)
+            for available_cpus in (2, 16):
+                with self.subTest(available_cpus=available_cpus), patch(
+                    "joblib.cpu_count", return_value=available_cpus,
+                ) as count_cpus:
+                    allocated_score = runpy.run_path(pca_legacy.__file__)["score_pca_official"]
+
+                    def checked_fit(estimator, fitted, y=None):
+                        libraries = [item for item in threadpool_info() if item["user_api"] == "blas"]
+                        self.assertTrue(libraries)
+                        self.assertTrue(all(item["num_threads"] == available_cpus for item in libraries))
+                        return original_fit(estimator, fitted, y)
+
+                    with patch.object(PCA, "fit", checked_fit):
+                        result = allocated_score(values, n_components=0.5)
+                    numpy.testing.assert_allclose(result["scores"], serial["scores"])
+                    self.assertEqual(threadpool_info(), before)
+                    self.assertEqual(result["pca_parallelism"]["fit_blas_threads_requested"], available_cpus)
+                    self.assertEqual(set(result["pca_parallelism"]["phase_wall_seconds"]),
+                                     {"preprocessing", "fit", "component_distances"})
+                    self.assertTrue(all(value >= 0 for value in result["pca_parallelism"]["phase_wall_seconds"].values()))
+                    self.assertEqual(result["checkpoint"]["pca_parallelism"], result["pca_parallelism"])
+                    with patch.object(PCA, "fit", side_effect=RuntimeError("fit failed")):
+                        with self.assertRaisesRegex(RuntimeError, "fit failed"):
+                            allocated_score(values, n_components=0.5)
+                    self.assertEqual(threadpool_info(), before)
+                    count_cpus.assert_called_once()
 
     def test_matches_official_full_evaluation_fit_score_for_both_input_scopes(self):
         generator = numpy.random.default_rng(53)
@@ -475,7 +481,7 @@ class TestPcaOfficial(unittest.TestCase):
                     standardized = scaler.transform(normalized)
                     nonzero = numpy.any(standardized != 0, axis=0)
                     fitted = standardized[:, nonzero]
-                    with threadpool_limits(limits=8, user_api="blas"):
+                    with threadpool_limits(limits=pca_legacy.PCA_FIT_BLAS_THREADS, user_api="blas"):
                         pca = PCA(n_components=component, random_state=0).fit(fitted)
                     expected = numpy.sum(cdist(fitted, pca.components_) / pca.explained_variance_ratio_, axis=1)
                     expected = numpy.pad(expected, (50, 49), mode="edge")
@@ -526,7 +532,7 @@ class TestPcaOfficial(unittest.TestCase):
         self.assertEqual(len(fit_inputs), 2)
         numpy.testing.assert_array_equal(fit_inputs[0], fit_inputs[1])
         fitted = fit_inputs[0]
-        with threadpool_limits(limits=8, user_api="blas"):
+        with threadpool_limits(limits=pca_legacy.PCA_FIT_BLAS_THREADS, user_api="blas"):
             reference = PCA(n_components=None, random_state=0, svd_solver="full").fit(fitted)
         expected = numpy.sum(cdist(fitted, reference.components_) / reference.explained_variance_ratio_, axis=1)
         numpy.testing.assert_allclose(result["scores"], numpy.pad(expected, (50, 49), mode="edge"))

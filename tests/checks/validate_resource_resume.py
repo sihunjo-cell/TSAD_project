@@ -14,9 +14,11 @@ RESOURCE_RESUME_BLOBS = {
     "tests/checks/check_dev18_resources.py": "efc502ea0f307d887527662294b60a19c355a9ef",
     "tests/ghl_main/run_dev18_tuning.py": (
         "f610da99a9ce6e922ec269909c32fbd08af7acf4", "693a26cd1d74c4cc8be013b42c737a58c191fc8c",
+        "0154ee9a6b2201c911a25c861e5ed1e7f0ec7c90",
     ),
     "src/models/tier1/pca_legacy.py": (
         "f6a5a21ef1b8f01fa3c1b83d0e7c091af6ca15d0", "0470ab13ea5a1143a205fe990695143c94b0d781",
+        "3e61552c10de8976c5cd157fffd332d480ee7bdd",
     ),
     "tests/ghl_main/record_run_history.py": "d55fa556f0dd0239bdc29272d99693086b0c4774",
     "tests/ghl_main/run_ratio_tuning.py": (

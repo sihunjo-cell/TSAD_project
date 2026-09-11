@@ -73,6 +73,20 @@ class TestRuntimeComparisons(unittest.TestCase):
         self.assertEqual(actual["comparison_runtime_seconds"], 200)
         self.assertEqual(actual["comparison_runtime_basis"], "estimated_from_paired_pca_thread_timings")
 
+    def test_sixteen_threads_use_only_matching_thread_pairs_and_keep_the_serial_reference(self):
+        target = reference("target", "B", 20, threads=16)
+        references = [reference("donor", "B", 120), reference("donor", "B", 30, threads=8)]
+        self.assertIsNone(self.compare(target, references)["comparison_runtime_seconds"])
+        references.append(reference("donor", "B", 15, threads=16))
+        estimated = self.compare(target, references)
+        self.assertEqual(estimated["comparison_runtime_seconds"], 160)
+        self.assertEqual(estimated["actual_runtime_seconds"], 20)
+        self.assertNotIn(references[1]["reference"], estimated["comparison_runtime_sources"])
+        references.append(reference("target", "B", 150))
+        measured = self.compare(target, references)
+        self.assertEqual(measured["comparison_runtime_seconds"], 150)
+        self.assertEqual(measured["comparison_runtime_status"], "measured")
+
     def test_missing_or_incompatible_references_do_not_scale_or_block_execution(self):
         target = reference("target", "A", 25, threads=8)
         serial = reference("target", "A", 100)

@@ -1510,7 +1510,15 @@ import tests.ghl_main.run_dev18_tuning
             self.assertEqual(resolve(
                 requested, pending_count=100, cpu_count=32,
                 available_memory_bytes=64 * gibibyte,
-            ), 8)
+            ), 32)
+        self.assertEqual(resolve(
+            12, pending_count=100, cpu_count=32,
+            available_memory_bytes=64 * gibibyte,
+        ), 12)
+        with patch.object(run_dev18_tuning, "available_cpu_count", return_value=16) as count, \
+                patch.object(run_dev18_tuning, "_detect_available_memory_bytes", return_value=None):
+            self.assertEqual(resolve(0, pending_count=100), 16)
+            count.assert_called_once_with()
         with self.assertRaisesRegex(ValueError, "workers"):
             resolve(-1, pending_count=1)
 
@@ -1583,6 +1591,49 @@ import tests.ghl_main.run_dev18_tuning
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "checkpoint"):
                 run_dev18_tuning._load_score_checkpoint(path, identity)
+
+    def test_vus_checkpoint_reuses_approved_legacy_commit_without_rewriting_it(self):
+        previous = {"project_commit": "a" * 40, "score_sha256": "score", "label_sha256": "labels",
+                    "budget_id": "budget", "evaluator_sha256": "evaluator", "ell_max_id": "ell"}
+        current = {**previous, "project_commit": "b" * 40}
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(run_dev18_tuning, "_compatible_score_commits", return_value=(
+                    "c" * 40, current["project_commit"], previous["project_commit"],
+                )), patch("tests.checks.validate_resource_resume.resource_resume_compatible", return_value=True):
+            original = run_dev18_tuning._score_checkpoint_path(directory, previous, normalize_commit=False)
+            run_dev18_tuning._write_score_checkpoint(original, previous, 0.625)
+            original_bytes = original.read_bytes()
+            shared = run_dev18_tuning._score_checkpoint_path(directory, current)
+            self.assertEqual(shared, run_dev18_tuning._score_checkpoint_path(directory, previous))
+            self.assertEqual(run_dev18_tuning._load_score_checkpoint(shared, current), 0.625)
+            self.assertEqual(original.read_bytes(), original_bytes)
+            self.assertFalse(shared.exists())
+            for field in ("score_sha256", "label_sha256", "budget_id", "evaluator_sha256", "ell_max_id"):
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "checkpoint"):
+                    run_dev18_tuning._load_score_checkpoint(original, {**current, field: "different"})
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(run_dev18_tuning, "_compatible_score_commits", return_value=(current["project_commit"],)), \
+                patch("tests.checks.validate_resource_resume.resource_resume_compatible", return_value=False):
+            path = Path(directory) / "unapproved.json"
+            run_dev18_tuning._write_score_checkpoint(path, previous, 0.625)
+            with self.assertRaisesRegex(ValueError, "checkpoint"):
+                run_dev18_tuning._load_score_checkpoint(path, current)
+
+    def test_vus_compatible_commit_search_is_cached_and_keeps_the_anchor(self):
+        from tests.checks import validate_resource_resume as resume
+
+        current, previous, unapproved = "a" * 40, "b" * 40, "c" * 40
+        compatible = {resume.RESOURCE_RESUME_SOURCE, current, previous}
+        run_dev18_tuning._compatible_score_commits.cache_clear()
+        with patch.object(resume, "resource_resume_compatible", side_effect=lambda old, new, root: (
+            old in compatible and new in compatible
+        )), patch.object(run_dev18_tuning.subprocess, "check_output", return_value=f"{previous}\n{unapproved}\n") as git:
+            for _ in range(2):
+                self.assertEqual(run_dev18_tuning._compatible_score_commits(current, "repository"), (
+                    resume.RESOURCE_RESUME_SOURCE, current, previous,
+                ))
+            git.assert_called_once()
+        run_dev18_tuning._compatible_score_commits.cache_clear()
 
     def test_primary_score_reuses_checkpoint_after_revalidating_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:

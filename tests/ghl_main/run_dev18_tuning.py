@@ -26,6 +26,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 import matplotlib
 import numpy
+from joblib import cpu_count as available_cpu_count
 
 matplotlib.use("Agg")
 from matplotlib import pyplot
@@ -1576,6 +1577,7 @@ def _write_run_snapshot(output_directory: Path, spec: dict, inputs: dict, enviro
         from src.models.tier1.pca_legacy import PCA_FIT_BLAS_THREADS
 
         execution_resources["pca_fit_blas_threads_requested"] = PCA_FIT_BLAS_THREADS
+        execution_resources["cpu"] = _collect_scoring_cpu_environment()
     if current_storage and spec["target_use"] == "fit_full_prefix":
         training_boundary = len(inputs["normal_training"])
         prefix_observation = {
@@ -2751,24 +2753,46 @@ def _resolve_score_workers(
     if type(pending_count) is not int or pending_count < 1:
         raise ValueError("pending_count는 1 이상의 정수여야 한다")
     if cpu_count is None:
-        try:
-            cpu_count = len(os.sched_getaffinity(0))
-        except (AttributeError, OSError):
-            cpu_count = os.cpu_count() or 1
+        cpu_count = available_cpu_count()
     cpu_count = max(1, int(cpu_count))
     if available_memory_bytes is None:
         available_memory_bytes = _detect_available_memory_bytes()
     if available_memory_bytes is None:
-        memory_limit = 4
+        memory_limit = cpu_count
     else:
         gibibyte = 1024 ** 3
         memory_limit = max(1, (int(available_memory_bytes) - 2 * gibibyte) // gibibyte)
-    safe_limit = min(8, cpu_count, memory_limit, pending_count)
+    safe_limit = min(cpu_count, memory_limit, pending_count)
     return safe_limit if workers == 0 else min(workers, safe_limit)
 
 
-def _score_checkpoint_path(directory, identity: dict) -> Path:
-    digest = hashlib.sha256(_json(identity).encode("utf-8")).hexdigest()
+@lru_cache(maxsize=32)
+def _compatible_score_commits(project_commit, repository_root) -> tuple:
+    from tests.checks.validate_resource_resume import RESOURCE_RESUME_SOURCE, resource_resume_compatible
+
+    if not resource_resume_compatible(RESOURCE_RESUME_SOURCE, project_commit, repository_root):
+        return (project_commit,)
+    if project_commit == RESOURCE_RESUME_SOURCE:
+        return (project_commit,)
+    try:
+        previous_commits = subprocess.check_output([
+            "git", "rev-list", f"{RESOURCE_RESUME_SOURCE}..{project_commit}",
+        ], cwd=repository_root, text=True, stderr=subprocess.DEVNULL).splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        previous_commits = []
+    return tuple(dict.fromkeys((RESOURCE_RESUME_SOURCE, project_commit, *(
+        commit for commit in previous_commits
+        if resource_resume_compatible(commit, project_commit, repository_root)
+    ))))
+
+
+def _score_checkpoint_path(directory, identity: dict, *, normalize_commit=True) -> Path:
+    path_identity = identity
+    if normalize_commit and "project_commit" in identity:
+        path_identity = {**identity, "project_commit": _compatible_score_commits(
+            identity["project_commit"], str(REPOSITORY_ROOT),
+        )[0]}
+    digest = hashlib.sha256(_json(path_identity).encode("utf-8")).hexdigest()
     return Path(directory) / f"{digest}.json"
 
 
@@ -2801,15 +2825,37 @@ def _write_score_checkpoint(path, identity: dict, vus_pr_value: float) -> None:
 def _load_score_checkpoint(path, identity: dict) -> float | None:
     path = Path(path)
     if not path.is_file():
-        return None
+        commits = _compatible_score_commits(identity["project_commit"], str(REPOSITORY_ROOT)) \
+            if "project_commit" in identity else ()
+        for commit in commits:
+            candidate = _score_checkpoint_path(
+                path.parent, {**identity, "project_commit": commit}, normalize_commit=False,
+            )
+            if candidate.is_file():
+                path = candidate
+                break
+        else:
+            return None
     try:
         payload = _read_json(path)
         vus_pr_value = payload["vus_pr"]
-        expected = _checkpoint_payload(identity, vus_pr_value)
+        saved_identity = payload["identity"]
+        if not isinstance(saved_identity, dict):
+            raise ValueError("checkpoint identity must be an object")
+        expected = _checkpoint_payload(saved_identity, vus_pr_value)
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise ValueError(f"VUS-PR checkpoint를 읽을 수 없다: {path.name}") from error
+    matching_identity = saved_identity == identity
+    if not matching_identity and "project_commit" in identity and saved_identity.keys() == identity.keys():
+        from tests.checks.validate_resource_resume import resource_resume_compatible
+
+        matching_identity = (
+            {**saved_identity, "project_commit": identity["project_commit"]} == identity
+            and resource_resume_compatible(saved_identity["project_commit"], identity["project_commit"], REPOSITORY_ROOT)
+        )
     if (
         payload != expected
+        or not matching_identity
         or type(vus_pr_value) not in (int, float)
         or not numpy.isfinite(vus_pr_value)
     ):
