@@ -2,9 +2,11 @@
 AGENTS.md
 CLAUDE.md
 *.local.md
-docs/superpowers/
+/docs/
 dummy/
 .runtime/
+dev18_results_final/
+
 
 # 로컬 원본 데이터: 저장소 밖에 두고 경로·SHA-256·분석 결과만 추적한다.
 TSB-AD-M/
