@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
+import re
 
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
 from src.common.execution_identity import (
@@ -20,6 +21,7 @@ from src.common.model_registry import (
 from src.common.load_final_membership import (
     build_final_execution_union,
     load_final_membership,
+    normalize_membership_series,
 )
 from src.data_split.load_dev18_series import load_dev18_registered_inputs
 from src.data_split.load_ghl_series import load_ghl_registered_inputs
@@ -39,7 +41,7 @@ OUTPUT_SPLITS = {
     "train1_to_test1": ("hai", "train1_to_test1"),
     "train1_train2_to_test2": ("hai", "train1_train2_to_test2"),
 }
-SCORE_VARIANTS = {"time", "fft", "pred", "raw_max"}
+SCORE_VARIANTS = {"time", "fft", "pred", "raw_max", "ensemble"}
 REAL_DATA_EXECUTION_ENABLED = True
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT_MANIFEST_PATH = REPOSITORY_ROOT / "configs" / "input_manifest.yaml"
@@ -138,10 +140,15 @@ def load_registered_inputs(
         raise ValueError("현재 input manifest SHA-256이 spec과 다르다")
     dataset = expected_dataset_for_identity(identity)
     split_role = identity["split_role"]
+    bound_series = (
+        normalize_membership_series(spec["series"]) if "series" in spec else None
+    )
 
     if split_role == "dev18_selection":
         if csv_path is not None or series is None or data_root is None:
             raise ValueError("development 입력에는 series와 data root가 필요하다")
+        if bound_series is not None and normalize_membership_series(series) != bound_series:
+            raise ValueError("입력 series가 봉인 spec과 다르다")
         entry = _load_dev18_manifest_entry(series, manifest)
         root = Path(data_root).resolve()
         source_path = (root / entry["source_directory"] / entry["name"]).resolve()
@@ -155,12 +162,19 @@ def load_registered_inputs(
         if csv_path is None or series is not None or data_root is not None:
             raise ValueError("GHL final 입력에는 CSV 경로 하나가 필요하다")
         csv_path = Path(csv_path)
+        if bound_series is not None:
+            match = re.search(r"_GHL_id_(\d+)_", csv_path.name)
+            if match is None or normalize_membership_series(match.group(1)) != bound_series:
+                raise ValueError("GHL CSV series가 봉인 spec과 다르다")
         entry = _unique_manifest_entry(manifest, dataset, csv_path.name)
         verified_files = (_verify_manifest_file(csv_path, entry),)
         inputs = load_ghl_registered_inputs(csv_path)
     elif split_role in {"train1_to_test1", "train1_train2_to_test2"}:
         if csv_path is not None or series is not None or data_root is None:
             raise ValueError("HAI final 입력에는 data root와 split_role이 필요하다")
+        expected_series = "01" if split_role == "train1_to_test1" else "02"
+        if bound_series is not None and bound_series != expected_series:
+            raise ValueError("HAI split의 series가 봉인 spec과 다르다")
         role = manifest["roles"][split_role]
         filenames = (*role["normal_training_files"], *role["test_files"])
         root = Path(data_root)
@@ -226,7 +240,7 @@ def _validate_feasible_keys(registry: dict, feasible_keys) -> frozenset:
 def build_specs(
     dataset_role: str, *, split_role=None, input_manifest_path=None,
     final_policy_membership_path=None, include_pending: bool = False,
-    feasible_keys=None,
+    feasible_keys=None, series=None,
 ) -> list[dict]:
     registry, registry_sha = load_model_registry_with_sha()
     if dataset_role not in registry["seeds"]:
@@ -242,12 +256,14 @@ def build_specs(
     )
     final_policy_membership_sha256 = None
     final_execution_union = None
+    conditional_membership = False
     if dataset_role == "final":
         final_policy_membership_sha256, membership = load_final_membership(
             final_policy_membership_path, registry,
         )
-        final_execution_union = build_final_execution_union(membership, split_role)
-        if not final_execution_union:
+        conditional_membership = any("series" in row for row in membership)
+        final_execution_union = build_final_execution_union(membership, split_role, series=series)
+        if not final_execution_union and not conditional_membership:
             raise ValueError("final membership의 runnable 실행 합집합이 비어 있다")
     if feasible_keys is not None:
         feasible_keys = _validate_feasible_keys(registry, feasible_keys)
@@ -274,6 +290,7 @@ def build_specs(
                     continue
                 for seed in seeds:
                     specs.append({
+                        **({"series": normalize_membership_series(series)} if series is not None else {}),
                         "model": model_name,
                         "tier": model["tier"],
                         "config_id": candidate["config_id"],
@@ -298,7 +315,9 @@ def build_specs(
                         "score_variants": (
                             final_execution_union[physical_key]
                             if final_execution_union is not None
-                            else tuple(sorted(SCORE_VARIANTS)) if model_name == "TSPulse" else ("",)
+                            else ("time", "fft", "pred", "ensemble") if model_name == "TSPulse"
+                            and registry["common_recipe"].get("methodology_revision") == "paper_tuning_v4"
+                            else tuple(sorted(SCORE_VARIANTS - {"ensemble"})) if model_name == "TSPulse" else ("",)
                         ),
                     })
     return specs
@@ -321,7 +340,9 @@ def build_output_directory(
     )
     if score_variant is None:
         return output_directory
-    if spec["model"] != "TSPulse" or score_variant not in SCORE_VARIANTS:
+    official = spec.get("common_recipe", {}).get("methodology_revision") == "paper_tuning_v4"
+    variants = SCORE_VARIANTS - ({"raw_max"} if official else {"ensemble"})
+    if spec["model"] != "TSPulse" or score_variant not in variants:
         raise ValueError(f"지원하지 않는 score_variant이다: {score_variant}")
     return output_directory / score_variant
 
@@ -329,7 +350,7 @@ def build_output_directory(
 def run_batch(
     *, dataset_role: str, allow_real_data: bool = False, executor=None,
     split_role=None, input_manifest_path=None, final_policy_membership_path=None,
-    feasible_keys=None,
+    feasible_keys=None, series=None,
 ):
     """승인 전에는 차단하고, 승인 뒤에는 주입한 실행기로 봉인 spec만 넘긴다."""
     if not REAL_DATA_EXECUTION_ENABLED or not allow_real_data:
@@ -349,5 +370,6 @@ def run_batch(
             input_manifest_path=input_manifest_path,
             final_policy_membership_path=final_policy_membership_path,
             feasible_keys=feasible_keys,
+            series=series,
         )
     ]

@@ -32,13 +32,16 @@ def save_score_arrays(
     seed: int,
     norm_kind: str,
     smoothing_window: int = 4,
+    *,
+    native_postprocessing: bool = False,
 ) -> list[str]:
     """정규화된 scalar 또는 채널 점수의 raw·smoothed 배열을 저장한다.
 
     scalar는 2개 파일, 채널 점수는 max 집계와 `__channels`를 합쳐 4개 파일이다.
     """
     channel_scores = validate_scores(channel_scores, "scores")
-    smoothed_channel_scores = trailing_average_smoothing(channel_scores, window=smoothing_window)
+    smoothed_channel_scores = (channel_scores.copy() if native_postprocessing else
+                               trailing_average_smoothing(channel_scores, window=smoothing_window))
     validate_scores(smoothed_channel_scores, "smoothed_scores")
 
     naming_arguments = {
@@ -62,7 +65,14 @@ def save_score_arrays(
     saved_paths = []
     for filename, array in arrays_by_name.items():
         path = os.path.join(output_dir, filename)
-        numpy.save(path, array)
+        temporary_path = os.path.join(output_dir, f".{filename}.tmp")
+        try:
+            with open(temporary_path, "wb") as destination:
+                numpy.save(destination, array)
+            os.replace(temporary_path, path)
+        finally:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
         saved_paths.append(path)
     return saved_paths
 

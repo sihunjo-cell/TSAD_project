@@ -187,7 +187,7 @@ class GNNLayer(nn.Module):
             embedding,
             return_attention_weights=True,
         )
-        self.attention_weights = attention
+        self.attention_weights = attention.detach()
         self.attention_edge_index = new_edge_index
         return functional.relu(self.bn(output))
 

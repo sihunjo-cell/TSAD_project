@@ -41,20 +41,21 @@ class TestAssessCandidate(unittest.TestCase):
         self.assertEqual(feasible["status"], "feasible")
         self.assertEqual(feasible["derived"]["topk"], 5)
 
-    def test_alora_requires_at_least_one_pair_per_attention_head(self):
-        params = {"window": 20, "heads": 8, "max_pairs": 512}
-        infeasible = assess_candidate(
-            "ALoRa", params, fit_length=20, validation_length=20,
-            test_length=20, channel_count=4,
-        )
-        feasible = assess_candidate(
-            "ALoRa", params, fit_length=20, validation_length=20,
-            test_length=20, channel_count=5,
-        )
-        self.assertEqual(infeasible["status"], "structurally_infeasible")
-        self.assertIn("pair count 6 < heads 8", infeasible["reason"])
-        self.assertEqual(feasible["status"], "feasible")
-        self.assertEqual(feasible["derived"]["pair_count"], 10)
+    def test_gdn_preserves_fixed_topk_and_keeps_low_channel_alternative(self):
+        official = assess_candidate("GDN", {"window": 5, "topk": 5}, 6, 6, 6, 3)
+        self.assertEqual(official["status"], "structurally_infeasible")
+        self.assertEqual(official["derived"]["topk"], 5)
+        self.assertIn("topk 5 > channel count 3", official["reason"])
+        for channel_count in (2, 3):
+            connected = assess_candidate(
+                "GDN", {"window": 5, "topk": 2}, 6, 6, 6, channel_count,
+            )
+            legacy = assess_candidate(
+                "GDN", {"window": 5, "rho": 0.3}, 6, 6, 6, channel_count,
+            )
+            self.assertEqual(connected["status"], "feasible")
+            self.assertEqual(connected["derived"]["topk"], 2)
+            self.assertEqual(legacy["derived"]["topk"], 1)
 
     def test_training_free_and_zero_shot_ignore_fit_length(self):
         mwvar = assess_candidate("MWVAR", {"window": 96}, 0, 0, 96, 19)
@@ -63,6 +64,15 @@ class TestAssessCandidate(unittest.TestCase):
         )
         self.assertEqual(mwvar["status"], "feasible")
         self.assertEqual(time_rcd["status"], "feasible")
+
+    def test_mwvar_minimum_length_follows_each_registered_window(self):
+        for window in (96, 64):
+            with self.subTest(window=window):
+                rejected = assess_candidate("MWVAR", {"window": window}, 0, 0, window - 1, 2)
+                accepted = assess_candidate("MWVAR", {"window": window}, 0, 0, window, 2)
+                self.assertEqual(rejected["status"], "structurally_infeasible")
+                self.assertEqual(accepted["status"], "feasible")
+                self.assertEqual(accepted["derived"]["native_continuous_score_count"], 1)
 
     def test_time_rcd_multi_checkpoint_requires_multivariate_input(self):
         result = assess_candidate(
@@ -90,6 +100,74 @@ class TestAssessCandidate(unittest.TestCase):
             "PCA_LEGACY", params, 101, 100, 100, 3,
         )["status"], "feasible")
 
+    def test_paper_target_free_boundaries_and_legacy_tspulse_are_distinct(self):
+        cases = [("SQDIFF_LAST1", {"window": 2}, 2),
+                 ("SQDIFF_CENTERED5", {"window": 5}, 5),
+                 ("MWVAR96_SQDIFF_LAST3", {"variance_window": 96}, 97),
+                 ("MWVAR96_SQDIFF_CENTERED5", {"variance_window": 96}, 97),
+                 ("PCA_LEGACY", {"window": 100}, 101)]
+        cases.extend(("TSPulse", {"context_length": 512, "aggregation_window": window}, 513)
+                     for window in (64, 96, 128))
+        for model, parameters, minimum in cases:
+            with self.subTest(model=model, parameters=parameters):
+                self.assertEqual(assess_candidate(model, parameters, 0, 0, minimum - 1, 2,
+                    official_protocol=True)["status"], "structurally_infeasible")
+                self.assertEqual(assess_candidate(model, parameters, 0, 0, minimum, 2,
+                    official_protocol=True)["status"], "feasible")
+        self.assertEqual(assess_candidate("TSPulse", cases[-1][1], 0, 0, 513, 2)["status"],
+                         "structurally_infeasible")
+
+    def test_paper_gdn_uses_combined_session_window_holdout(self):
+        parameters = {"window": 5, "topk": 5, "validation_ratio": .2}
+        rejected = assess_candidate("GDN", parameters, 9, 0, 10, 5,
+                                    full_prefix=True, official_protocol=True)
+        accepted = assess_candidate("GDN", parameters, 17, 0, 10, 5,
+            full_prefix=True, official_protocol=True, fit_session_lengths=(8, 9))
+        self.assertEqual(rejected["status"], "structurally_infeasible")
+        self.assertEqual(accepted["status"], "feasible")
+        self.assertEqual(accepted["derived"]["fit_forecast_count"], 7)
+        self.assertEqual(accepted["derived"]["internal_validation_window_count"], 1)
+        self.assertEqual(accepted["derived"]["internal_training_window_count"], 6)
+
+    def test_paper_paano_rejects_only_reached_singleton_batch(self):
+        parameters = {"patch_size": 32, "memory_fraction": .1, "neighbors": 3,
+                      "batch_size": 512, "iterations": 100}
+        for patches, expected in ((513, "structurally_infeasible"),
+                                  (514, "feasible"), (51201, "feasible")):
+            result = assess_candidate("PaAno", parameters, patches + 31, 0, 64, 2,
+                                      full_prefix=True, official_protocol=True)
+            self.assertEqual(result["status"], expected)
+
+    def test_official_paano_memory_keeps_source_minimum_and_fraction(self):
+        parameters = {"patch_size": 2, "memory_fraction": .1, "neighbors": 3,
+                      "batch_size": 512, "iterations": 100}
+        for patches, memory_count in ((3, 2), (4, 3), (25, 24), (501, 500), (1000, 500), (6000, 600)):
+            with self.subTest(patches=patches):
+                result = assess_candidate("PaAno", parameters, patches + 1, 0, 1, 2,
+                                          full_prefix=True, official_protocol=True)
+                self.assertEqual(result["derived"]["memory_size"], memory_count)
+                self.assertEqual(result["status"], "structurally_infeasible" if memory_count < 3 else "feasible")
+                if memory_count < 3:
+                    self.assertIn("memory", result["reason"])
+        capped = assess_candidate("PaAno", {**parameters, "memory_fraction": 1}, 5, 0, 1, 2,
+                                  full_prefix=True, official_protocol=True)
+        self.assertEqual(capped["derived"]["memory_size"], 3)
+
+    def test_paper_paano_counts_fitted_context_and_accepts_short_evaluation(self):
+        parameters = {"patch_size": 32, "memory_fraction": .1, "neighbors": 3,
+                      "batch_size": 512, "iterations": 100}
+        for test_length in (1, 31, 32, 100):
+            with self.subTest(test_length=test_length):
+                result = assess_candidate("PaAno", parameters, 64, 0, test_length, 2,
+                                          full_prefix=True, official_protocol=True)
+                self.assertEqual(result["status"], "feasible")
+                self.assertEqual(result["derived"]["test_patch_count"], test_length)
+                self.assertEqual(result["derived"]["native_continuous_score_count"], test_length)
+        self.assertEqual(assess_candidate("PaAno", parameters, 64, 0, 0, 2,
+            full_prefix=True, official_protocol=True)["status"], "structurally_infeasible")
+        legacy = assess_candidate("PaAno", parameters, 64, 0, 31, 2, full_prefix=True)
+        self.assertEqual(legacy["status"], "structurally_infeasible")
+
 
 class TestCollectFullyFeasibleKeys(unittest.TestCase):
     def setUp(self):
@@ -105,7 +183,7 @@ class TestCollectFullyFeasibleKeys(unittest.TestCase):
     def test_returns_only_candidates_feasible_for_every_required_series(self):
         self.assertTrue(callable(collect_fully_feasible_keys))
         incomplete = {
-            "model": "ALoRa", "config_id": "c111111111111", "ratio": 20,
+            "model": "GDN", "config_id": "c111111111111", "ratio": 20,
             "series": "series-a", "status": "feasible",
         }
         infeasible = [

@@ -5,19 +5,42 @@ import os
 import random
 import unittest
 from copy import deepcopy
+from importlib import import_module as real_import_module
+from types import SimpleNamespace
 
 import numpy
 import torch
 from unittest.mock import patch
 
+from src.common.build_config_id import build_common_recipe_id
 from src.common.model_registry import load_model_registry
-from src.common.run_registered_model import execute_registered_model
+from src.common.run_registered_model import (
+    execute_registered_model,
+    load_target_free_setup_entrypoint,
+)
 from src.common.set_reproducible_seed import set_reproducible_seed
 from tests.ghl_main.run_registered_models import build_specs
 
 
 def _score_output(values):
     return {"scores": numpy.arange(len(values), dtype=float)}
+
+
+def _legacy_execution_spec(spec):
+    spec = deepcopy(spec)
+    spec["common_recipe"] = {
+        "methodology_revision": "source_faithful_v3", "training_split": "full_prefix_v2",
+    }
+    spec["common_recipe_id"] = build_common_recipe_id(spec["common_recipe"])
+    if spec["model"] == "PCA_LEGACY":
+        spec["target_use"] = "fit_full_prefix"
+        spec["ratio"] = 5
+        spec["hyperparameters"]["zero_pruning"] = False
+    if spec["model"] == "TSPulse":
+        spec["hyperparameters"]["heads"] = ["time", "fft", "pred", "raw_max"]
+    for name in ("validation_ratio", "optimizer_betas"):
+        spec["hyperparameters"].pop(name, None)
+    return spec
 
 
 class _PoisonTraining:
@@ -102,6 +125,99 @@ class TestRegisteredExecutor(unittest.TestCase):
                 self.assertIsNone(result["scaler_state"])
                 self.assertEqual(result["validation_outputs"], ())
                 self.assertEqual(result["calibration_scope"], "none")
+
+    def test_tier3_prepares_once_and_times_setup_separately(self):
+        sessions = (
+            numpy.zeros((12, 2), dtype=float),
+            numpy.ones((12, 2), dtype=float),
+        )
+        for model in ("TimeRCD", "TSPulse"):
+            events = []
+
+            def build_scorer(**arguments):
+                events.append(("build", arguments))
+
+                def scorer(session):
+                    events.append(("score", numpy.array(session, copy=True)))
+                    return _score_output(session)
+
+                return scorer
+
+            def load_builder(requested_model):
+                events.append(("import", requested_model))
+                return build_scorer
+
+            with self.subTest(model=model), patch(
+                "src.common.run_registered_model.validate_registered_spec",
+            ), patch(
+                "src.common.run_registered_model.load_target_free_setup_entrypoint",
+                side_effect=load_builder,
+            ), patch(
+                "src.common.run_registered_model.time.perf_counter",
+                side_effect=(0.0, 2.0, 5.0, 9.0),
+            ), patch(
+                "src.common.run_registered_model._synchronize_cuda",
+                side_effect=lambda device: events.append(("sync", device)),
+            ):
+                result = execute_registered_model(
+                    _legacy_execution_spec(self.specs[model]), test_sessions=sessions, device="cpu",
+                )
+
+            self.assertEqual(events[0], ("import", model))
+            self.assertEqual(events[1][0], "build")
+            self.assertEqual(events[1][1]["channel_count"], 2)
+            self.assertIs(events[1][1]["inference_context_normalization"], True)
+            self.assertEqual([event[0] for event in events], [
+                "import", "build", "sync", "score", "score", "sync",
+            ])
+            self.assertEqual(result["timing"]["model_setup_seconds"], 2.0)
+            self.assertEqual(result["timing"]["test_inference_seconds"], 4.0)
+            self.assertGreaterEqual(result["timing"]["model_setup_seconds"], 0.0)
+            self.assertGreaterEqual(result["timing"]["test_inference_seconds"], 0.0)
+            self.assertEqual(len(result["test_outputs"]), 2)
+
+    def test_target_free_setup_loader_maps_both_tier3_builders(self):
+        time_rcd_builder = lambda **arguments: arguments
+        tspulse_builder = lambda **arguments: arguments
+        modules = {
+            "src.models.tier3.time_rcd": SimpleNamespace(
+                build_time_rcd_official_scorer=time_rcd_builder,
+            ),
+            "src.models.tier3.tspulse": SimpleNamespace(
+                build_tspulse_official_scorer=tspulse_builder,
+            ),
+        }
+        with patch(
+            "src.common.run_registered_model.importlib.import_module",
+            side_effect=modules.__getitem__,
+        ) as importer:
+            self.assertIs(load_target_free_setup_entrypoint("TimeRCD"), time_rcd_builder)
+            self.assertIs(load_target_free_setup_entrypoint("TSPulse"), tspulse_builder)
+            self.assertIsNone(load_target_free_setup_entrypoint("MWVAR"))
+        self.assertEqual([call.args[0] for call in importer.call_args_list], list(modules))
+
+    def test_tier3_honors_injected_legacy_entrypoint(self):
+        sessions = (
+            numpy.zeros((12, 2), dtype=float),
+            numpy.ones((12, 2), dtype=float),
+        )
+        for model in ("TimeRCD", "TSPulse"):
+            injected_calls = []
+
+            def injected_entrypoint(session, **arguments):
+                injected_calls.append((numpy.array(session, copy=True), arguments))
+                return _score_output(session)
+
+            with self.subTest(model=model), patch(
+                "src.common.run_registered_model.load_target_free_setup_entrypoint",
+                side_effect=AssertionError("prepared builder must not load"),
+            ):
+                result = execute_registered_model(
+                    self.specs[model], test_sessions=sessions, device="cpu",
+                    entrypoint=injected_entrypoint,
+                )
+            self.assertEqual(len(injected_calls), 2)
+            self.assertEqual(len(result["test_outputs"]), 2)
 
     def test_rejects_forged_specs_before_seed_data_or_injected_code(self):
         base = self.specs["MWVAR"]
@@ -193,7 +309,7 @@ class TestRegisteredExecutor(unittest.TestCase):
                 )
         self.assertEqual(calls, [])
 
-    def test_ratio_prefix_and_tier2_scaler_depend_only_on_fit(self):
+    def test_paano_receives_raw_prefix_and_native_revin_input(self):
         base = numpy.column_stack((numpy.arange(500), numpy.arange(500) + 100)).astype(float)
         changed = base.copy()
         changed[25:] = 1e12
@@ -210,12 +326,12 @@ class TestRegisteredExecutor(unittest.TestCase):
 
         for adapter, result in runs:
             self.assertEqual(result["split"]["available_range"], (0, 25))
-            self.assertEqual(result["split"]["fit_range"], (0, 20))
-            self.assertEqual(result["split"]["validation_range"], (20, 25))
-            self.assertEqual(result["scaler_state"]["data_min"], [0.0, 100.0])
-            self.assertEqual(result["scaler_state"]["data_max"], [19.0, 119.0])
-            self.assertGreater(adapter.score_calls[0][0, 0], 1.0)
-            self.assertGreater(adapter.score_calls[1][0, 0], 1.0)
+            self.assertEqual(result["split"]["fit_range"], (0, 25))
+            self.assertEqual(result["split"]["validation_range"], (25, 25))
+            self.assertIsNone(result["scaler_state"])
+            numpy.testing.assert_array_equal(adapter.fit_calls[0][0], base[:25])
+            numpy.testing.assert_array_equal(adapter.score_calls[0], test)
+            self.assertEqual(len(adapter.score_calls), 1)
         numpy.testing.assert_array_equal(runs[0][0].fit_calls[0][0], runs[1][0].fit_calls[0][0])
         self.assertEqual(runs[0][1]["scaler_state"], runs[1][1]["scaler_state"])
 
@@ -224,14 +340,16 @@ class TestRegisteredExecutor(unittest.TestCase):
         test = normal[:120]
         adapter = _RecordingAdapter()
 
-        result = execute_registered_model(
-            self.specs["PCA_LEGACY"], normal_training=normal,
-            test_sessions=(test,), device="cpu",
-            entrypoint=lambda **arguments: adapter,
-        )
+        # 과거 prefix-fit adapter 계약만 검증하며 현행 registry 승인은 별도 검증한다.
+        with patch("src.common.run_registered_model.validate_registered_spec"):
+            result = execute_registered_model(
+                _legacy_execution_spec(self.specs["PCA_LEGACY"]), normal_training=normal,
+                test_sessions=(test,), device="cpu",
+                entrypoint=lambda **arguments: adapter,
+            )
 
-        numpy.testing.assert_array_equal(adapter.fit_calls[0][0], normal[:20])
-        numpy.testing.assert_array_equal(adapter.score_calls[0], normal[20:25])
+        numpy.testing.assert_array_equal(adapter.fit_calls[0][0], normal[:25])
+        numpy.testing.assert_array_equal(adapter.score_calls[0], test)
         self.assertIsNone(result["scaler_state"])
         self.assertIsNone(result["training_log"])
 
@@ -246,45 +364,245 @@ class TestRegisteredExecutor(unittest.TestCase):
             entrypoint=lambda **arguments: paano,
         )
         self.assertEqual(len(paano.fit_calls[0]), 1)
-        self.assertEqual(len(paano.score_calls), 2)
+        self.assertEqual(len(paano.score_calls), 1)
 
-        for model in ("ALoRa", "GDN"):
+        for model in ("GDN",):
             calls = []
 
             def session_runner(fit_sessions, validation_sessions, test_sessions, **arguments):
                 calls.append((fit_sessions, validation_sessions, test_sessions, arguments))
                 return {
                     "checkpoint": {"state": model},
-                    "validation_outputs": (_score_output(validation_sessions[0]),),
+                    "validation_outputs": (),
+                    "calibration_outputs": tuple(_score_output(values) for values in fit_sessions),
                     "test_outputs": tuple(_score_output(values) for values in test_sessions),
                     "training_log": {"optimizer_updates": 1},
                     "timing": {
+                        "model_setup_seconds": 0.4,
                         "training_seconds": 0.1,
-                        "validation_inference_seconds": 0.1,
+                        "validation_inference_seconds": 0.0,
+                        "calibration_inference_seconds": 0.1,
                         "test_inference_seconds": 0.1,
                     },
                 }
 
-            with self.subTest(model=model):
+            with self.subTest(model=model), patch("src.common.run_registered_model.validate_registered_spec"):
                 result = execute_registered_model(
-                    self.specs[model], normal_training=normal,
+                    _legacy_execution_spec(self.specs[model]), normal_training=normal,
                     test_sessions=(test,), device="cpu", entrypoint=session_runner,
                 )
                 self.assertEqual(len(calls), 1)
                 self.assertEqual(len(calls[0][0]), 1)
-                self.assertEqual(len(calls[0][1]), 1)
+                self.assertEqual(len(calls[0][1]), 0)
                 self.assertEqual(len(calls[0][2]), 1)
-                numpy.testing.assert_allclose(
-                    calls[0][2][0], (test - numpy.array([0.0, 1.0])) / 38.0,
-                )
+                expected = (test - numpy.array([0.0, 1.0])) / 48.0
+                numpy.testing.assert_allclose(calls[0][2][0], expected)
                 self.assertEqual(result["training_log"]["optimizer_updates"], 1)
+                self.assertEqual(result["timing"]["model_setup_seconds"], 0.4)
+
+    def test_training_callback_preserves_common_evidence_before_scoring_failure(self):
+        normal = numpy.arange(500 * 2, dtype=float).reshape(500, 2)
+        test = numpy.zeros((20, 2))
+        for model in ("PaAno", "GDN"):
+            for failure in ("scoring failed", "persistence failed"):
+                events = []
+                captured = []
+                training_log = {"optimizer_updates": 2, "loss_history": [{"loss": 1.0}]}
+
+                def persist_training(partial):
+                    events.append("persist")
+                    captured.append(partial)
+                    if failure == "persistence failed":
+                        raise OSError(failure)
+
+                def fail_scoring(*args, **kwargs):
+                    events.append("score")
+                    raise OSError("scoring failed")
+
+                class TrainedAdapter(_RecordingAdapter):
+                    def fit(self, *values):
+                        events.append("fit")
+                        return training_log
+
+                    score = staticmethod(fail_scoring)
+
+                def session_runner(fit_sessions, validation_sessions, test_sessions, **arguments):
+                    events.extend(("fit", "sync"))
+                    arguments["on_training_complete"]({
+                        "checkpoint": {"state": "sealed"}, "training_log": training_log,
+                        "timing": {"model_setup_seconds": 0.4, "training_seconds": 1.0},
+                        "training_protocol": {"training_scope": "current_prefix_training_windows"},
+                    })
+                    fail_scoring()
+
+                entrypoint = session_runner if model == "GDN" else lambda **arguments: TrainedAdapter()
+                with self.subTest(model=model, failure=failure), patch(
+                    "src.common.run_registered_model._synchronize_cuda",
+                    side_effect=lambda device: events.append("sync"),
+                ), patch(
+                    "src.common.run_registered_model.time.perf_counter", side_effect=map(float, range(20)),
+                ):
+                    with self.assertRaisesRegex(OSError, failure):
+                        execute_registered_model(
+                            self.specs[model], normal_training=normal, test_sessions=(test,),
+                            device="cpu", entrypoint=entrypoint, on_training_complete=persist_training,
+                        )
+                self.assertEqual(events[-2:] if failure == "scoring failed" else events[-1:],
+                                 ["persist", "score"] if failure == "scoring failed" else ["persist"])
+                self.assertEqual(events[events.index("persist") - 2:events.index("persist")], ["fit", "sync"])
+                self.assertEqual(len(captured), 1)
+                partial = captured[0]
+                self.assertEqual(partial["checkpoint"], {"state": "sealed"})
+                self.assertEqual(partial["training_log"], training_log)
+                self.assertEqual(partial["timing"]["training_seconds"], 1.0)
+                self.assertEqual(partial["timing"]["test_inference_seconds"], 0.0)
+                self.assertEqual(partial["test_outputs"], ())
+                self.assertEqual(partial["validation_outputs"], ())
+                self.assertEqual(partial["split"]["fit_range"], (0, 25))
+                self.assertEqual(partial["seed_state"]["seed"], self.specs[model]["seed"])
+                self.assertEqual(partial["config_id"], self.specs[model]["config_id"])
+                self.assertEqual(partial["scaler_state"] is None, model == "PaAno")
+                self.assertNotIn("on_training_complete", partial["effective_execution"]["entrypoint_arguments"])
+                self.assertNotIn("input_column", partial)
+
+    def test_tier2_runner_synchronizes_before_closing_each_cuda_phase(self):
+        class FakeModel:
+            def state_dict(self):
+                return {}
+
+        sessions = (numpy.zeros((4, 2), dtype=float),)
+        targets = (
+            (
+                "src.models.tier2.gdn_official.adapter", "run_gdn_sessions",
+                "score_gdn_sessions",
+                {
+                    "embedding_dimension": 2, "hidden_dimension": 2,
+                    "rho": 0.5, "device": "cpu",
+                },
+            ),
+        )
+        for module_name, runner_name, scorer_name, arguments in targets:
+            module = real_import_module(module_name)
+            events = []
+
+            def trainer(*args, **kwargs):
+                events.append("training")
+                return FakeModel(), None, {"topk": 1}
+
+            def scorer(*args, **kwargs):
+                events.append("validation" if "validation" not in events else "test")
+                return ()
+
+            with self.subTest(runner=runner_name), patch.object(
+                module, scorer_name, side_effect=scorer,
+            ), patch.object(
+                module, "_synchronize_cuda",
+                side_effect=lambda device: events.append(("sync", device)),
+                create=True,
+            ), patch.object(
+                module.time, "perf_counter",
+                side_effect=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0),
+            ):
+                result = getattr(module, runner_name)(
+                    sessions, sessions, sessions, trainer=trainer, **arguments,
+                )
+
+            self.assertEqual(events, [
+                "training", ("sync", "cpu"),
+                "validation", ("sync", "cpu"),
+                "test", ("sync", "cpu"),
+            ])
+            self.assertEqual(result["timing"]["training_seconds"], 1.0)
+            self.assertEqual(result["timing"]["validation_inference_seconds"], 1.0)
+            self.assertEqual(result["timing"]["test_inference_seconds"], 1.0)
+
+    def test_tier2_runners_time_model_construction_as_setup(self):
+        class FakeModel:
+            def state_dict(self):
+                return {}
+
+        sessions = (numpy.zeros((4, 2), dtype=float),)
+        targets = (
+            (
+                "src.models.tier2.gdn_official.adapter", "run_gdn_sessions",
+                "build_gdn_model", "train_gdn", "score_gdn_sessions",
+                {
+                    "embedding_dimension": 2, "hidden_dimension": 2,
+                    "rho": 0.5, "device": "cpu",
+                },
+            ),
+        )
+        for module_name, runner_name, builder_name, trainer_name, scorer_name, arguments in targets:
+            module = real_import_module(module_name)
+            events = []
+
+            def builder(*args, **kwargs):
+                events.append("construction")
+                return FakeModel(), "edge", 1
+
+            def trainer(*args, **kwargs):
+                events.append("optimization")
+                self.assertIsInstance(kwargs["model"], FakeModel)
+                return kwargs["model"], kwargs["edge_index"], {"topk": kwargs["topk"]}
+
+            with self.subTest(runner=runner_name), patch.object(
+                module, builder_name, side_effect=builder,
+            ), patch.object(
+                module, trainer_name, side_effect=trainer,
+            ), patch.object(
+                module, scorer_name, return_value=(),
+            ), patch.object(
+                module, "_synchronize_cuda",
+                side_effect=lambda device: events.append(("sync", device)),
+            ), patch.object(
+                module.time, "perf_counter",
+                side_effect=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
+            ):
+                result = getattr(module, runner_name)(
+                    sessions, sessions, sessions, trainer=None, **arguments,
+                )
+
+            self.assertEqual(events[:4], [
+                "construction", ("sync", "cpu"),
+                "optimization", ("sync", "cpu"),
+            ])
+            self.assertEqual(result["timing"]["model_setup_seconds"], 1.0)
+            self.assertEqual(result["timing"]["training_seconds"], 1.0)
+
+    def test_adapter_prepare_hook_runs_inside_model_setup_phase(self):
+        events = []
+
+        class PreparedAdapter(_RecordingAdapter):
+            def prepare_model(self, channel_count):
+                events.append(("construction", channel_count))
+
+            def fit(self, *values):
+                events.append("optimization")
+                return super().fit(*values)
+
+        adapter = PreparedAdapter()
+        normal = numpy.arange(500 * 2, dtype=float).reshape(500, 2)
+        test = numpy.arange(40, dtype=float).reshape(20, 2)
+        with patch("src.common.run_registered_model.validate_registered_spec"), patch(
+            "src.common.run_registered_model.time.perf_counter",
+            side_effect=map(float, range(10)),
+        ):
+            result = execute_registered_model(
+                _legacy_execution_spec(self.specs["PaAno"]), normal_training=normal,
+                test_sessions=(test,), device="cpu",
+                entrypoint=lambda **arguments: adapter,
+            )
+
+        self.assertEqual(events[:2], [("construction", 2), "optimization"])
+        self.assertEqual(result["timing"]["model_setup_seconds"], 1.0)
+        self.assertEqual(result["timing"]["training_seconds"], 1.0)
 
     def test_result_contains_complete_frozen_identity_and_timing(self):
         spec = self.specs["MWVAR"]
         result = execute_registered_model(
             spec, normal_training=_PoisonTraining(),
             test_sessions=(numpy.zeros((100, 2)),), device="cpu",
-            entrypoint=lambda session: _score_output(session),
+            entrypoint=lambda session, **arguments: _score_output(session),
         )
         required = {
             "model", "config_id", "config_registry_sha256", "source_commit",
@@ -298,15 +616,16 @@ class TestRegisteredExecutor(unittest.TestCase):
         self.assertEqual(result["preprocess_recipe"], spec["preprocess_recipe"])
         self.assertEqual(result["common_recipe"], spec["common_recipe"])
         self.assertEqual(set(result["timing"]), {
-            "split_preprocess_seconds", "training_seconds",
-            "validation_inference_seconds", "test_inference_seconds", "accelerator",
+            "split_preprocess_seconds", "model_setup_seconds", "training_seconds",
+            "test_inference_seconds", "accelerator",
+            "calibration_inference_seconds",
         })
 
     def test_public_executor_and_entrypoint_receive_no_labels(self):
         self.assertNotIn("labels", inspect.signature(execute_registered_model).parameters)
         received = []
 
-        def scorer(session):
+        def scorer(session, **arguments):
             received.append(session)
             return _score_output(session)
 

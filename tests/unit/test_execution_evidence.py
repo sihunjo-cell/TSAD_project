@@ -35,6 +35,7 @@ VALID_EVIDENCE = {
     }],
     "timing": {
         "split_preprocess_seconds": 0.1,
+        "model_setup_seconds": 0.0,
         "training_seconds": 0.2,
         "validation_inference_seconds": 0.3,
         "test_inference_seconds": 0.4,
@@ -138,6 +139,9 @@ class TestValidateExecutionEvidence(unittest.TestCase):
 
     def test_rejects_timing_field_drift_nonfinite_values_and_wrong_sum(self):
         cases = []
+        missing_setup = deepcopy(VALID_EVIDENCE)
+        missing_setup["timing"].pop("model_setup_seconds")
+        cases.append(missing_setup)
         missing = deepcopy(VALID_EVIDENCE)
         missing["timing"].pop("training_seconds")
         cases.append(missing)
@@ -161,6 +165,20 @@ class TestValidateExecutionEvidence(unittest.TestCase):
             with self.subTest(index=index):
                 with self.assertRaises(ValueError):
                     validate_execution_evidence(values)
+
+    def test_runtime_includes_model_setup(self):
+        with_setup = deepcopy(VALID_EVIDENCE)
+        with_setup["timing"]["model_setup_seconds"] = 0.5
+        with_setup["runtime_seconds"] = 1.5
+        self.assertEqual(
+            validate_execution_evidence(with_setup)["runtime_seconds"],
+            1.5,
+        )
+
+        old_four_field_sum = deepcopy(with_setup)
+        old_four_field_sum["runtime_seconds"] = 1.0
+        with self.assertRaises(ValueError):
+            validate_execution_evidence(old_four_field_sum)
 
     def test_returns_canonical_runtime_and_normalizes_fsum_overflow(self):
         within_tolerance = deepcopy(VALID_EVIDENCE)

@@ -39,6 +39,13 @@ def file_sha256(path) -> str:
     return digest.hexdigest()
 
 
+def sealed_crlf_text_sha256(path) -> str:
+    """체크아웃 줄바꿈과 무관하게 기존 Windows 텍스트 봉인을 검증한다."""
+    serialized = Path(path).read_bytes()
+    normalized = serialized.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(normalized.replace(b"\n", b"\r\n")).hexdigest()
+
+
 def validate_execution_identity(values: Mapping) -> dict:
     """누락과 development의 유효한 null을 구분해 네 필드만 반환한다."""
     if not isinstance(values, Mapping):

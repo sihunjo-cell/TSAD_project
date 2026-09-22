@@ -14,11 +14,10 @@ UPSTREAM_SOURCE_COMMITS = {
         "dcbbd9fbeaabfb27ad084ffa4351a2418ea1dab9"
     ),
     "jinnnju/PaAno": "d4c67116190efa4592dc6a8a157ced0def68b6af",
-    "CharisShimillas/ALoRa": "97dcc4a337710e6dc72c1a67893717c9538bae1a",
     "d-ailin/GDN": "9853899da860682669a134e4af315d036aab4eca",
     "thu-sail-lab/Time-RCD": "372bb980426b2f67007311c6f3165ab789c79bef",
-    "ibm-granite/granite-tsfm": "9739fa59b61bd9f15cbfb06e5dc3dab28c72ee8d",
-    "TheDatumOrg/TSB-AD": "e0975a5f7d3e65ab77e9fab24d1b5b51acda8f48",
+    "ibm-granite/granite-tsfm": "fe7a35697723e2a2f5246ae979474bfc554e26c0",
+    "TheDatumOrg/TSB-AD": "6beac72e11d1155ade40870492c00d0d1cfdcaaf",
 }
 
 LOCAL_MODEL_FILES = (
@@ -27,12 +26,12 @@ LOCAL_MODEL_FILES = (
     "src/common/save_model_artifacts.py",
     "src/data_split/split_ratio_prefix.py",
     "src/models/tier1/mwvar.py",
+    "src/models/tier1/one_liner_ensemble.py",
+    "src/models/tier1/sqdiff.py",
     "src/models/tier1/sqdiff_last3.py",
     "src/models/tier1/pca_legacy.py",
     "src/models/tier2/paano/official.py",
     "src/models/tier2/paano/adapter.py",
-    "src/models/tier2/alora/official.py",
-    "src/models/tier2/alora/adapter.py",
     "src/models/tier2/gdn_official/official.py",
     "src/models/tier2/gdn_official/adapter.py",
     "src/models/tier3/time_rcd.py",
@@ -105,38 +104,50 @@ def verify_source_identity_unchanged(expected_identity: dict, project_path) -> N
 
 def verify_runtime_versions(environment: dict) -> dict[str, str]:
     actual_versions = {"python": platform.python_version()}
-    if actual_versions["python"] != environment["python"]:
-        raise RuntimeError(
-            f"python version이 고정값과 다르다: "
-            f"{actual_versions['python']} != {environment['python']}"
+    errors = []
+    supported_python = environment["python"]
+    if isinstance(supported_python, str):
+        supported_python = [supported_python]
+    if not any(
+        actual_versions["python"] == version or actual_versions["python"].startswith(version + ".")
+        for version in supported_python
+    ):
+        errors.append(
+            f"python version이 지원 범위 밖이다: "
+            f"{actual_versions['python']} (허용: {', '.join(supported_python)})"
         )
     for distribution, expected in environment["packages"].items():
         try:
             actual = metadata.version(distribution)
-        except metadata.PackageNotFoundError as error:
-            raise RuntimeError(f"고정 package가 설치되지 않았다: {distribution}") from error
+        except metadata.PackageNotFoundError:
+            errors.append(f"고정 package가 설치되지 않았다: {distribution}")
+            continue
         comparable = actual.split("+", 1)[0] if distribution == "torch" else actual
         if comparable != expected:
-            raise RuntimeError(
+            errors.append(
                 f"{distribution} version이 고정값과 다르다: {actual} != {expected}"
             )
         actual_versions[distribution] = actual
     for distribution, expected_source in environment.get("sources", {}).items():
         expected_url, separator, expected_commit = expected_source.removeprefix("git+").rpartition("@")
         if not separator or not expected_url or not expected_commit:
-            raise RuntimeError(f"고정 package 설치 원본 형식이 잘못됐다: {distribution}")
+            errors.append(f"고정 package 설치 원본 형식이 잘못됐다: {distribution}")
+            continue
         try:
             direct_url = json.loads(
                 metadata.distribution(distribution).read_text("direct_url.json") or ""
             )
             actual_url = direct_url["url"]
             actual_commit = direct_url["vcs_info"]["commit_id"]
-        except (json.JSONDecodeError, KeyError, TypeError) as error:
-            raise RuntimeError(f"고정 package 설치 원본을 읽지 못했다: {distribution}") from error
+        except (metadata.PackageNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+            errors.append(f"고정 package 설치 원본을 읽지 못했다: {distribution}")
+            continue
         if (actual_url, actual_commit) != (expected_url, expected_commit):
-            raise RuntimeError(
+            errors.append(
                 f"{distribution} 설치 원본이 고정값과 다르다: "
                 f"{actual_url}@{actual_commit} != {expected_url}@{expected_commit}"
             )
         actual_versions[f"{distribution}_source"] = f"{actual_url}@{actual_commit}"
+    if errors:
+        raise RuntimeError("실행 환경을 맞춰야 한다:\n- " + "\n- ".join(errors))
     return actual_versions

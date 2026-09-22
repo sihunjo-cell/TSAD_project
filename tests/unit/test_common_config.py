@@ -22,7 +22,7 @@ class TestExperimentConfig(unittest.TestCase):
         expected = (5, 10, 20, 40, 60, 80, 100)
         self.assertEqual(load_dataset_ratios("GHL"), expected)
         self.assertEqual(load_dataset_ratios("HAI"), expected)
-        self.assertEqual(load_validation_fraction(), 0.2)
+        self.assertEqual(load_validation_fraction(), 0.0)
 
     def test_rejects_ratio_or_validation_drift(self):
         with TemporaryDirectory() as directory:
@@ -51,10 +51,14 @@ class TestExperimentConfig(unittest.TestCase):
             (config_directory / "scoring_pipeline.yaml").read_text(encoding="utf-8")
         )
         recipe = load_model_registry()["common_recipe"]
-        self.assertEqual(recipe["input_dispatch"], "registered_executor_v1")
+        self.assertEqual(recipe["input_dispatch"], preprocessing["common"]["input_dispatch"])
+        self.assertEqual(recipe["methodology_revision"], "paper_tuning_v4")
+        self.assertEqual(recipe["methodology_revision"], scoring["methodology_revision"])
         self.assertEqual(recipe["input_scaling"], preprocessing["common"]["input_scaling"])
         self.assertEqual(recipe["score_calibration"], {
-            "fit_validation": "validation_median_iqr",
+            "fit_validation": "model_native",
+            "full_prefix_scalar": "model_native",
+            "full_prefix_channels": "model_native",
             "target_free": scoring["normalization"]["target_free_method"],
             "epsilon": scoring["normalization"]["epsilon"],
         })

@@ -2,8 +2,10 @@
 AGENTS.md
 CLAUDE.md
 *.local.md
-docs/superpowers/
+/docs/
 dummy/
+.runtime/
+.superpowers/
 
 # 로컬 원본 데이터: 저장소 밖에 두고 경로·SHA-256·분석 결과만 추적한다.
 TSB-AD-M/
@@ -11,13 +13,24 @@ TSB-AD-M-other-datasets/
 HAI-23.05/
 
 # 재생성 가능한 실행 산출물
+experiments/tuning/scores/
+experiments/tuning/logs/
+experiments/tuning/results/
+experiments/tuning/snapshots/*
+!experiments/tuning/snapshots/dev18_ell_max.json
 experiments/01_ghl_main/scores/**/*.npy
 experiments/01_ghl_main/scores/**/*.json
 experiments/01_ghl_main/scores/**/*.npz
+experiments/01_ghl_main/scores/**/.*.npy.tmp
+experiments/01_ghl_main/scores/**/.*.npz.tmp
+experiments/01_ghl_main/scores/**/.*.json.tmp
 experiments/01_ghl_main/scores/**/*.ckpt
 experiments/01_ghl_main/scores/**/COMPLETE
 experiments/02_hai_extension/scores/**/*.npy
 experiments/02_hai_extension/scores/**/*.json
+experiments/02_hai_extension/scores/**/.*.npy.tmp
+experiments/02_hai_extension/scores/**/.*.npz.tmp
+experiments/02_hai_extension/scores/**/.*.json.tmp
 experiments/02_hai_extension/scores/**/*.ckpt
 experiments/02_hai_extension/scores/**/COMPLETE
 experiments/01_ghl_main/logs/*
@@ -26,8 +39,6 @@ experiments/02_hai_extension/logs/*
 !experiments/02_hai_extension/logs/.gitkeep
 experiments/01_ghl_main/snapshots/*
 !experiments/01_ghl_main/snapshots/.gitkeep
-!experiments/01_ghl_main/snapshots/dev18_selection/
-!experiments/01_ghl_main/snapshots/dev18_selection/**
 experiments/02_hai_extension/snapshots/*
 !experiments/02_hai_extension/snapshots/.gitkeep
 experiments/**/training/
@@ -37,3 +48,8 @@ lightning_logs/
 # 파이썬
 __pycache__/
 *.pyc
+
+
+experiments/checks/reference_code/active_models/full_prefix_v2/
+
+experiments/02_hai_extension/scores/**/*.npz

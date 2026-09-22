@@ -1,5 +1,6 @@
 # 점수 후처리 파이프라인. 근거는 docs/lead/decisions.md에 정리했다.
-# GraGOD post_process_scores 경로 사용 금지 — 후처리는 전부 우리 코드 소유 (AGENTS.md 근거 규율).
+# 등록 모델은 공식 native 후처리를 마친 점수를 반환한다.
+methodology_revision: paper_tuning_v4
 
 error:
   type: absolute  # legacy channel-error wrapper 전용
@@ -7,19 +8,17 @@ error:
   gragod_post_process_scores: false  # 정규화 전 절대 오차를 받는다.
 
 normalization:
-  # PCA_LEGACY와 Tier 2만 현재 q-prefix 안의 validation raw score로 추정한다.
-  # training-free Tier 1과 strict zero-shot에는 target calibration을 적용하지 않는다.
-  method: median_iqr
-  estimation_split: current_prefix_validation
-  target_free_method: none
+  method: model_native
+  estimation_split: model_declared
+  target_free_method: model_native
   epsilon: 0.01  # d-ailin 방식의 1e-2를 쓴다.
-  author_original_appendix: true  # 학습형 모델의 testnorm 민감도에만 한정한다.
+  author_original_appendix: false
 
 smoothing:
-  implementation: ours  # GraGOD smooth_scores는 feature 축에 작용하므로 쓰지 않는다.
-  kind: trailing_mean  # d-ailin 방식
-  window: 4  # 후행 4-창 (before_num=3)
-  boundary: first_three_timesteps_zero
+  implementation: model_native
+  kind: model_native
+  window: 0  # 공통 저장기는 추가 smoothing을 하지 않는다.
+  boundary: model_native
   axis: time
   per_channel: true
 
@@ -27,8 +26,8 @@ aggregation:
   mode: max  # 2차원 채널 점수에만 적용한다. scalar는 그대로 저장한다.
 
 pipeline_order:
-  raw: [normalize, aggregate_max]
-  smoothed: [normalize, smooth_per_channel, aggregate_max]
+  raw: [model_native, aggregate_max]
+  smoothed: [identical_to_raw_native_score]
 
 evaluation:
   main_metric: vus_pr

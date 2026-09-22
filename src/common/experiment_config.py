@@ -40,6 +40,6 @@ def load_validation_fraction(repository_root=REPOSITORY_ROOT) -> float:
         fraction = preprocessing["common"]["validation_fraction"]
     except (KeyError, TypeError) as error:
         raise ValueError("고정 validation 비율 설정이 없다") from error
-    if not isinstance(fraction, (int, float)) or not 0 < fraction < 1:
-        raise ValueError(f"validation_fraction은 0과 1 사이여야 한다: {fraction!r}")
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)) or not 0 <= fraction < 1:
+        raise ValueError(f"validation_fraction은 0 이상 1 미만이어야 한다: {fraction!r}")
     return float(fraction)
