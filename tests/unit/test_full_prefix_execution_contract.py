@@ -7,8 +7,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tests.ghl_main import run_dev18_tuning as tuning
-from tests.ghl_main.run_dev18_tuning import _validate_primary_manifest_rows
+from tests.tuning import run_dev18_tuning as tuning
+from tests.tuning.run_dev18_tuning import _validate_primary_manifest_rows
 
 
 class FullPrefixExecutionContractTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class FullPrefixExecutionContractTests(unittest.TestCase):
         budget = {"budget_id": "b2f61f74691c6", "failure_rules": {"maximum_total_attempts": 3}}
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
             root = Path(directory).resolve()
-            histories = root / "experiments/01_ghl_main/logs/run_history/model_attempts"
+            histories = root / "experiments/tuning/logs/run_history/model_attempts"
             histories.mkdir(parents=True)
             preserved = {}
             for attempt in range(3):
@@ -170,7 +170,7 @@ class FullPrefixExecutionContractTests(unittest.TestCase):
                     stack.enter_context(patch.object(tuning, name, return_value=value))
                 stack.enter_context(patch.object(tuning, "_write_run_snapshot", side_effect=write_snapshot))
                 stack.enter_context(patch.object(Path, "write_text", new=fail_training_write))
-                stack.enter_context(patch("tests.ghl_main.record_run_history.save_run_history",
+                stack.enter_context(patch("tests.tuning.record_run_history.save_run_history",
                                           side_effect=fail_history_close))
                 stack.enter_context(patch("tests.ghl_main.run_registered_models.build_output_directory",
                                           return_value=root / "scores"))
@@ -184,7 +184,7 @@ class FullPrefixExecutionContractTests(unittest.TestCase):
                 arguments = {"budget": budget, "device": "cpu", "manifest_path": root / "manifest.csv"}
                 with self.assertRaises(first_error):
                     tuning.execute_panel(**arguments)
-                history_directory = root / "experiments/01_ghl_main/logs/run_history/model_attempts"
+                history_directory = root / "experiments/tuning/logs/run_history/model_attempts"
                 before_restart = {path: path.read_bytes() for path in history_directory.glob("*.json")}
                 if failure.startswith("storage"):
                     self.assertEqual(executions, ["executed"])
@@ -414,7 +414,7 @@ class FullPrefixExecutionContractTests(unittest.TestCase):
             (root / "scores/series_01/run_snapshot.json").write_text(
                 json.dumps({"input_sha": "overwritten"}), encoding="utf-8",
             )
-            history_directory = root / "experiments/01_ghl_main/logs/run_history/model_attempts"
+            history_directory = root / "experiments/tuning/logs/run_history/model_attempts"
             histories = [json.loads(path.read_text(encoding="utf-8"))
                          for path in history_directory.glob("*.json")]
             self.assertEqual(len(histories), 1)
@@ -492,7 +492,7 @@ class FullPrefixExecutionContractTests(unittest.TestCase):
             self.assertFalse(manifest_path.exists())
             self.assertFalse((evidence / "completion.json").exists())
             preserved = {path: path.read_bytes() for path in (score_path, metadata_path, snapshot_path)}
-            histories = list((root / "experiments/01_ghl_main/logs/run_history/model_attempts").glob("*.json"))
+            histories = list((root / "experiments/tuning/logs/run_history/model_attempts").glob("*.json"))
             self.assertEqual(len(histories), 1)
             history_content = histories[0].read_bytes()
             saved_history = json.loads(history_content)

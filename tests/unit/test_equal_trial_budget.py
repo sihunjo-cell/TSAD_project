@@ -8,7 +8,7 @@ from pathlib import Path
 
 from src.common.equal_trial_budget import build_equal_trial_budget, registry_space_sha256
 from src.common.execution_identity import file_sha256
-from tests.ghl_main.build_dev18_budget import _load_current_feasibility
+from tests.tuning.build_dev18_budget import _load_current_feasibility
 
 
 class TestEqualTrialBudget(unittest.TestCase):
@@ -107,7 +107,7 @@ class TestEqualTrialBudget(unittest.TestCase):
                 "inventory_sha256": audit_root / "logs/inventory.csv",
                 "audit_snapshot_sha256": audit_root / "snapshots/audit.json",
                 "ledger_sha256": feasibility_directory / "dev18_feasibility_ledger.csv",
-                "builder_sha256": repository_root / "tests/ghl_main/build_dev18_feasibility.py",
+                "builder_sha256": repository_root / "tests/tuning/build_dev18_feasibility.py",
                 "feasibility_code_sha256": repository_root / "src/common/model_feasibility.py",
                 "split_code_sha256": repository_root / "src/data_split/split_ratio_prefix.py",
                 "data_preprocessing_sha256": repository_root / "configs/data_preprocessing.yaml",

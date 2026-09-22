@@ -15,10 +15,10 @@ import numpy
 from src.common.execution_identity import file_sha256
 from src.common.model_registry import load_model_registry
 from src.data_split.split_ratio_prefix import split_ratio_prefix
-from tests.ghl_main import package_recommendation_handoff as packaging
-from tests.ghl_main import run_dev18_tuning as tuning
-from tests.ghl_main import store_recommendation_evidence as evidence
-from tests.ghl_main.record_run_history import record_run_history
+from tests.tuning import package_recommendation_handoff as packaging
+from tests.tuning import run_dev18_tuning as tuning
+from tests.tuning import store_recommendation_evidence as evidence
+from tests.tuning.record_run_history import record_run_history
 from tests.ghl_main.run_registered_models import build_output_directory
 from tests.unit import test_recommendation_handoff as handoff_fixture
 from tests.unit.test_recommendation_evidence import fixture, loader, write_source
@@ -47,7 +47,7 @@ class RecommendationStorageIntegrationTests(unittest.TestCase):
             report, _ = handoff_fixture.RecommendationHandoffTests().prepare_files(root, model="PaAno")
             result_directory = Path(report["result_directory"])
             snapshot_directory = Path(report["artifacts"]["budget"]["file"]).parent
-            store_directory = result_directory / "recommendation_evidence"
+            store_directory = result_directory
             # 기존 인수 fixture의 DB 자리표시자를 실제 SQLite로 교체한다.
             (store_directory / "recommendation.sqlite3").unlink()
 
@@ -119,9 +119,9 @@ class RecommendationStorageIntegrationTests(unittest.TestCase):
             stack.enter_context(patch.object(tuning, "_require_same_worktree"))
             stack.enter_context(patch("tests.ghl_main.check_registered_outputs.load_model_registry_with_sha",
                                       return_value=(registry, registry_reference["sha256"])))
-            output_directory = build_output_directory(root / "experiments/01_ghl_main", spec)
+            output_directory = build_output_directory(root / "experiments/tuning", spec)
             snapshot = tuning._write_run_snapshot(output_directory / "series_01", spec, inputs, environment)
-            with record_run_history(root / "experiments/01_ghl_main/logs/run_history/model_attempts",
+            with record_run_history(root / "experiments/tuning/logs/run_history/model_attempts",
                                     identity={"kind": "model_attempt", "budget_id": budget["budget_id"],
                                               "model": "PaAno", "config_id": candidate["config_id"],
                                               "series": "01", "ratio": 100, "seed": 0, "attempt": 0}) as history:
@@ -224,7 +224,7 @@ class RecommendationStorageIntegrationTests(unittest.TestCase):
                 self.assertEqual(archive.extractfile(backup_name).read(), Path(recommendation["database"]["file"]).read_bytes())
                 log_name = metadata["training_files"]["training_log"]["file"]
                 self.assertEqual(json.load(archive.extractfile(log_name)), computed["training_log"])
-                ell_name = "experiments/01_ghl_main/snapshots/dev18_selection/dev18_ell_max.json"
+                ell_name = "experiments/tuning/snapshots/dev18_ell_max.json"
                 comparison_name = "experiments/checks/reference_code/vus_pr/official_tsb_ad_comparison.json"
                 self.assertEqual(json.load(archive.extractfile(ell_name)), ell_max)
                 self.assertEqual(json.load(archive.extractfile(comparison_name)), comparison)

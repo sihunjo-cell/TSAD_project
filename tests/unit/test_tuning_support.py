@@ -13,8 +13,8 @@ from src.common.execution_evidence import (
     FULL_PREFIX_MEASUREMENT_PROTOCOL_ID, FULL_PREFIX_STORAGE_SCHEMA_VERSION,
 )
 from src.common.tuning_support import load_tuning_support, resolve_policy_score_variant
-from tests.ghl_main import run_dev18_tuning as tuning
-from tests.ghl_main.build_tuning_support import build_tuning_support
+from tests.tuning import run_dev18_tuning as tuning
+from tests.tuning.build_tuning_support import build_tuning_support
 
 
 def write_json(root, name, payload):
@@ -262,13 +262,13 @@ class TestTuningSupport(unittest.TestCase):
             add_tier_selection(inputs[0])
             metadata_path = root / inputs[-1][0]["metadata_file"]
             metadata_before = metadata_path.read_bytes()
-            with patch("tests.ghl_main.build_tuning_support.load_runtime_references",
+            with patch("tests.tuning.build_tuning_support.load_runtime_references",
                        return_value=references) as load_references, patch(
-                "tests.ghl_main.build_tuning_support.compare_execution_runtime", return_value=comparison,
+                "tests.tuning.build_tuning_support.compare_execution_runtime", return_value=comparison,
             ) as compare:
                 report = build_tuning_support(*inputs)
             load_references.assert_called_once_with(
-                root / "experiments/01_ghl_main/logs/run_history/model_attempts", "budget",
+                root / "experiments/tuning/logs/run_history/model_attempts", "budget",
             )
             compare.assert_called_once_with(
                 json.loads((root / "snapshot_0.json").read_text()), 0.0, references,
@@ -381,7 +381,7 @@ class TestTuningSupport(unittest.TestCase):
 
     def test_serialized_observations_reach_the_candidate_consumer(self):
         from src.common.select_conditional_policy import recommend_conditional_candidates
-        from tests.ghl_main.run_ratio_tuning import _write_json
+        from tests.tuning.run_ratio_tuning import _write_json
 
         with TemporaryDirectory() as directory, patch.object(tuning, "REPOSITORY_ROOT", Path(directory)):
             root = Path(directory)

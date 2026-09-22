@@ -8,8 +8,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from tests.ghl_main import run_dev18_tuning as tuning
-from tests.ghl_main.select_ratio_tuning import select_ratio_tuning_policies
+from tests.tuning import run_dev18_tuning as tuning
+from tests.tuning.select_ratio_tuning import select_ratio_tuning_policies
 
 
 class TestRatioTuningSelection(unittest.TestCase):
@@ -92,8 +92,8 @@ class TestRatioTuningSelection(unittest.TestCase):
 
 class TestRatioTuningReports(unittest.TestCase):
     def test_conditional_report_keeps_separate_panels_and_ratio_winners(self):
-        from tests.ghl_main.build_ratio_tuning_budget import build_full_prefix_budget
-        from tests.ghl_main.run_ratio_tuning import write_full_prefix_reports
+        from tests.tuning.build_ratio_tuning_budget import build_full_prefix_budget
+        from tests.tuning.run_ratio_tuning import write_full_prefix_reports
         from tests.unit.test_ratio_tuning_full_prefix import make_inputs, make_scores
 
         registry, entries, feasibility, summary = make_inputs()

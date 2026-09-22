@@ -3,7 +3,7 @@
 import unittest
 
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
-from tests.ghl_main.select_ratio_tuning import select_ratio_tuning_policies, select_tspulse_official_heads
+from tests.tuning.select_ratio_tuning import select_ratio_tuning_policies, select_tspulse_official_heads
 
 
 class TestTspulseOfficialSelection(unittest.TestCase):

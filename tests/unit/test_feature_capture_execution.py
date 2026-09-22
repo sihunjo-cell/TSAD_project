@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import numpy
 
-from tests.ghl_main import run_dev18_tuning as tuning
+from tests.tuning import run_dev18_tuning as tuning
 
 
 class FeatureCaptureExecutionTests(unittest.TestCase):
@@ -67,7 +67,7 @@ class FeatureCaptureExecutionTests(unittest.TestCase):
                 side_effect=lambda entry, data_root: events.append(("feature", entry["series"])) or inputs,
             ))
             stack.enter_context(patch(
-                "tests.ghl_main.store_recommendation_evidence.open_recommendation_evidence",
+                "tests.tuning.store_recommendation_evidence.open_recommendation_evidence",
                 side_effect=lambda *args, **kwargs: nullcontext(store),
             ))
             command = lambda: tuning.execute_panel(

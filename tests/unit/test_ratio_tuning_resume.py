@@ -5,14 +5,14 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.ghl_main import run_dev18_tuning as tuning
+from tests.tuning import run_dev18_tuning as tuning
 from src.common.load_final_membership import FIELDS, load_final_membership, build_final_execution_union
 from tests.unit.test_final_membership import make_registry, make_membership_rows
 
 
 class TestRatioTuningResume(unittest.TestCase):
     def test_preserved_diagnostic_must_exist_before_resuming(self):
-        from tests.ghl_main.run_ratio_tuning import _validate_preserved_manifest
+        from tests.tuning.run_ratio_tuning import _validate_preserved_manifest
 
         panel = {"model": "TSPulse", "config_id": "c1", "physical_ratio": 100, "seed": 0,
                  "primary_score_variants": ["raw_max"], "diagnostic_score_variants": ["time"]}

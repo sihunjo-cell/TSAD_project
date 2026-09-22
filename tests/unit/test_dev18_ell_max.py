@@ -10,7 +10,7 @@ import numpy
 import pandas
 import yaml
 
-from tests.ghl_main.build_dev18_ell_max import (
+from tests.tuning.build_dev18_ell_max import (
     build_dev18_ell_max,
     first_strict_local_peak,
     summarize_training_periods,

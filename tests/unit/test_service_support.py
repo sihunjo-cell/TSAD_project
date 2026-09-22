@@ -16,7 +16,7 @@ from src.common.tuning_support import summarize_tuning_support
 
 class ServiceSupportTests(unittest.TestCase):
     def test_finish_receipt_binds_both_support_and_selection_json(self):
-        from tests.ghl_main import run_ratio_tuning as runner
+        from tests.tuning import run_ratio_tuning as runner
 
         budget = {"experiment_mode": "full_prefix_v2", "budget_id": "budget",
                   "selection_rule_id": "rule", "series_ids": [], "input_manifest_sha256": "input",
@@ -42,7 +42,7 @@ class ServiceSupportTests(unittest.TestCase):
                 stack.enter_context(patch.object(runner.tuning, name, return_value=value))
             stack.enter_context(patch.object(runner, "select_ratio_tuning_policies", return_value=selection))
             stack.enter_context(patch("src.common.load_final_membership.load_final_membership"))
-            builder = stack.enter_context(patch("tests.ghl_main.build_tuning_support.build_tuning_support",
+            builder = stack.enter_context(patch("tests.tuning.build_tuning_support.build_tuning_support",
                                                 return_value={"points": [], "service_status": "unvalidated"}))
             receipt = runner.finish_ratio_tuning({}, budget, manifest, [],
                                                  {"result": root, "checkpoint": root / "cache",

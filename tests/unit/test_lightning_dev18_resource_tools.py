@@ -1,4 +1,4 @@
-"""Lightning Dev18 자원 점검과 이전 실행 초기화 계약."""
+"""Lightning Dev18 자원 점검 계약."""
 
 import copy
 import json
@@ -20,7 +20,6 @@ from tests.checks.check_dev18_resources import (
     validate_resource_report,
     verify_input_files,
 )
-from tests.checks.reset_lightning_dev18 import reset_previous_run
 
 
 class TestDev18ResourceCheck(unittest.TestCase):
@@ -459,7 +458,7 @@ class TestDev18ResourceCheck(unittest.TestCase):
             root = Path(directory)
             stack.enter_context(patch.object(resources, "REPOSITORY_ROOT", root))
             for target in ("tests.checks.run_lightning_dev18.require_lightning_cuda",
-                           "tests.ghl_main.run_dev18_tuning._require_clean_worktree",
+                           "tests.tuning.run_dev18_tuning._require_clean_worktree",
                            "src.common.set_reproducible_seed.set_reproducible_seed"):
                 stack.enter_context(patch(target))
             stack.enter_context(patch("tests.checks.seal_runtime_environment.collect_runtime_environment_identity",
@@ -791,45 +790,6 @@ class TestDev18ResourceCheck(unittest.TestCase):
                     cuda_device={"name": "Tesla T4", "total_memory_bytes": 16},
                     expected_models={"GDN", "MWVAR"},
                 )
-
-
-class TestResetDev18Run(unittest.TestCase):
-    def test_deletes_only_dev18_run_and_runtime_seal(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            removable = (
-                root / ".runtime" / "runtime.json",
-                root / ".runtime" / ".runtime.json.tmp",
-                root / ".runtime" / "dev18_resource_gate.json",
-                root / ".runtime" / ".dev18_resource_gate.json.tmp",
-                root / ".runtime" / "dev18_checkpoint_smoke"
-                / "time_rcd" / "dev18_checkpoint_smoke.json",
-                root / "experiments" / "01_ghl_main" / "scores" / "dev18" / "score.npy",
-                root / "experiments" / "01_ghl_main" / "logs" / "dev18_score_manifest.csv",
-                root / "experiments" / "01_ghl_main" / "logs" / "dev18_oom_recovery.json",
-                root / "experiments" / "01_ghl_main" / "logs" / "dev18_allocator_recovery.json",
-                root / "experiments" / "01_ghl_main" / "results" / "dev18_tuning" / "table.csv",
-            )
-            preserved = (
-                root / ".runtime" / "lightning_dev18_input.zip",
-                root / "experiments" / "01_ghl_main" / "snapshots"
-                / "dev18_selection" / "dev18_budget_manifest.json",
-                root / "experiments" / "01_ghl_main" / "scores" / "ghl25" / "score.npy",
-            )
-            for path in (*removable, *preserved):
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b"x")
-
-            result = reset_previous_run(root, confirmation="DELETE_DEV18_RUN")
-
-            self.assertTrue(result["deleted"])
-            self.assertTrue(all(not path.exists() for path in removable))
-            self.assertTrue(all(path.exists() for path in preserved))
-
-    def test_rejects_missing_confirmation(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "DELETE_DEV18_RUN"):
-                reset_previous_run(Path(directory), confirmation="yes")
 
 
 if __name__ == "__main__":

@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 from src.common.equal_trial_budget import _canonical_bytes, _score_variants
 from src.common.model_registry import validate_primary_hpo_seal
-from tests.ghl_main.build_ratio_tuning_budget import build_full_prefix_budget
-from tests.ghl_main.select_ratio_tuning import select_ratio_tuning_policies
+from tests.tuning.build_ratio_tuning_budget import build_full_prefix_budget
+from tests.tuning.select_ratio_tuning import select_ratio_tuning_policies
 from tests.unit.test_ratio_tuning_full_prefix import make_inputs, make_scores
 
 
@@ -147,7 +147,7 @@ class TestRatioTuningBudget(unittest.TestCase):
         self.assertEqual(len(selection["tier_adaptive"]), 7)
         for policy in selection["model_ratio"] + selection["tier_adaptive"]:
             self.assertEqual((policy["config_id"], policy["score_variant"]), ("c000000000060", "time"))
-        from tests.ghl_main import run_ratio_tuning as runner
+        from tests.tuning import run_ratio_tuning as runner
 
         figure, axis = MagicMock(), MagicMock()
         with patch.object(runner.tuning, "_write_csv"), patch.object(

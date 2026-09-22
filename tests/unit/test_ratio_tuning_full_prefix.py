@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
-from tests.ghl_main.build_ratio_tuning_budget import build_full_prefix_budget
-from tests.ghl_main.select_ratio_tuning import select_ratio_tuning_policies
+from tests.tuning.build_ratio_tuning_budget import build_full_prefix_budget
+from tests.tuning.select_ratio_tuning import select_ratio_tuning_policies
 
 
 def make_inputs():
@@ -141,7 +141,7 @@ class TestFullPrefixTuning(unittest.TestCase):
         import csv
         import json
 
-        from tests.ghl_main.run_ratio_tuning import write_full_prefix_reports
+        from tests.tuning.run_ratio_tuning import write_full_prefix_reports
 
         for entry in self.entries:
             entry["family"] = "A" if int(entry["series"]) <= 16 else "B"
@@ -210,7 +210,7 @@ class TestFullPrefixTuning(unittest.TestCase):
         self.assertAlmostEqual(fold["holdout_vus_pr"], .1)
 
     def test_partial_manifest_accepts_missing_work_but_rejects_other_identity(self):
-        from tests.ghl_main.run_ratio_tuning import _validate_partial_manifest
+        from tests.tuning.run_ratio_tuning import _validate_partial_manifest
 
         execution = self.budget["execution_panel"][0]
         row = {**execution, "series": execution["series_ids"][0],
@@ -223,7 +223,7 @@ class TestFullPrefixTuning(unittest.TestCase):
 
     def test_finish_resumes_partial_ledger_instead_of_treating_it_as_complete(self):
         from contextlib import ExitStack
-        from tests.ghl_main import run_ratio_tuning as runner
+        from tests.tuning import run_ratio_tuning as runner
 
         partial = [{"evaluator_sha256": "e", "ell_max_id": "l"}]
         manifest = [{"primary_score": "true"}]

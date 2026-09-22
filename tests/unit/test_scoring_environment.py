@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from tests.ghl_main import run_dev18_tuning as tuning
+from tests.tuning import run_dev18_tuning as tuning
 
 
 class TestScoringEnvironment(unittest.TestCase):

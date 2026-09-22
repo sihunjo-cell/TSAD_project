@@ -14,7 +14,7 @@ from src.common.load_final_membership import (
     load_final_membership,
 )
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
-from tests.ghl_main.run_dev18_tuning import build_final_membership_rows
+from tests.tuning.run_dev18_tuning import build_final_membership_rows
 from tests.ghl_main.run_registered_models import build_specs, load_registered_inputs
 
 

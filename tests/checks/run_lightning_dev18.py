@@ -61,7 +61,7 @@ def require_legacy_registry(registry=None) -> None:
 
         registry = load_model_registry()
     if any(model.get("target_use") == "fit_full_prefix" for model in registry["models"].values()):
-        raise RuntimeError("새 full-prefix 실험은 python -m tests.ghl_main.run_ratio_tuning 경로를 사용한다")
+        raise RuntimeError("새 full-prefix 실험은 python -m tests.tuning.run_ratio_tuning 경로를 사용한다")
 
 
 def main() -> None:
@@ -71,7 +71,7 @@ def main() -> None:
         collect_runtime_environment_identity,
         ensure_runtime_snapshot,
     )
-    from tests.ghl_main.run_dev18_tuning import DEFAULT_DATA_ROOT, run_tuning
+    from tests.tuning.run_dev18_tuning import DEFAULT_DATA_ROOT, run_tuning
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)

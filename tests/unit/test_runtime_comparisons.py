@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from tests.ghl_main import compare_execution_runtimes as comparison
+from tests.tuning import compare_execution_runtimes as comparison
 
 
 def reference(name, config, seconds, *, threads=1, model="PCA_LEGACY"):

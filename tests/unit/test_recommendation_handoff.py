@@ -10,19 +10,19 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.common.execution_identity import file_sha256
-from tests.ghl_main import package_recommendation_handoff as packaging
-from tests.ghl_main import run_dev18_tuning as tuning
+from tests.tuning import package_recommendation_handoff as packaging
+from tests.tuning import run_dev18_tuning as tuning
 
 
 def prepare_scoring_files(root, input_manifest_sha256):
     source_root = Path(__file__).resolve().parents[2]
-    for relative in ("src/채점기/vus_pr.py", "tests/ghl_main/build_dev18_ell_max.py"):
+    for relative in ("src/채점기/vus_pr.py", "tests/tuning/build_dev18_ell_max.py"):
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes((source_root / relative).read_bytes())
     ell_max = {
         "series_count": 18, "input_manifest_sha256": input_manifest_sha256,
-        "generator_sha256": file_sha256(root / "tests/ghl_main/build_dev18_ell_max.py"),
+        "generator_sha256": file_sha256(root / "tests/tuning/build_dev18_ell_max.py"),
         "series": [{"series": f"{index:02d}", "l_max_samples": 3} for index in range(1, 19)],
     }
     ell_max["ell_max_id"] = hashlib.sha256(tuning._json(ell_max).encode("utf-8")).hexdigest()
@@ -30,7 +30,7 @@ def prepare_scoring_files(root, input_manifest_sha256):
                   "n_thresholds": 250, "evaluator_sha256": file_sha256(root / "src/채점기/vus_pr.py"),
                   "maximum_absolute_difference": 0.0, "absolute_tolerance": 1e-12}
     for relative, payload in (
-        ("experiments/01_ghl_main/snapshots/dev18_selection/dev18_ell_max.json", ell_max),
+        ("experiments/tuning/snapshots/dev18_ell_max.json", ell_max),
         ("experiments/checks/reference_code/vus_pr/official_tsb_ad_comparison.json", comparison),
     ):
         path = root / relative
@@ -49,7 +49,7 @@ class RecommendationHandoffTests(unittest.TestCase):
                 root = Path(directory).resolve()
                 report, _ = self.prepare_files(root)
                 result = Path(report["result_directory"])
-                training = root / "experiments/01_ghl_main/scores/dev18/tier2/PaAno/config/series_01/training_attempts/failed/training"
+                training = root / "experiments/tuning/scores/dev18/tier2/PaAno/config/series_01/training_attempts/failed/training"
                 training.mkdir(parents=True)
                 files = {}
                 for name, filename, payload in (("checkpoint", "checkpoint.ckpt", b"selected training state"),
@@ -60,7 +60,7 @@ class RecommendationHandoffTests(unittest.TestCase):
                     path.write_bytes(payload)
                     files[name] = {"file": path.relative_to(root).as_posix(), "sha256": file_sha256(path),
                                    "bytes": path.stat().st_size}
-                history = root / "experiments/01_ghl_main/logs/run_history/model_attempts/failed.json"
+                history = root / "experiments/tuning/logs/run_history/model_attempts/failed.json"
                 history.write_text(json.dumps({"identity": {"budget_id": "new", "kind": "model_attempt"},
                     "run_id": "failed", "status": "failed", "model_execution_complete": False,
                     **({"training_complete": {"status": training_status, "files": files}}
@@ -113,9 +113,9 @@ class RecommendationHandoffTests(unittest.TestCase):
                     packaging.package_recommendation_handoff(report)
 
     def prepare_files(self, root, model="PCA_LEGACY"):
-        result = root / "experiments/01_ghl_main/results/dev18_tuning/full_prefix_v2"
-        snapshot = root / "experiments/01_ghl_main/snapshots/dev18_selection/full_prefix_v2"
-        evidence = result / "recommendation_evidence"
+        result = root / "experiments/tuning/results"
+        snapshot = root / "experiments/tuning/snapshots"
+        evidence = result
         variant = "time" if model == "TSPulse" else ""
 
         def write(path, value):
@@ -160,18 +160,18 @@ class RecommendationHandoffTests(unittest.TestCase):
         write(checks / "resource_gate.json", {**resource_identity, "status": "passed", "checked_models": [model],
               "probe_history_directory": str(checks / "resource_probe_history"),
               "results": [{**probe_result, "probe_history": {key: probe[key] for key in ("file", "sha256")}}]})
-        command = write(root / "experiments/01_ghl_main/logs/run_history/commands/command.json",
+        command = write(root / "experiments/tuning/logs/run_history/commands/command.json",
                         {"identity": {"budget_id": "new"}, "status": "complete", "run_id": "command"})
-        attempt = write(root / "experiments/01_ghl_main/logs/run_history/model_attempts/attempt.json",
+        attempt = write(root / "experiments/tuning/logs/run_history/model_attempts/attempt.json",
                         {"identity": {"budget_id": "new"}, "status": "complete", "run_id": "attempt"})
-        unassigned = write(root / "experiments/01_ghl_main/logs/run_history/commands/unassigned.json",
+        unassigned = write(root / "experiments/tuning/logs/run_history/commands/unassigned.json",
                            {"identity": {"budget_id": None, "kind": "tuning_command"},
                             "status": "failed", "run_id": "unassigned"})
         write(result / "tuning_cost_history.json", {"budget_id": "new",
               "command_wall": {"history_files": [command]}, "model_attempt_wall": {"history_files": [attempt]},
               "unassigned_command_wall": {"history_files": [unassigned]}})
         tier = "t3" if model in {"TimeRCD", "TSPulse"} else "t1"
-        model_directory = root / f"experiments/01_ghl_main/scores/dev18/tier{tier[1:]}/{model}/config"
+        model_directory = root / f"experiments/tuning/scores/dev18/tier{tier[1:]}/{model}/config"
         raw = write(model_directory / f"DEV18__01__{model}__{tier}__r005__s0__raw__trainnorm.npy", "raw_score")
         write(model_directory / f"DEV18__01__{model}__{tier}__r005__s0__smoothed__trainnorm.npy", "smoothed_score")
         checkpoint = write(model_directory / "training/checkpoint.ckpt", "trained_parameters")
@@ -195,7 +195,7 @@ class RecommendationHandoffTests(unittest.TestCase):
             "series": 1, "ratio": 5, "seed": 0, "score_variant": variant or None, "channel_count": 0,
             "run_snapshot": run_snapshot, "training_files": {"checkpoint": checkpoint, "scaler_state": scaler},
             "execution_attempt": {"run_id": "attempt", "history_file": attempt["file"]}})
-        manifest = root / "experiments/01_ghl_main/logs/dev18_full_prefix_v2_manifest.csv"
+        manifest = root / "experiments/tuning/logs/dev18_full_prefix_v2_manifest.csv"
         row = {"series": "01", "model": model, "config_id": "config", "physical_ratio": "5", "seed": "0",
                "score_variant": variant, "status": "complete", "budget_id": "new", "score_file": raw["file"],
                "score_sha256": raw["sha256"], "metadata_file": metadata["file"], "metadata_sha256": metadata["sha256"]}
@@ -231,8 +231,8 @@ class RecommendationHandoffTests(unittest.TestCase):
             with tarfile.open(handoff["archive"]["file"]) as archive:
                 names = archive.getnames()
                 self.assertIn("handoff_manifest.json", names)
-                self.assertIn("experiments/01_ghl_main/logs/run_history/commands/unassigned.json", names)
-                for name in ("experiments/01_ghl_main/snapshots/dev18_selection/dev18_ell_max.json",
+                self.assertIn("experiments/tuning/logs/run_history/commands/unassigned.json", names)
+                for name in ("experiments/tuning/snapshots/dev18_ell_max.json",
                              "experiments/checks/reference_code/vus_pr/official_tsb_ad_comparison.json"):
                     self.assertIn(name, names)
                     self.assertEqual(archive.extractfile(name).read(), (root / name).read_bytes())
@@ -251,7 +251,7 @@ class RecommendationHandoffTests(unittest.TestCase):
                 root = Path(directory).resolve()
                 report, _ = self.prepare_files(root)
                 result = Path(report["result_directory"])
-                ell_path = root / "experiments/01_ghl_main/snapshots/dev18_selection/dev18_ell_max.json"
+                ell_path = root / "experiments/tuning/snapshots/dev18_ell_max.json"
                 comparison_path = root / "experiments/checks/reference_code/vus_pr/official_tsb_ad_comparison.json"
                 if failure.startswith("missing"):
                     (ell_path if failure == "missing_ell_max" else comparison_path).unlink()
@@ -361,7 +361,7 @@ class RecommendationHandoffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             report, _ = self.prepare_files(root, model="TSPulse")
-            model_directory = root / "experiments/01_ghl_main/scores/dev18/tier3/TSPulse/config"
+            model_directory = root / "experiments/tuning/scores/dev18/tier3/TSPulse/config"
             snapshot_path = model_directory / "series_01/run_snapshot.json"
             snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
             del snapshot["spec"]["source_checkpoint_sha256"]

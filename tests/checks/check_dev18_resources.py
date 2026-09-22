@@ -195,11 +195,11 @@ def _git_head() -> str:
 
 def _load_resource_budget():
     from src.common.model_registry import load_model_registry, validate_primary_hpo_seal
-    from tests.ghl_main.run_dev18_tuning import DEFAULT_BUDGET_PATH, SNAPSHOT_DIRECTORY, _read_json
+    from tests.tuning.run_dev18_tuning import DEFAULT_BUDGET_PATH, SNAPSHOT_DIRECTORY, _read_json
 
     registry = load_model_registry()
     full_prefix = registry["common_recipe"].get("training_split") == "full_prefix_v2"
-    path = SNAPSHOT_DIRECTORY / "full_prefix_v2/budget.json" if full_prefix else DEFAULT_BUDGET_PATH
+    path = SNAPSHOT_DIRECTORY / "budget.json" if full_prefix else DEFAULT_BUDGET_PATH
     artifact = _read_json(path)
     budget = artifact["budget"] if full_prefix else artifact
     validate_primary_hpo_seal(registry, budget=budget if full_prefix else None)
@@ -208,7 +208,7 @@ def _load_resource_budget():
 
 def _load_plan():
     from src.common.execution_identity import load_input_manifest_role
-    from tests.ghl_main.run_dev18_tuning import (
+    from tests.tuning.run_dev18_tuning import (
         _specs_for_budget,
     )
 
@@ -839,7 +839,7 @@ def validate_resource_report(
 
 def _run_resource_probe(case, command, history_directory, identity):
     from src.common.execution_identity import file_sha256
-    from tests.ghl_main.record_run_history import (
+    from tests.tuning.record_run_history import (
         _load_histories, record_run_history, save_run_history,
     )
 
@@ -891,7 +891,7 @@ def run_resource_check(
     from tests.checks.run_lightning_dev18 import require_lightning_cuda
     from tests.checks.seal_runtime_environment import collect_runtime_environment_identity
     from src.common.set_reproducible_seed import set_reproducible_seed
-    from tests.ghl_main.run_dev18_tuning import _require_clean_worktree
+    from tests.tuning.run_dev18_tuning import _require_clean_worktree
 
     require_lightning_cuda()
     _require_clean_worktree()
@@ -915,7 +915,7 @@ def run_resource_check(
         "maximum_memory_percent": maximum_memory_percent,
     }
     history_directory = Path(output_path).parent / "resource_probe_history"
-    disk_observation = observe_disk_space(REPOSITORY_ROOT / "experiments/01_ghl_main")
+    disk_observation = observe_disk_space(REPOSITORY_ROOT / "experiments/tuning")
     results = [verify_input_files(entries, data_root)] + [
         {
             "model": model,
@@ -964,7 +964,7 @@ def run_resource_check(
         ),
         "results": results,
         "next_command": (
-            ("python -m tests.ghl_main.run_ratio_tuning --execute-only" if full_prefix else "python tests/checks/run_lightning_dev18.py")
+            ("python -m tests.tuning.run_ratio_tuning --execute-only" if full_prefix else "python tests/checks/run_lightning_dev18.py")
             if not failed
             else (
                 f"본 튜닝을 시작하지 말고 실패한 정책({failed_policies})의 "
@@ -977,7 +977,7 @@ def run_resource_check(
 
 
 def main() -> None:
-    from tests.ghl_main.run_dev18_tuning import DEFAULT_DATA_ROOT
+    from tests.tuning.run_dev18_tuning import DEFAULT_DATA_ROOT
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)

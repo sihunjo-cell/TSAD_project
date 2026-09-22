@@ -43,10 +43,10 @@ MODEL_DIRECTORIES = {"TimeRCD": "time_rcd", "TSPulse": "tspulse"}
 DEV18_QUICK_SERIES = "03"
 DEV18_QUICK_LENGTH = 1536
 DEV18_BUDGET_PATH = (
-    REPOSITORY_ROOT / "experiments" / "01_ghl_main" / "snapshots"
-    / "dev18_selection" / "dev18_budget_manifest.json"
+    REPOSITORY_ROOT / "experiments" / "tuning" / "snapshots"
+    / "dev18_budget_manifest.json"
 )
-FULL_PREFIX_BUDGET_PATH = DEV18_BUDGET_PATH.parent / "full_prefix_v2" / "budget.json"
+FULL_PREFIX_BUDGET_PATH = DEV18_BUDGET_PATH.parent / "budget.json"
 FULL_PREFIX_OUTPUT_ROOT = OUTPUT_ROOT / "active_models" / "full_prefix_v2" / "checkpoints"
 
 

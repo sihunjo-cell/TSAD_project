@@ -12,8 +12,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.ghl_main import run_dev18_tuning
-from tests.ghl_main.run_dev18_tuning import (
+from tests.tuning import run_dev18_tuning
+from tests.tuning.run_dev18_tuning import (
     _evidence_directory,
     _load_completion_receipt,
     _load_score_manifest,
@@ -669,7 +669,7 @@ class TestDev18Tuning(unittest.TestCase):
                 raise KeyboardInterrupt
 
             with patch(
-                "tests.ghl_main.run_dev18_tuning._write_csv",
+                "tests.tuning.run_dev18_tuning._write_csv",
                 side_effect=interrupt_write,
             ):
                 with self.assertRaises(KeyboardInterrupt):
@@ -1149,7 +1149,7 @@ class TestDev18Tuning(unittest.TestCase):
             self.assertEqual(schema["properties"][field]["minimum"], 0)
 
     def test_direct_file_cli_can_import_project_packages(self):
-        script = Path(__file__).parents[1] / "ghl_main" / "run_dev18_tuning.py"
+        script = Path(__file__).parents[1] / "tuning" / "run_dev18_tuning.py"
         completed = subprocess.run(
             [sys.executable, str(script), "--help"], cwd=script.parents[2],
             capture_output=True, text=True,
@@ -1165,7 +1165,7 @@ def reject_evaluator(name, *args, **kwargs):
         raise RuntimeError('selection import가 VUS evaluator를 읽었다')
     return real_import(name, *args, **kwargs)
 builtins.__import__ = reject_evaluator
-import tests.ghl_main.run_dev18_tuning
+import tests.tuning.run_dev18_tuning
 """
         completed = subprocess.run(
             [sys.executable, "-c", code], cwd=Path(__file__).parents[2],
@@ -1193,7 +1193,7 @@ import tests.ghl_main.run_dev18_tuning
                 "file": snapshot.name,
                 "sha256": hashlib.sha256(snapshot.read_bytes()).hexdigest(),
             }, "training_files": {}}
-            with patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root):
+            with patch("tests.tuning.run_dev18_tuning.REPOSITORY_ROOT", root):
                 _validate_bound_run_files(
                     metadata,
                     expected_project_commit="a" * 40,
@@ -1248,19 +1248,19 @@ import tests.ghl_main.run_dev18_tuning
             "tests/unit/test_lightning_dev18_resource_tools.py",
         })) + "\n"
         with patch(
-            "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
+            "tests.tuning.run_dev18_tuning.subprocess.check_output",
             side_effect=[parent_commit + "\n", changed_files],
         ):
             self.assertEqual(
                 run_dev18_tuning._compatible_resume_source(), source_commit,
             )
         with patch(
-            "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
+            "tests.tuning.run_dev18_tuning.subprocess.check_output",
             return_value="f" * 40 + "\n",
         ):
             self.assertIsNone(run_dev18_tuning._compatible_resume_source())
         with patch(
-            "tests.ghl_main.run_dev18_tuning.subprocess.check_output",
+            "tests.tuning.run_dev18_tuning.subprocess.check_output",
             side_effect=[parent_commit + "\n", changed_files + "unexpected.py\n"],
         ):
             self.assertIsNone(run_dev18_tuning._compatible_resume_source())
@@ -1353,7 +1353,7 @@ import tests.ghl_main.run_dev18_tuning
             "attention_query_chunk_size": 64,
         }
         with tempfile.TemporaryDirectory() as directory, patch(
-            "tests.ghl_main.run_dev18_tuning._git_head", return_value="a" * 40,
+            "tests.tuning.run_dev18_tuning._git_head", return_value="a" * 40,
         ):
             root = Path(directory)
             snapshot_path = _write_run_snapshot(root, spec, inputs, {"device": "cuda"})
@@ -1387,7 +1387,7 @@ import tests.ghl_main.run_dev18_tuning
                 },
                 "training_files": {},
             }
-            with patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root):
+            with patch("tests.tuning.run_dev18_tuning.REPOSITORY_ROOT", root):
                 with self.assertRaisesRegex(ValueError, "execution policy"):
                     _validate_bound_run_files(metadata)
 
@@ -1402,7 +1402,7 @@ import tests.ghl_main.run_dev18_tuning
             "source_ranges": {"test_sessions": ((1, 2),)},
         }
         with tempfile.TemporaryDirectory() as directory, patch(
-            "tests.ghl_main.run_dev18_tuning._git_head", return_value="a" * 40,
+            "tests.tuning.run_dev18_tuning._git_head", return_value="a" * 40,
         ):
             root = Path(directory)
             snapshot_path = _write_run_snapshot(
@@ -1415,7 +1415,7 @@ import tests.ghl_main.run_dev18_tuning
                 },
                 "training_files": {},
             }
-            with patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root):
+            with patch("tests.tuning.run_dev18_tuning.REPOSITORY_ROOT", root):
                 _validate_bound_run_files(metadata, expected_spec=spec)
 
     def test_primary_manifest_must_match_exact_budget_keys(self):
@@ -1673,12 +1673,12 @@ import tests.ghl_main.run_dev18_tuning
             }
             run_dev18_tuning._initialize_score_worker({"01": labels})
             with (
-                patch("tests.ghl_main.run_dev18_tuning.REPOSITORY_ROOT", root),
+                patch("tests.tuning.run_dev18_tuning.REPOSITORY_ROOT", root),
                 patch(
                     "src.채점기.parser.load_and_validate_score",
                     return_value=(scores, info, metadata),
                 ) as loader,
-                patch("tests.ghl_main.run_dev18_tuning.vus_pr", return_value=0.625) as scorer,
+                patch("tests.tuning.run_dev18_tuning.vus_pr", return_value=0.625) as scorer,
             ):
                 first = run_dev18_tuning._score_primary_row(task)
                 second = run_dev18_tuning._score_primary_row(task)
@@ -1706,122 +1706,6 @@ import tests.ghl_main.run_dev18_tuning
 
         self.assertEqual([row["ratio"] for row in rows], [5, 10, 20])
         self.assertEqual([row["vus_pr"] for row in rows], [0.625] * 3)
-
-    def test_selection_only_cli_bypasses_scoring_lock_and_manifest(self):
-        from tests.checks import finish_lightning_dev18
-
-        required = (
-            "model_fixed_policy.csv", "tier_fixed_policy.csv",
-            "ratio_adaptive_selection.csv", "tier_ratio_candidate_audit.csv",
-            "tier_policy_transitions.csv", "final_policy_membership.csv",
-            "selection.png",
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            result_directory = root / "results"
-            result_directory.mkdir()
-            for name in required:
-                (result_directory / name).write_bytes(name.encode("ascii"))
-            ledger_path = root / "dev18_trial_score_ledger.csv"
-            ledger_path.write_text("sealed ledger", encoding="utf-8")
-            selection_result = {
-                "status": "complete", "budget_id": "b5367ad431093",
-                "selection_rule_id": "tier_adaptive_family_lofo_v1",
-                "project_commit": "c" * 40, "ledger_path": str(ledger_path),
-                "ledger_sha256": hashlib.sha256(ledger_path.read_bytes()).hexdigest(),
-                "ledger_rows": 1602, "membership_rows": 294,
-                "final_policy_membership_sha256": hashlib.sha256(
-                    (result_directory / "final_policy_membership.csv").read_bytes()
-                ).hexdigest(),
-                "selected_path": [],
-                "result_rows": {"final_policy_membership.csv": 294},
-                "result_directory": str(result_directory),
-            }
-            lock_directory = root / "must_not_exist"
-            with (
-                patch.object(
-                    sys, "argv",
-                    [
-                        str(Path(finish_lightning_dev18.__file__)),
-                        "--selection-only", "--ledger", str(ledger_path),
-                        "--result-directory", str(result_directory),
-                    ],
-                ),
-                patch.object(
-                    finish_lightning_dev18, "finish_selection_from_ledger",
-                    return_value=selection_result,
-                ) as selector,
-                patch.object(
-                    finish_lightning_dev18, "finish_tuning",
-                    side_effect=AssertionError("selection-only가 기존 채점을 호출했다"),
-                ) as finisher,
-                patch.object(
-                    finish_lightning_dev18, "_load_score_manifest",
-                    side_effect=AssertionError("selection-only가 manifest를 읽었다"),
-                ) as manifest_loader,
-                patch.object(
-                    finish_lightning_dev18, "DEFAULT_VUS_CHECKPOINT_DIRECTORY",
-                    lock_directory,
-                ),
-                patch("builtins.print"),
-            ):
-                finish_lightning_dev18.main()
-
-            selector.assert_called_once_with(
-                ledger_path, result_directory=result_directory,
-            )
-            finisher.assert_not_called()
-            manifest_loader.assert_not_called()
-            self.assertFalse(lock_directory.exists())
-            receipt_path = result_directory / "selection_complete.json"
-            self.assertTrue(receipt_path.is_file())
-            self.assertFalse((result_directory / "finish_complete.json").exists())
-            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-            self.assertEqual(receipt["membership_rows"], 294)
-            self.assertEqual(receipt["expected_result_files"], list(required))
-            self.assertEqual(set(receipt["result_files_sha256"]), set(required))
-            self.assertNotIn("score_manifest_sha256", receipt)
-
-    def test_selection_only_cli_removes_stale_receipt_before_failed_run(self):
-        from tests.checks import finish_lightning_dev18
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            result_directory = root / "results"
-            result_directory.mkdir()
-            receipt_path = result_directory / "selection_complete.json"
-            receipt_path.write_text('{"status":"complete"}\n', encoding="utf-8")
-            preserved_path = result_directory / "model_fixed_policy.csv"
-            preserved_path.write_text("existing output\n", encoding="utf-8")
-            ledger_path = root / "dev18_trial_score_ledger.csv"
-            ledger_path.write_text("invalid ledger\n", encoding="utf-8")
-            with (
-                patch.object(
-                    sys, "argv",
-                    [
-                        str(Path(finish_lightning_dev18.__file__)),
-                        "--selection-only", "--ledger", str(ledger_path),
-                        "--result-directory", str(result_directory),
-                    ],
-                ),
-                patch.object(
-                    finish_lightning_dev18, "finish_selection_from_ledger",
-                    side_effect=ValueError("ledger rejected"),
-                ),
-            ):
-                with self.assertRaisesRegex(ValueError, "ledger rejected"):
-                    finish_lightning_dev18.main()
-
-            self.assertFalse(receipt_path.exists())
-            self.assertEqual(preserved_path.read_text(encoding="utf-8"), "existing output\n")
-
-    def test_cpu_finish_cli_can_import_project_packages(self):
-        script = Path(__file__).parents[1] / "checks" / "finish_lightning_dev18.py"
-        completed = subprocess.run(
-            [sys.executable, str(script), "--help"], cwd=script.parents[2],
-            capture_output=True, text=True,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":

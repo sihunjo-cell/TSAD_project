@@ -14,7 +14,7 @@ from src.common.model_feasibility import (
     summarize_dev18_feasibility,
 )
 from src.common.model_registry import load_model_registry_with_sha
-from tests.ghl_main.build_dev18_feasibility import (
+from tests.tuning.build_dev18_feasibility import (
     _load_approved_inventory,
     build_dev18_feasibility_artifacts,
 )

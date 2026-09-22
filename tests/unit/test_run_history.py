@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from contextlib import ExitStack
 
-from tests.ghl_main.record_run_history import (
+from tests.tuning.record_run_history import (
     preserve_run_receipt,
     record_run_history,
     save_run_history,
@@ -44,7 +44,7 @@ class TestRunHistory(unittest.TestCase):
             self.assertEqual(summarize_pca_compute(directory, "other")["runs"], [])
 
     def test_failed_preflight_is_preserved_before_retry(self):
-        from tests.ghl_main.run_ratio_tuning import _pending_check
+        from tests.tuning.run_ratio_tuning import _pending_check
 
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -70,7 +70,7 @@ class TestRunHistory(unittest.TestCase):
                 pass
 
     def test_preflight_reuses_passed_checks_and_runs_only_missing_checkpoint(self):
-        from tests.ghl_main import run_ratio_tuning as runner
+        from tests.tuning import run_ratio_tuning as runner
         from tests.checks import run_model_smoke, run_checkpoint_smoke, check_dev18_resources
         from tests.checks import run_lightning_dev18
 
@@ -198,7 +198,7 @@ class TestRunHistory(unittest.TestCase):
             self.assertEqual(archived.read_bytes(), previous)
 
     def test_resumed_command_separates_plan_pending_work_and_execution_timing(self):
-        from tests.ghl_main import run_ratio_tuning as runner
+        from tests.tuning import run_ratio_tuning as runner
 
         panel = {"model": "M", "config_id": "c1", "physical_ratio": 5, "seed": 0,
                  "series_ids": ["01", "02"], "primary_score_variants": [""],

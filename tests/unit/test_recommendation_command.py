@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from tests.ghl_main import run_ratio_tuning as runner
+from tests.tuning import run_ratio_tuning as runner
 
 
 class TestRecommendationCommand(unittest.TestCase):
@@ -43,7 +43,7 @@ class TestRecommendationCommand(unittest.TestCase):
             stack.enter_context(patch.object(runner.tuning, "validate_vus_evidence"))
             stack.enter_context(patch.object(runner.tuning, "_validate_ell_max"))
             stack.enter_context(patch(
-                "tests.ghl_main.build_dev18_feasibility._load_approved_inventory",
+                "tests.tuning.build_dev18_feasibility._load_approved_inventory",
                 return_value=(None, None, "i" * 64, None),
             ))
             stack.enter_context(patch("src.common.model_feasibility.build_dev18_feasibility_rows",
@@ -88,7 +88,7 @@ class TestRecommendationCommand(unittest.TestCase):
                 )
 
     def test_command_exports_real_database_and_resumes_without_repeating_models(self):
-        from tests.ghl_main import store_recommendation_evidence as evidence
+        from tests.tuning import store_recommendation_evidence as evidence
         from tests.unit.test_recommendation_evidence import (
             completed_rows, fixture, loader, verified_metadata, write_source,
         )
@@ -190,7 +190,7 @@ class TestRecommendationCommand(unittest.TestCase):
             stack.enter_context(patch.object(runner, "select_ratio_tuning_policies",
                                             return_value={"model_ratio": [], "tier_adaptive": []}))
             stack.enter_context(patch.object(runner, "write_full_prefix_reports", side_effect=write_reports))
-            stack.enter_context(patch("tests.ghl_main.build_tuning_support.build_tuning_support", return_value={}))
+            stack.enter_context(patch("tests.tuning.build_tuning_support.build_tuning_support", return_value={}))
             stack.enter_context(patch("src.common.load_final_membership.load_final_membership"))
             stack.enter_context(patch("src.common.set_reproducible_seed.set_reproducible_seed"))
             stack.enter_context(patch("src.data_split.load_dev18_series.load_dev18_registered_inputs",

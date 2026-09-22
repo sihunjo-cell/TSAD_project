@@ -12,10 +12,10 @@ from src.common.load_final_membership import CONDITIONAL_FIELDS, load_final_memb
 from src.common.model_feasibility import build_dev18_feasibility_rows, summarize_dev18_feasibility
 from src.common.model_registry import load_model_registry_with_sha
 from src.common.select_conditional_policy import recommend_conditional_candidates
-from tests.ghl_main import run_dev18_tuning as tuning
-from tests.ghl_main.build_ratio_tuning_budget import build_full_prefix_budget
+from tests.tuning import run_dev18_tuning as tuning
+from tests.tuning.build_ratio_tuning_budget import build_full_prefix_budget
 from tests.ghl_main.run_registered_models import build_specs
-from tests.ghl_main.select_ratio_tuning import select_ratio_tuning_policies
+from tests.tuning.select_ratio_tuning import select_ratio_tuning_policies
 
 
 class FullPrefixPolicyIntegrationTests(unittest.TestCase):

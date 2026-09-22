@@ -12,7 +12,7 @@ class TestBlasStartup(unittest.TestCase):
         probe = r'''
 import resource
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-from tests.ghl_main import run_ratio_tuning
+from tests.tuning import run_ratio_tuning
 from concurrent.futures import ProcessPoolExecutor
 import numpy
 from sklearn.decomposition import PCA

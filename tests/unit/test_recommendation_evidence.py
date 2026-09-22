@@ -13,7 +13,7 @@ from unittest import mock
 import numpy
 
 from src.common.experiment_config import SUPPORTED_RATIO_PERCENTS
-from tests.ghl_main import store_recommendation_evidence as evidence
+from tests.tuning import store_recommendation_evidence as evidence
 
 
 def fixture():
