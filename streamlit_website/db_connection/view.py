@@ -105,6 +105,29 @@ def render_candidate_intake():
         except (ValueError, TypeError) as error:
             st.warning(f"현재 feature를 계산하지 못했습니다. 계획 후보 풀은 유지합니다: {error}")
     ml_input["current_features"] = {"summary": summary, "channels": channels}
+
+    # ML 단계 최소 연결점: build_ml_input() 다음 단계로 st.session_state["ml_input"]을
+    # 그대로 run_ml_pipeline()에 넘긴다. UI는 의도적으로 최소화한다 (버튼 하나).
+    # DP(경로 최적화)는 이 단계에서 하지 않는다 — run_ml_pipeline()의 반환값(MLOutput)까지만 만든다.
+    st.divider()
+    if st.button("ML 단계 실행 (similarity · 성능/비용 추정)"):
+        with st.spinner("과거 유사 사례를 찾고 단계별 성능·비용을 추정하고 있습니다."):
+            try:
+                from streamlit_website.ml.pipeline import run_ml_pipeline
+                ml_output = run_ml_pipeline(st.session_state["ml_input"])
+            except FileNotFoundError as error:
+                st.error(f"ML 단계용 DB를 읽을 수 없습니다: {error}")
+            else:
+                st.session_state["ml_output"] = ml_output
+                for warning in ml_output.metadata.get("warnings", []):
+                    st.warning(warning)
+                st.success(
+                    f"ML 단계 완료: similarity match {len(ml_output.similarity_matches)}건, "
+                    f"미래 단계 {len(ml_output.future_stages)}개, "
+                    f"checkpoint 유지 선택지 {len(ml_output.checkpoint_maintenance_options)}건. "
+                    "결과는 st.session_state['ml_output']에 저장했습니다 (DP 단계가 여기서 이어받습니다)."
+                )
+
     if summary is not None:
         st.subheader("현재 데이터의 feature (참고)")
         st.caption("데이터가 쌓이면 달라질 수 있는 현재 관측값이며, 1차 후보 축소에는 사용하지 않습니다.")
