@@ -204,6 +204,23 @@ class TestCostTieBreak(unittest.TestCase):
         result = evaluate_holdout("s1", 20, database=self.database, top_n=1)
         self.assertAlmostEqual(result.mean_estimated_total_cost_seconds_of_top_n, 5.0)  # top_n=1 -> c1만
 
+    def test_cost_regression_excludes_held_out_series_own_execution_data(self):
+        # c1에 held-out series(s1) 자신의 실행 기록을 하나 더 얹는다 — 성능처럼 leave-series-out이
+        # 지켜진다면 이 값은 cost 추정에 전혀 영향을 주면 안 된다. 값을 극단적으로(500초) 잡아서,
+        # 새어 들어가면 flat 평균이 (5+500)/2=252.5가 되어 c2(50초)보다 훨씬 비싸져 순위가
+        # 뒤집히는 것으로 누수 여부를 명확히 드러낸다.
+        with sqlite3.connect(self.database) as connection:
+            _insert_cost(
+                connection, "s1-100", "c1", "run-c1-heldout",
+                test_observations=100, test_inference_seconds=500.0,
+            )
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=2)
+        # 순위가 그대로 c1(저비용) 먼저여야 한다 — 누수가 있었다면 c2가 먼저 온다.
+        self.assertEqual(result.predicted_top_n, ("c1::", "c2::"))
+        # c1의 비용 추정치 자체도 held-out의 500초에 영향받지 않고 5.0 그대로여야 한다.
+        top_n_1 = evaluate_holdout("s1", 20, database=self.database, top_n=1)
+        self.assertAlmostEqual(top_n_1.mean_estimated_total_cost_seconds_of_top_n, 5.0)
+
 
 def _insert_channel_features(connection, prefix_feature_id, channel_count):
     connection.executemany(

@@ -118,12 +118,34 @@ DB가 아니라 합성 DB(series 18개는 실제와 동일하게, 후보 3,000�
 
 | 항목 | 결과 |
 |---|---|
-| 단일 `evaluate_holdout(top_n=100)`, 후보 3,000개 | 0.87s |
-| N=(50,100,200,500) sweep 전체 (같은 DB 재사용) | 1.78s |
+| 단일 `evaluate_holdout(top_n=100)`, 후보 3,000개 | 1.18s |
+| N=(50,100,200,500) sweep 전체 (같은 DB 재사용) | 2.54s |
 | 코드 변경 없이 3,000개 후보로 동작 | 성공 (후보 수 하드코딩 없음 확인) |
 
-(feasibility 연산이 후보별로 추가되면서 이전 측정치(0.51s/1.13s)보다 다소 늘었지만,
-3,000개 규모에서 여전히 2초 이내로 끝난다.)
+(feasibility 연산 추가, 그리고 아래 "cost 데이터 누수 수정"으로 후보마다 리스트를
+한 번 더 거르는 연산이 늘면서 이전 측정치보다 다소 늘었지만, 3,000개 규모에서
+여전히 3초 이내로 끝난다.)
+
+## cost 회귀의 데이터 누수 수정 (2026-09-25, 팀 리뷰에서 발견)
+
+팀 리뷰에서 "cost.py도 held-out series의 실행 기록을 제외했는지" 질문이 나와
+확인한 결과, **실제로 누수가 있었다.** similarity/performance는 처음부터
+`matches`(leave-series-out된 `historical_pool` 기반)만 써서 held-out series
+자신의 데이터를 보지 않았지만, cost 회귀(`build_candidate_cost_model`)는
+`results_rows`(held-out 자신의 실행 기록 포함, 전체 series)를 그대로 넘기고
+있었다 — "held-out의 미래 비용을 예측"한다면서 그 series 자신의 실측 비용
+관측치가 회귀 학습 데이터에 섞여 있었다. `evaluate_holdout()`이 cost 회귀에
+넘기는 데이터에서 held-out series 행을 제외하도록 수정했고, 이 누수를 재현/검증하는
+회귀 테스트(`TestCostTieBreak::test_cost_regression_excludes_held_out_series_own_execution_data`)를
+추가했다.
+
+**실제 DB에 미친 영향: 없음.** 수정 전후로 위의 N/관측%/k/similarity-metric
+sensitivity 표 전부 소수점까지 동일하게 나왔다 — "Cost tie-break 연결 완료"
+절에 이미 적었듯 실제 vus_pr은 연속값이라 성능이 정확히 동률인 경우가 거의 없어
+cost tie-break 자체가 개입할 일이 드물기 때문이다. 즉 이번 수정은 방법론적
+정확성을 위한 것이고, 지금 규모의 결과를 바꾸지는 않는다 — 다만 후보 수가
+늘어나거나 성능이 자주 동률이 되는 상황(예: 결정적 모델이 많아지는 경우)에서는
+영향이 커질 수 있으므로 고쳐두는 것이 맞다.
 
 **성능 개선 사항**: 원래 구현은 후보마다 DB 커넥션을 새로 열어(`load_results_for_candidate`
 반복 호출) 후보 수에 선형으로 느려졌다(45개 기준 0.65초 → 3,000개면 약 43초 예상).

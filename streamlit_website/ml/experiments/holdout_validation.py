@@ -42,6 +42,13 @@
   feasible이고, predicted_performance와 estimated_total_cost가 모두 있는 후보만
   `predicted_top_n` 경쟁에 넣는다. feasibility를 계산하지 못한 경우(위 조건 미충족)에는
   이전 버전과 같이 feasibility를 걸지 않는다 — "모른다"를 "탈락"으로 처리하지 않는다.
+- **cost 회귀의 데이터 누수 수정 (2026-09-25 팀 리뷰에서 발견).** similarity/performance는
+  처음부터 `matches`(leave-series-out된 `historical_pool` 기반)만 써서 held-out
+  series 자신의 데이터를 보지 않았지만, cost 회귀(`build_candidate_cost_model`)는
+  `results_rows`(전체 series 포함, held-out 자신도 포함)를 그대로 넘기고 있었다 —
+  "held-out의 미래 비용을 예측"한다면서 실제로는 그 series 자신의 실측 비용
+  관측치가 회귀 학습 데이터에 섞여 있던 데이터 누수였다. 이제 cost 회귀에 넘기는
+  데이터도 `results_rows`에서 held-out series 행을 제외해서 만든다.
 """
 
 from __future__ import annotations
@@ -188,9 +195,14 @@ def evaluate_holdout(
 
         # cost tie-break: held-out series의 실제 미래(q=100) 규모를 그대로 미래
         # 학습/추론 규모로 쓴다 (임의의 operating_conditions를 지어내지 않는다 —
-        # 모듈 docstring의 "이 harness가 반영하는 것" 참고).
+        # 모듈 docstring의 "이 harness가 반영하는 것" 참고). 회귀 자체는 leave-series-out
+        # 원칙에 따라 held-out series 자신의 실행 기록을 제외한 데이터로만 만든다 —
+        # similarity/performance는 `matches`(historical_pool 기반)로 이미 이렇게 되어
+        # 있었지만, cost는 `results_rows`(전체 series 포함)를 그대로 썼던 데이터
+        # 누수였다 (2026-09-25 리뷰에서 발견, 수정).
         needs_training = (definition or {}).get("target_use", "") == TRAINING_REQUIRED_TARGET_USE
-        cost_model = build_candidate_cost_model(results_rows, config=config)
+        cost_training_rows = [row for row in results_rows if row["series"] != held_out_series]
+        cost_model = build_candidate_cost_model(cost_training_rows, config=config)
         _training_cost, _inference_cost, total_cost, _source, _exclusion = estimate_stage_cost(
             cost_model,
             training_rows=held_out_q100_row["observed_row"] if needs_training else None,
