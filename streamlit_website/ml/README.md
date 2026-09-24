@@ -63,12 +63,45 @@ DB 경로는 인자 > 환경변수 `TSAD_RECOMMENDATION_DB` > 기본값
   불가능하다 — 그래서 `cost.py`는 초(seconds) 단위 비용만 만든다. 시간당 단가가
   채워지면 `CostCurve.predict()`가 반환하는 초 값에 단가를 곱하기만 하면 된다.
 
-## 아직 해결하지 못한 가정/제약 (설계 판단, README/코드 docstring에도 분산 기록됨)
+## ML/DP 책임 경계 — 검토 완료 (2026-09-23)
 
-- **top-k 정렬 공식**: "feasible → predicted_performance 내림차순 → cost 오름차순"은
-  이 구현의 가정이다 (`candidate_selection.py` 상단 docstring). 요구사항은 "성능·
-  비용·실행 가능성을 계산해 top-k를 고른다"고만 했고 정확한 가중치/우선순위는
-  정하지 않았다.
+`pipeline.py` 모듈 docstring에 전문이 있다. 요약:
+
+- **`performance_floor`는 DP 제약이다, ML이 적용하지 않는다.** 루트 `README.md`의
+  "경로 최적화" 절에서만 "예상 성능 하한을 만족하면서 비용이 가장 작은 경로"라는
+  표현이 나오고, ML 절에는 없다 — 텍스트로 확정 가능. `run_ml_pipeline()`은
+  `performance_floor`를 받아도 후보를 거르지 않고, 매 실행마다
+  `metadata["warnings"]`에 "받았지만 적용 안 함"을 명시적으로 남긴다.
+- **`performance_metric`(VUS-PR 외 Precision/Recall/F1)은 ML 데이터 계층에서
+  아예 지원 불가능하다.** `recommendation.sqlite3.results`에 `vus_pr` 외
+  precision/recall/f1 컬럼이 없다 — 이건 설계 판단이 아니라 DB에 그 데이터가
+  없다는 사실. VUS-PR이 아닌 값을 요청하면 경고를 남기고 무시한다(항상 VUS-PR
+  기준으로 계산). UI(`view.py`)가 4개 선택지를 주는 것과 실제로 동작하는 범위
+  사이에 gap이 있다는 뜻이므로, UI 쪽 수정이나 DB에 다른 지표 추가가 필요하면
+  별도로 결정해야 한다(이 세션에서는 ML 코드만 다뤘다).
+
+## 아직 해결하지 못한 가정/제약
+
+- **top-k 정렬 공식**: "predicted_performance 내림차순 → cost 오름차순"은 문서
+  근거가 없는 **명시적으로 provisional/arbitrary** 정책이다 (`candidate_selection.py`
+  상단 docstring, `run_ml_pipeline()`의 `metadata["top_k_ranking_policy"]`).
+  Pareto frontier·비용 우선·성능 하한 이상 중 비용 최소 등 다른 정책도 동등하게
+  정당화 가능하지만, 문서만으로는 어느 것도 확정할 수 없어 바꾸지 않았다.
+  단, top-k에서 밀린 후보도 `stage_candidates_excluded_from_top_k`에 전부
+  보존되므로, 이 정렬이 DP의 후보 접근 자체를 막지는 않는다 — DP가 다른 정책을
+  원하면 두 리스트를 합쳐 직접 재정렬하면 된다.
+- **feasibility의 "추론 스트림 길이"(`test_length`) 의미론 미검증**: 저장소
+  기존 계약(`check_dev18_resources.py`, `select_conditional_policy.py`)에서
+  `test_length`는 "한 번에 평가되는 연속 구간 길이"(예: `row_count -
+  training_boundary`)를 뜻하며 "누적 추론 총량"이 아니다. 이 파이프라인이 쓰는
+  `inference_rows_per_day`(상수 처리율)도, 후보였던 `stage.inference_volume`
+  (그 stage 구간 누적량, stage 0은 0)도 원래 의미와 정확히 일치하지 않는다 —
+  둘 다 "연속 구간 길이" 축의 값이 아니다. 운영 조건 입력에 "한 번에 들어오는
+  배치/스트림 길이"에 해당하는 값이 없어서 새 입력을 추가하거나 기존 입력을
+  재해석해야 하는데, 문서만으로 확정할 수 없다. `inference_rows_per_day`를
+  유지하는 건 "stage 0이 추론량 0 때문에 무조건 infeasible 되는 것보다,
+  `stage.inference_volume`(무한정 누적 증가)보다 왜곡이 상대적으로 작다"는
+  판단일 뿐 검증된 결론이 아니다 — 매 실행마다 `metadata["warnings"]`에 남긴다.
 - **checkpoint maintenance 성능**: `last_trained_at`이 구조화된 stage가 아니라
   자유 텍스트라, "마지막 학습 시점의 성능"을 "현재 단계(stage 0) similarity 추정"으로
   근사한다 (`performance.py::estimate_checkpoint_maintenance_performance`). 최근에
@@ -77,11 +110,6 @@ DB 경로는 인자 > 환경변수 `TSAD_RECOMMENDATION_DB` > 기본값
   training과 같은 fit/validation 구조 제약을 재사용해서 판정한다 (`pipeline.py::
   _build_checkpoint_maintenance_options`) — 실제로는 재학습을 하지 않으므로 이
   제약이 지나치게 엄격할 수 있다.
-- **feasibility의 "추론 스트림 길이"**: stage.inference_volume(그 구간 누적량,
-  stage 0은 0)과 별도로, 구조적 최소 길이 판정에는 `inference_rows_per_day`를
-  모든 stage(0 포함)에 상수로 사용한다 (`pipeline.py::_steady_state_inference_rows`).
-  그렇지 않으면 stage 0이 추론량 0 때문에 구조적으로 항상 infeasible 처리되는
-  문제가 생긴다.
 - **`PREDICTION_SOURCE_OBSERVED`** 상수(`config.py`)는 정의만 되어 있고 어떤
   코드 경로에서도 아직 쓰이지 않는다. distance==0인 완전 일치 historical
   case를 "관측값 그대로"로 구분해서 쓸지, 아니면 제거할지는 DP/다음 단계

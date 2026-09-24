@@ -27,6 +27,49 @@ MLOutput (DP가 이 스키마만 소비한다)
 
 이 모듈은 경로 최적화(DP)를 하지 않는다. similarity/성능/비용/feasibility/단계별
 축소까지만 한다.
+
+## ML/DP 책임 경계에 대한 명시적 결정 (2026-09-23 검토)
+
+루트 `README.md` "경로 최적화" 절 원문: "DP의 상태는 `단계·모델·설정·head·마지막
+학습 단계`로 구성한다. ... **예상 성능 하한을 만족하면서 전체 학습·추론비가
+가장 작은 경로**를 고른다." — 성능 하한(performance_floor) 언급은 이 DP 절에만
+있고, 이 파일이 구현하는 "유사도와 성능·비용 추정" 절에는 없다. 따라서:
+
+- **`performance_floor`/`performance_metric`은 ML 단계에서 후보를 사전 제외하는
+  데 쓰지 않는다.** ML은 `predicted_performance`/`estimated_total_cost_seconds`를
+  계산해 후보로 전달만 하고, 하한 적용은 DP의 책임으로 남긴다 (README 근거).
+  이 결정에 따라 `_build_candidate_estimate()`/`select_stage_candidates()`는
+  `operating_conditions`의 `performance_floor`를 의도적으로 참조하지 않는다.
+- **`performance_metric`(VUS-PR/Precision/Recall/F1)은 현재 ML 데이터 계층에서
+  선택할 수 없다.** `recommendation.sqlite3`의 `results` 테이블에는 `vus_pr`
+  컬럼만 있고 precision/recall/f1 컬럼이 없다 (실제 DB 스키마 확인). 즉 이건
+  설계 판단이 아니라 **DB에 그 데이터가 아예 없다는 사실**이다. UI가
+  `performance_metric` 선택지를 주더라도 ML은 항상 VUS-PR만 쓸 수 있으며, 이
+  불일치는 `run_ml_pipeline()`이 `metadata["warnings"]`에 명시적으로 남긴다
+  (침묵 처리하지 않는다).
+- **stage별 top-k 정렬 공식(`candidate_selection.py`의 "성능 내림차순 → 비용
+  오름차순" lexicographic 방식)은 요구사항 문서 어디에도 근거가 없는 임의
+  정책이다.** README은 "단계별 후보 수는 k=10처럼 정하되, 후보 구성은
+  단계마다 달라진다"까지만 말한다. Pareto frontier·비용 우선·floor 이상 중
+  비용 최소 등 다른 정책도 동등하게 정당화 가능하며, 문서로 확정할 수 없다.
+  다만 **top-k에서 밀려난 후보도 `stage_candidates_excluded_from_top_k`에
+  전부 보존되므로, 이 정렬 순서가 DP의 후보 접근 자체를 막지는 않는다** —
+  DP가 이 정렬을 신뢰하지 않는다면 두 리스트를 합쳐 직접 재정렬할 수 있다.
+  `run_ml_pipeline()`은 이 정책을 `metadata["top_k_ranking_policy"]`에
+  명시적으로 "provisional/arbitrary"로 표시한다.
+- **feasibility의 `test_length`에 넣는 값(`_steady_state_inference_rows()`)의
+  의미론은 아직 검증되지 않았다.** 저장소 기존 계약(`check_dev18_resources.py`,
+  `select_conditional_policy.py`의 `assess_candidate()` 호출부)에서 `test_length`는
+  "한 번에 평가되는 연속 구간의 길이"(예: `row_count - training_boundary`)를
+  뜻하며, "누적 추론 총량"이 아니다. 이 파이프라인이 쓰는 `inference_rows_per_day`
+  (일 단위 처리율)도, 후보였던 `stage.inference_volume`(그 stage 구간 누적량)도
+  원래 계약과 정확히 일치하지 않는다 — 둘 다 "연속 구간 길이"라는 축의 값이
+  아니다. 운영 조건 입력에 "한 번에 들어오는 배치/스트림 길이"에 해당하는 값이
+  없으므로 **현재로서는 새 입력을 추가하거나 기존 입력을 재해석해야 하며,
+  문서만으로 최종 확정할 수 없다.** `inference_rows_per_day`를 유지하는 이유는
+  "0이 아닌 값이라는 점에서 그나마 `stage.inference_volume`(누적, 무한정
+  증가)보다는 왜곡이 작다"는 상대적 판단일 뿐, 검증된 결론이 아니다.
+  `run_ml_pipeline()`은 이 사실을 `metadata["warnings"]`에 남긴다.
 """
 
 from __future__ import annotations
@@ -52,6 +95,31 @@ from streamlit_website.ml.similarity import find_similar_historical_prefixes
 # fit_full_prefix 후보만 "재학습"이 필요하다. training_free/strict_zero_shot은
 # 데이터가 늘어나도 재학습 비용이 없다 (구조적으로 학습 자체가 없음).
 TRAINING_REQUIRED_TARGET_USE = "fit_full_prefix"
+
+# recommendation.sqlite3의 results.vus_pr만 historical performance로 쓸 수 있다
+# (다른 컬럼 없음 — DB 스키마 확인 완료). performance_metric이 이 값이 아니면
+# ML이 실제로 쓰는 지표와 UI가 요청한 지표가 다르다는 뜻이므로 경고를 남긴다.
+SUPPORTED_PERFORMANCE_METRIC = "VUS-PR"
+
+
+def _scope_boundary_warnings(operating_conditions: dict) -> list[str]:
+    """ML/DP 책임 경계 관련, 모듈 docstring에 근거를 남긴 결정들을 매 실행마다
+    metadata에 드러낸다 (침묵 처리하지 않는다). 이 함수는 필터링을 하지 않는다
+    — 경고만 만든다."""
+    warnings: list[str] = []
+    metric = operating_conditions.get("performance_metric")
+    if metric and metric != SUPPORTED_PERFORMANCE_METRIC:
+        warnings.append(
+            f"performance_metric='{metric}'이 선택됐지만 recommendation DB는 vus_pr만 "
+            f"저장한다 — ML의 predicted_performance는 항상 VUS-PR 기준이다 (요청 지표 무시)."
+        )
+    if operating_conditions.get("performance_floor") is not None:
+        warnings.append(
+            f"performance_floor={operating_conditions['performance_floor']!r}을 받았지만 "
+            "ML 단계는 이 값으로 후보를 제외하지 않는다 (README상 DP의 경로 선택 제약 — "
+            "'예상 성능 하한을 만족하면서 비용이 가장 작은 경로'). DP가 적용해야 한다."
+        )
+    return warnings
 
 
 def build_future_stages(
@@ -233,6 +301,19 @@ def run_ml_pipeline(
         ml_input = MLInput.from_ml_input_dict(ml_input)
 
     metadata: dict = {"config": config, "warnings": []}
+    metadata["warnings"].extend(_scope_boundary_warnings(ml_input.operating_conditions))
+    # 문서로 확정할 수 없는 두 가지 설계 결정을 매 실행마다 명시적으로 남긴다
+    # (침묵 처리하지 않는다 — 모듈 docstring의 "ML/DP 책임 경계" 절 참고).
+    metadata["top_k_ranking_policy"] = (
+        "provisional_arbitrary: predicted_performance desc, then estimated_total_cost_seconds asc "
+        "(candidate_selection.py). 요구사항에 근거 없음 — 탈락 후보는 "
+        "stage_candidates_excluded_from_top_k에 전부 보존됨."
+    )
+    metadata["warnings"].append(
+        "feasibility의 test_length(_steady_state_inference_rows)는 inference_rows_per_day를 쓰는데, "
+        "기존 model_feasibility.assess_candidate() 계약의 test_length는 '연속 평가 구간 길이'를 뜻하고 "
+        "'누적 추론량'이 아니다 — 의미론이 완전히 검증되지 않은 상태다."
+    )
 
     summary = (ml_input.current_features or {}).get("summary")
     if summary is None:

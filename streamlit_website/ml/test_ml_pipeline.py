@@ -636,6 +636,38 @@ class TestFullPipelineSyntheticDatabase(unittest.TestCase):
             self.assertEqual(option.prediction_source, "checkpoint_maintained")
             self.assertIsNone(getattr(option, "estimated_training_cost_seconds", None))
 
+    def test_performance_floor_is_never_used_to_filter_candidates(self):
+        # performance_floor를 아주 높게(사실상 모든 후보가 미달하도록) 넣어도
+        # ML 단계는 후보를 제외하지 않는다 — README상 DP의 경로 선택 제약이다.
+        ml_input = {**self.ml_input, "operating_conditions": {
+            **self.ml_input["operating_conditions"], "performance_floor": 0.999999, "performance_metric": "VUS-PR",
+        }}
+        with_floor = run_ml_pipeline(ml_input, db_path=self.database)
+        without_floor = run_ml_pipeline(self.ml_input, db_path=self.database)
+        self.assertEqual(
+            {c.candidate_id for c in with_floor.stage_candidates[0]},
+            {c.candidate_id for c in without_floor.stage_candidates[0]},
+        )
+        self.assertTrue(any("performance_floor" in w for w in with_floor.metadata["warnings"]))
+
+    def test_non_vus_pr_performance_metric_is_warned_not_silently_applied(self):
+        ml_input = {**self.ml_input, "operating_conditions": {
+            **self.ml_input["operating_conditions"], "performance_metric": "F1",
+        }}
+        output = run_ml_pipeline(ml_input, db_path=self.database)
+        self.assertTrue(any("performance_metric" in w and "F1" in w for w in output.metadata["warnings"]))
+        # 지표 선택과 무관하게 predicted_performance는 그대로 DB의 vus_pr 기준이다.
+        vus_pr_run = run_ml_pipeline(self.ml_input, db_path=self.database)
+        c1 = next(c for c in output.stage_candidates[0] if c.candidate_id == "c1::")
+        c1_baseline = next(c for c in vus_pr_run.stage_candidates[0] if c.candidate_id == "c1::")
+        self.assertEqual(c1.predicted_performance, c1_baseline.predicted_performance)
+
+    def test_top_k_ranking_policy_and_test_length_semantics_are_surfaced_in_metadata(self):
+        output = run_ml_pipeline(self.ml_input, db_path=self.database)
+        self.assertIn("top_k_ranking_policy", output.metadata)
+        self.assertIn("provisional_arbitrary", output.metadata["top_k_ranking_policy"])
+        self.assertTrue(any("test_length" in w for w in output.metadata["warnings"]))
+
 
 # ---------------------------------------------------------------------------
 # 실제 dev18 DB에 대한 통합(smoke) 테스트
