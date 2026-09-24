@@ -427,6 +427,75 @@ class TestPerformanceOnlyValidationGap(unittest.TestCase):
         self.assertIsNone(result.actual_mean_cost_seconds_of_performance_only_ground_truth_top_n)
 
 
+class TestCandidateDiagnostics(unittest.TestCase):
+    """Q1 보완: `candidate_diagnostics`가 후보별 제외 사유를 정확히 붙이는지 확인한다
+    (2026-09-25 추가). 4개 후보로 4가지 사유를 각각 하나씩 만든다.
+    """
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.database = Path(self.temporary.name) / "diagnostics.sqlite3"
+        with sqlite3.connect(self.database) as connection:
+            _create_schema(connection)
+            _insert_prefix(connection, "s1-20", "s1", 20, 10)
+            _insert_prefix(connection, "s1-100", "s1", 100, 10)
+            _insert_prefix(connection, "s2-100", "s2", 100, 100)
+            _insert_channel_features(connection, "s1-20", 3)
+
+            # c1: predicted_performance_missing — historical pool(s2)에 결과가 전혀 없다.
+            _insert_result(connection, "s1-100", "c1", 0.9)
+
+            # c2: predicted는 가능하지만 cost_executions가 전혀 없어 비용 추정이 불가하다.
+            _insert_result(connection, "s1-100", "c2", 0.8)
+            _insert_result(connection, "s2-100", "c2", 0.7)
+
+            # c3: predicted+cost는 가능하지만 구조적으로 infeasible(PCA_LEGACY, 큰 window).
+            _insert_model_config(connection, "c3", "PCA_LEGACY", "training_free")
+            connection.execute(
+                "UPDATE model_configs SET settings_json=? WHERE config_id='c3'",
+                ('{"target_use": "training_free", "hyperparameters": {"window": 5}}',),
+            )
+            _insert_result(connection, "s1-100", "c3", 0.95)
+            _insert_result(connection, "s2-100", "c3", 0.6)
+            _insert_cost(connection, "s2-100", "c3", "run-c3", test_observations=100, test_inference_seconds=5.0)
+
+            # c4: usable — predicted+cost+feasible(MWVAR, 작은 window).
+            _insert_model_config(connection, "c4", "MWVAR", "training_free")
+            connection.execute(
+                "UPDATE model_configs SET settings_json=? WHERE config_id='c4'",
+                ('{"target_use": "training_free", "hyperparameters": {"window": 3}}',),
+            )
+            _insert_result(connection, "s1-100", "c4", 0.85)
+            _insert_result(connection, "s2-100", "c4", 0.5)
+            _insert_cost(connection, "s2-100", "c4", "run-c4", test_observations=100, test_inference_seconds=5.0)
+            # held-out(s1) 자신의 q=100 test_observations — feasibility 평가 자체를 켠다.
+            _insert_cost(connection, "s1-100", "c4", "run-s1-c4", test_observations=20, test_inference_seconds=1.0)
+
+    def test_diagnostics_cover_all_four_reasons(self):
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=4)
+        self.assertTrue(result.feasibility_evaluated)
+        self.assertEqual(result.candidate_diagnostics["c1::"]["reason"], "predicted_performance_missing")
+        self.assertEqual(result.candidate_diagnostics["c2::"]["reason"], "estimated_cost_missing")
+        self.assertEqual(result.candidate_diagnostics["c3::"]["reason"], "infeasible")
+        self.assertEqual(result.candidate_diagnostics["c4::"]["reason"], "usable")
+
+    def test_diagnostics_carry_the_underlying_values(self):
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=4)
+        self.assertIsNone(result.candidate_diagnostics["c1::"]["predicted_performance"])
+        self.assertIsNone(result.candidate_diagnostics["c2::"]["estimated_cost"])
+        self.assertIsNotNone(result.candidate_diagnostics["c2::"]["predicted_performance"])
+        self.assertFalse(result.candidate_diagnostics["c3::"]["feasible"])
+        self.assertTrue(result.candidate_diagnostics["c4::"]["feasible"])
+        self.assertIsNotNone(result.candidate_diagnostics["c4::"]["predicted_performance"])
+        self.assertIsNotNone(result.candidate_diagnostics["c4::"]["estimated_cost"])
+
+    def test_diagnostics_cover_every_candidate(self):
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=4)
+        self.assertEqual(set(result.candidate_diagnostics), {"c1::", "c2::", "c3::", "c4::"})
+        self.assertEqual(len(result.candidate_diagnostics), result.total_candidates)
+
+
 class TestCandidateCountIsNotHardcoded(unittest.TestCase):
     """N/후보 수를 하드코딩하지 않았는지, 45개보다 훨씬 큰 규모(합성 데이터)에서도
     구조적으로 동작하는지 확인한다. (전체 3,000-후보 스트레스 테스트는

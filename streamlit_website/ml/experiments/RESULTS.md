@@ -175,6 +175,31 @@ Top-N을 정렬한다 (held-out series 자신의 실제 미래 규모를 학습/
 변경은 "production 정책과 일치시킨 것" 자체가 목적이었고, 지금 규모에서 결과를
 바꾸지는 않는다(예상된 결과이며, 회귀 아님).
 
+## Q1 보완: 후보별 제외 사유 실제 결과 (2026-09-25)
+
+"일부 후보가 성능/비용 추정 실패 또는 infeasible이라 Top-N 경쟁에서 빠졌다"는 기존
+설명을 "어느 후보가, 몇 개나, 왜 빠졌는지" 결과표로 만들었다. `holdout_validation.py`에
+`candidate_diagnostics` 필드(candidate_id -> `{predicted_performance, estimated_cost,
+feasible, reason}`)를 추가하고, `run_holdout_experiments.py`가 이를 18개 series
+(leave-series-out) x 전체 45개 candidate = 810개 조합에 대해 모아
+`candidate_diagnostics_detail.csv`/`candidate_diagnostics_summary.csv`로 저장한다
+(관측%=20, N=10 — 다른 표들과 같은 기준값, 진단 자체는 N과 무관).
+
+**실제 DB 결과 (810개 조합)**:
+
+| 제외 사유 | 발생 횟수 | 비율 | 의미 |
+| --- | --- | --- | --- |
+| usable | 774 | 95.6% | `predicted_top_n` 경쟁에 실제로 들어감 |
+| infeasible | 23 | 2.8% | 데이터 규모·채널 수 등의 구조 조건을 충족하지 못함 |
+| predicted_performance_missing | 13 | 1.6% | 유사 과거 사례에서 해당 후보의 성능 근거가 부족함 |
+| estimated_cost_missing | 0 | 0.0% | (이 DB에서는 발생하지 않음 — cost 회귀에 필요한 관측이 모든 후보에 최소한으로는 있음) |
+
+`predicted_performance_missing` 13건은 전부 Q1에서 이미 짚었던 GDN 후보
+`c05ad891b1adb`다(series 01/02/04/05 등에서 반복) — 새 원인이 아니라 기존 설명을
+정량으로 재확인한 것. `infeasible` 23건은 series 03/04처럼 held-out series 자신의
+데이터 규모가 작을 때 특정 모델(PCA_LEGACY류)이 구조적으로 못 도는 경우로,
+`feasibility.py` 통합이 의도한 대로 동작하고 있음을 보여준다.
+
 ## "성능만 검증하는 것 아니냐" 지적 보완: Method 1/2 실제 결과 (2026-09-25)
 
 팀 리뷰에서 나온 지적("`recall_at_n`은 VUS-PR에 동률이 거의 없어 사실상 성능
@@ -246,22 +271,26 @@ series(03/07/08처럼 0.8~0.9)만 따로 떼서 비용 격차를 다시 보는 �
 
 ## N x k x 관측% 3중 교차 sweep (2026-09-25, Q6/한계3 대응)
 
-`run_three_way_sweep.py`로 N={5,10,20,45} x k={1,3,5,10} x 관측%={5,10,20,40,60,80}
-96개 조합 전부를 실제 DB(18 series)에 돌렸다 — 팀 피드백의 "N과 관측%는 서로 다른
+`run_three_way_sweep.py`로 N={5,10,20,45} x k={1,3,5,10,15} x 관측%={5,10,20,40,60,80}
+120개 조합 전부를 실제 DB(18 series)에 돌렸다 — 팀 피드백의 "N과 관측%는 서로 다른
 축이므로 섞지 않는다" 원칙은, 관측%를 히트맵을 고르는 "패싯" 축으로만 쓰고 한
 히트맵 안에서는 N x k 두 축만 비교하는 방식으로 지켰다. 결과는
 `streamlit_website/ml/experiments/output/three_way_sweep.csv`(gitignore 대상,
 `python3 -m streamlit_website.ml.experiments.run_three_way_sweep`로 재현)와
 히트맵 이미지(`three_way_sweep_heatmap.png`, 팀 공유용으로 별도 전달)로 남겼다.
+(k=10에서 유독 높게 나오는 게 아닌지 확인하려고 처음엔 k=10까지만 돌렸다가 k=15를
+추가로 붙였다 — 아래 참고.)
 
 **관찰**:
 
 - **N이 가장 크게 움직인다.** 어느 조합이든 N=45(=전체 후보)에 가까워지면 mean
   recall이 0.98 이상으로 수렴한다 — top-N이 전체 후보에 가까워질수록 "정답을 다
   담는가"가 구조적으로 참에 가까워지기 때문이다.
-- **k는 완만하지만 일관되게 recall을 올린다.** 같은 N·관측% 안에서 k=1→10으로
-  갈수록 대부분 recall이 오르거나 같다(예: N=10, 관측%=5%: k=1일 때 0.289 →
-  k=10일 때 0.394).
+- **k는 완만하지만 일관되게 recall을 올리고, k=15까지도 꺾이지 않는다.** 같은
+  N·관측% 안에서 k=1→15로 갈수록 대부분 recall이 오르거나 같다(예: N=10,
+  관측%=60%: k=1일 때 0.29 → k=10일 때 0.40 → k=15일 때 0.43). k=10이 유난히
+  높아 보이던 지점(k=10에서 갑자기 튀는 게 아닌지 의심했던 부분)도 k=15까지
+  늘려보면 그 상승 추세의 연장선일 뿐이었다 — k=10만의 특이점은 아니다.
 - **관측%는 뚜렷한 방향성이 없다.** 같은 N·k에서 관측%를 5%→80%로 올려도 recall이
   단조롭게 오르거나 내리지 않는다 — 이 규모(18 series)에서는 "관측을 더 오래
   할수록 예측이 좋아진다"는 가정이 명확히 성립하지 않는다.

@@ -30,7 +30,7 @@ from streamlit_website.ml.experiments.holdout_validation import evaluate_holdout
 from streamlit_website.ml.experiments.run_holdout_experiments import _series_list
 
 N_VALUES = (5, 10, 20, 45)
-K_VALUES = (1, 3, 5, 10)
+K_VALUES = (1, 3, 5, 10, 15)
 OBSERVED_Q_PERCENT_VALUES = (5, 10, 20, 40, 60, 80)
 
 DEFAULT_CSV_PATH = Path(__file__).parent / "output" / "three_way_sweep.csv"

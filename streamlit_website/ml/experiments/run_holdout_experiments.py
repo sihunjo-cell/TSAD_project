@@ -6,10 +6,13 @@
   `python3 -m streamlit_website.ml.experiments.run_holdout_experiments <db_path> <csv_dir>`
 
 콘솔에는 지금까지처럼 마크다운 표를 출력하고, 추가로 각 sweep 결과를
-`<csv_dir>`(기본값: `streamlit_website/ml/experiments/output/`) 아래 CSV 파일 5개로도
+`<csv_dir>`(기본값: `streamlit_website/ml/experiments/output/`) 아래 CSV 파일 7개로도
 저장한다: `n_sensitivity.csv`, `observed_q_percent_sensitivity.csv`,
 `k_sensitivity.csv`, `similarity_metric_comparison.csv`,
-`performance_only_validation_gap.csv`(Method 1/2, 2026-09-25 추가 — 아래 참고).
+`performance_only_validation_gap.csv`(Method 1/2, 2026-09-25 추가 — 아래 참고),
+`candidate_diagnostics_detail.csv`/`candidate_diagnostics_summary.csv`(Q1 보완,
+2026-09-25 추가 — held-out series x candidate 전체 조합에서 predicted_top_n 경쟁
+탈락 사유를 모은 것. 상세는 `holdout_validation.py`의 "Q1 보완" 절 참고).
 
 **N과 관측%(observed_q_percent)는 서로 다른 축이므로 항상 한쪽을 고정하고 다른
 쪽만 바꾼다** (팀 피드백 문서의 "두 축을 섞지 않는다" 원칙). 이 스크립트는 그 둘을
@@ -137,6 +140,57 @@ def run_performance_only_validation_gap(database=None) -> list[dict]:
     return rows
 
 
+REASON_MEANING = {
+    "predicted_performance_missing": "유사 과거 사례에서 해당 후보의 성능 근거가 부족함",
+    "estimated_cost_missing": "실행시간 관측치가 부족함",
+    "infeasible": "데이터 규모·채널 수 등의 구조 조건을 충족하지 못함",
+    "usable": "predicted_top_n 경쟁에 실제로 들어감",
+}
+
+
+def run_candidate_diagnostics(database=None) -> tuple[list[dict], list[dict]]:
+    """Q1 보완: leave-series-out 18개 series x 전체 candidate 조합에서 각 후보가 왜
+    `predicted_top_n` 경쟁에서 빠졌는지(또는 안 빠졌는지)를 모은다.
+
+    N/관측%는 다른 sweep들의 기준값(N=10, 관측%=20)과 동일하게 고정한다 — 진단
+    자체는 top_n과 무관하게 후보 루프에서 계산되므로(`holdout_validation.py`
+    참고) N값이 결과를 바꾸지 않지만, 다른 표들과 같은 기준으로 재현하기 위해
+    고정값을 그대로 쓴다.
+
+    반환값은 (detail_rows, summary_rows) — detail은 series x candidate 한 줄씩,
+    summary는 사유별 발생 횟수/비율/의미.
+    """
+    series_list = _series_list(database)
+    detail_rows = []
+    reason_counts: dict[str, int] = {}
+    for series in series_list:
+        result = evaluate_holdout(
+            series, FIXED_OBSERVED_Q_PERCENT_FOR_N_SWEEP, database=database, top_n=FIXED_N_FOR_Q_SWEEP,
+        )
+        for candidate_id, diagnosis in result.candidate_diagnostics.items():
+            detail_rows.append({
+                "held_out_series": series,
+                "candidate_id": candidate_id,
+                "predicted_performance": diagnosis["predicted_performance"],
+                "estimated_cost": diagnosis["estimated_cost"],
+                "feasible": diagnosis["feasible"],
+                "reason": diagnosis["reason"],
+            })
+            reason_counts[diagnosis["reason"]] = reason_counts.get(diagnosis["reason"], 0) + 1
+
+    total = len(detail_rows)
+    summary_rows = [
+        {
+            "제외 사유": reason,
+            "발생 횟수": count,
+            "비율": f"{count / total * 100:.1f}%" if total else "0.0%",
+            "의미": REASON_MEANING.get(reason, ""),
+        }
+        for reason, count in sorted(reason_counts.items(), key=lambda item: -item[1])
+    ]
+    return detail_rows, summary_rows
+
+
 def run_similarity_metric_comparison(database=None) -> list[dict]:
     series_list = _series_list(database)
     per_metric_recalls = {metric: [] for metric in SUPPORTED_SIMILARITY_METRICS}
@@ -244,6 +298,15 @@ def main() -> None:
             f"performance_only_ground_truth_top_n={statistics.mean(gt_costs):.2f}s "
             f"(predicted_top_n이 더 싼 series: {cheaper}/{len(gap_rows)})"
         )
+
+    detail_rows, summary_rows = run_candidate_diagnostics(database)
+    print(
+        f"\n## Q1 보완: 후보별 제외 사유 (관측%={FIXED_OBSERVED_Q_PERCENT_FOR_N_SWEEP}, "
+        f"N={FIXED_N_FOR_Q_SWEEP} 고정, {len(_series_list(database))}개 series x 전체 candidate)\n"
+    )
+    _print_table(summary_rows)
+    _write_csv(detail_rows, csv_dir / "candidate_diagnostics_detail.csv")
+    _write_csv(summary_rows, csv_dir / "candidate_diagnostics_summary.csv")
 
     print(f"\nCSV 저장 위치: {csv_dir}")
 

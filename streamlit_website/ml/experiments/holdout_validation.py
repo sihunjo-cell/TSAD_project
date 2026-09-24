@@ -76,6 +76,28 @@
   후보 구성이 다르더라도, ML이 평균적으로 더 싼 후보를 고르는 경향이 있는지를
   직접 잰다 — 순위 일치 여부(Recall)와는 별개의, "선택이 비용 효율적이었는가"에
   대한 답이다.
+
+## Q1 보완: 후보별 제외 사유 진단 (2026-09-25 추가)
+
+"일부 후보가 성능/비용을 추정 못 했거나 infeasible이라 Top-N 경쟁에서 빠졌다"는
+기존 설명을 "어느 후보가, 몇 개나, 왜 빠졌는지" 결과표로 볼 수 있게 `candidate_diagnostics`
+필드를 추가했다. 매 후보(`total_candidates`개 전부)에 대해
+`{"predicted_performance", "estimated_cost", "feasible", "reason"}` 딕셔너리를 만든다 —
+`predicted_performance`/`estimated_cost`는 계산됐으면 그 값, 아니면 `None`이고,
+`feasible`은 feasibility를 평가했으면 `True`/`False`, 평가하지 않았으면 `None`이다.
+`reason`은 `_is_usable`과 같은 순서로 판정한다(성능 → 비용 → feasibility 순으로 먼저
+막히는 조건을 사유로 삼는다 — 여러 조건이 동시에 막혀도 사유는 하나만 남긴다):
+
+1. `predicted_performance`가 없으면 `"predicted_performance_missing"` — 유사 과거
+   사례(`matches`)에서 이 후보의 실행 기록을 찾지 못해 성능 근거가 없다.
+2. `estimated_cost`가 없으면 `"estimated_cost_missing"` — held-out을 제외한 실행
+   기록에 이 후보의 비용 관측이 없어 회귀를 만들 수 없다.
+3. feasibility를 평가했는데 infeasible이면 `"infeasible"` — 데이터 규모/채널 수
+   등 구조적 조건을 충족하지 못한다.
+4. 위 셋 다 아니면 `"usable"` — `predicted_top_n` 경쟁에 실제로 들어간다.
+
+`run_holdout_experiments.py`가 이 필드를 18개 series(leave-series-out) x 전체
+candidate에 대해 모아 CSV로 뽑는다(사유별 발생 횟수/비율 요약 포함).
 """
 
 from __future__ import annotations
@@ -120,6 +142,11 @@ class HoldoutEvaluationResult:
     recall_policy_at_n: float | None            # ground_truth_policy_top_n이 비어 있으면 None
     actual_mean_cost_seconds_of_predicted_top_n: float | None  # predicted_top_n의 실측 평균 비용(초)
     actual_mean_cost_seconds_of_performance_only_ground_truth_top_n: float | None  # ground_truth_top_n(성능만)의 실측 평균 비용(초)
+    # Q1 보완 (2026-09-25 추가) — 후보별로 왜 predicted_top_n 경쟁에서 빠졌는지 진단한다.
+    # candidate_id -> {"predicted_performance", "estimated_cost", "feasible", "reason"}.
+    # "reason"은 "predicted_performance_missing"/"estimated_cost_missing"/"infeasible"/"usable" 중 하나
+    # (모듈 docstring의 "Q1 보완" 절 참고). total_candidates개 후보 전부를 담는다.
+    candidate_diagnostics: dict[str, dict]
 
 
 GOOD_CANDIDATE_DEFINITION = (
@@ -210,8 +237,10 @@ def evaluate_holdout(
     actual_cost_of_held_out: dict[str, float] = {}  # Method 1/2: held-out series 자신의 실측 비용(초)
     feasible_candidates: set[str] = set()
     evaluated_for_feasibility: set[str] = set()
+    all_candidate_ids: list[str] = []  # Q1 보완: candidate_diagnostics가 total_candidates개 전부를 담기 위한 목록
     for (config_id, head), results_rows in results_by_candidate.items():
         candidate_id = _candidate_id(config_id, head)
+        all_candidate_ids.append(candidate_id)
         definition = candidate_definitions.get(config_id)
 
         held_out_points = get_series_trajectory(results_rows, held_out_series)
@@ -309,6 +338,27 @@ def evaluate_holdout(
     actual_mean_cost_of_predicted_top_n = _mean_actual_cost(predicted_top_n)
     actual_mean_cost_of_performance_only_ground_truth_top_n = _mean_actual_cost(ground_truth_top_n)
 
+    # Q1 보완: 후보별 제외 사유 — _is_usable과 같은 순서(성능 -> 비용 -> feasibility)로
+    # 가장 먼저 막히는 조건을 사유로 남긴다.
+    def _diagnose(candidate_id: str) -> str:
+        if candidate_id not in predicted:
+            return "predicted_performance_missing"
+        if candidate_id not in estimated_cost:
+            return "estimated_cost_missing"
+        if candidate_id in evaluated_for_feasibility and candidate_id not in feasible_candidates:
+            return "infeasible"
+        return "usable"
+
+    candidate_diagnostics = {
+        cid: {
+            "predicted_performance": predicted.get(cid),
+            "estimated_cost": estimated_cost.get(cid),
+            "feasible": (cid in feasible_candidates) if cid in evaluated_for_feasibility else None,
+            "reason": _diagnose(cid),
+        }
+        for cid in all_candidate_ids
+    }
+
     total_candidates = len(results_by_candidate)
     top_n_costs = [estimated_cost[cid] for cid in predicted_top_n if cid in estimated_cost]
     return HoldoutEvaluationResult(
@@ -332,6 +382,7 @@ def evaluate_holdout(
         actual_mean_cost_seconds_of_performance_only_ground_truth_top_n=(
             actual_mean_cost_of_performance_only_ground_truth_top_n
         ),
+        candidate_diagnostics=candidate_diagnostics,
     )
 
 
