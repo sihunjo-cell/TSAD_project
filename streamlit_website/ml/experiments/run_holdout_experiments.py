@@ -234,7 +234,9 @@ def _write_csv(rows: list[dict], path: Path) -> None:
     if not rows:
         path.write_text("")
         return
-    with path.open("w", newline="", encoding="utf-8") as handle:
+    # utf-8-sig: 한글 헤더/값(제외 사유, 의미 등)이 있는 CSV를 윈도우 엑셀에서 열 때
+    # BOM 없는 utf-8은 인코딩을 잘못 추측해 글자가 깨진다 — BOM을 붙여 방지한다.
+    with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
