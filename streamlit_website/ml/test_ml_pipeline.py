@@ -37,15 +37,21 @@ from streamlit_website.ml.config import (
     PREDICTION_SOURCE_EXTRAPOLATED,
     PREDICTION_SOURCE_SIMILARITY,
     SIMILARITY_FEATURE_COLUMNS,
+    SIMILARITY_METRIC_COSINE,
     MLConfig,
 )
 from streamlit_website.ml.cost import build_candidate_cost_model, build_cost_curve, estimate_stage_cost
 from streamlit_website.ml.feasibility import assess_future_feasibility, compute_stage_training_lengths
 from streamlit_website.ml.features import extract_historical_features, extract_similarity_features
 from streamlit_website.ml.performance import estimate_checkpoint_maintenance_performance, estimate_stage_performance
-from streamlit_website.ml.pipeline import build_future_stages, run_ml_pipeline
+from streamlit_website.ml.pipeline import _steady_state_inference_rows, build_future_stages, run_ml_pipeline
 from streamlit_website.ml.schemas import CandidateEstimate, CheckpointMaintenanceOption, MLOutput, SimilarityMatch
-from streamlit_website.ml.similarity import build_standardizer, euclidean_distance, find_similar_historical_prefixes
+from streamlit_website.ml.similarity import (
+    build_standardizer,
+    cosine_distance,
+    euclidean_distance,
+    find_similar_historical_prefixes,
+)
 from streamlit_website.ml.trajectory import get_series_trajectory, map_growth_to_trajectory_q, trajectory_point_at_q
 
 REAL_DB_PATH = Path(__file__).resolve().parents[2] / "experiments/tuning/results/recommendation.sqlite3"
@@ -145,6 +151,68 @@ class TestNullFeaturesNeverZeroFilled(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Cosine similarity (V1 기본은 Euclidean, cosine은 비교 실험용 대안)
+# ---------------------------------------------------------------------------
+
+
+class TestCosineSimilarityOption(unittest.TestCase):
+    def test_identical_direction_gives_zero_distance_regardless_of_magnitude(self):
+        # 방향이 같으면(스케일만 다르면) cosine distance는 0에 가깝다 — Euclidean과
+        # 다른 특성(크기 차이에 둔감함)을 보여주는 핵심 테스트.
+        current = {"channel_std_median": 1.0, "channel_acf_lag1_median": 2.0,
+                   "absolute_correlation_median": None, "channel_interquartile_range_median": None,
+                   "channel_difference_q90_iqr_ratio_median": None,
+                   "channel_median_shift_iqr_ratio_median": None, "channel_spectral_entropy_median": None}
+        historical = {"channel_std_median": 10.0, "channel_acf_lag1_median": 20.0,
+                      "absolute_correlation_median": None, "channel_interquartile_range_median": None,
+                      "channel_difference_q90_iqr_ratio_median": None,
+                      "channel_median_shift_iqr_ratio_median": None, "channel_spectral_entropy_median": None}
+        distance, used = cosine_distance(current, historical)
+        self.assertAlmostEqual(distance, 0.0, places=9)
+        self.assertEqual(len(used), 2)
+        # 같은 벡터쌍이라도 Euclidean은 스케일 차이 때문에 거리가 크다.
+        euclidean, _ = euclidean_distance(current, historical)
+        self.assertGreater(euclidean, distance)
+
+    def test_zero_vector_is_incomparable_not_forced_to_a_distance(self):
+        zero = {c: 0.0 for c in SIMILARITY_FEATURE_COLUMNS}
+        nonzero = {c: 1.0 for c in SIMILARITY_FEATURE_COLUMNS}
+        distance, used = cosine_distance(zero, nonzero)
+        self.assertIsNone(distance)
+        self.assertEqual(used, ())
+
+    def test_no_common_features_is_incomparable(self):
+        current = {c: None for c in SIMILARITY_FEATURE_COLUMNS}
+        historical = {c: 1.0 for c in SIMILARITY_FEATURE_COLUMNS}
+        distance, used = cosine_distance(current, historical)
+        self.assertIsNone(distance)
+        self.assertEqual(used, ())
+
+    def test_find_similar_historical_prefixes_can_switch_to_cosine_via_config(self):
+        historical_prefixes = [
+            {"prefix_feature_id": "p1", "series": "s1", "csv_file": "s1.csv", "family": "f",
+             "q_percent": 100, "observed_row": 10, **_summary(channel_std_median=1.0)},
+            {"prefix_feature_id": "p2", "series": "s2", "csv_file": "s2.csv", "family": "f",
+             "q_percent": 100, "observed_row": 10, **_summary(channel_std_median=10.0)},
+        ]
+        current, _ = extract_similarity_features(_summary(channel_std_median=1.0))
+        cosine_matches, _ = find_similar_historical_prefixes(
+            current, historical_prefixes, config=MLConfig(similarity_metric=SIMILARITY_METRIC_COSINE),
+        )
+        euclidean_matches, _ = find_similar_historical_prefixes(current, historical_prefixes)  # 기본값
+        self.assertEqual(len(cosine_matches), 2)
+        self.assertEqual(len(euclidean_matches), 2)
+        # 두 방법이 항상 같은 순위를 낼 필요는 없다 — 여기서는 그냥 둘 다 정상 동작하고
+        # 결과 타입이 SimilarityMatch임을 확인한다 (교체 가능성 확인이 목적).
+        for match in cosine_matches + euclidean_matches:
+            self.assertIsInstance(match, SimilarityMatch)
+
+    def test_unknown_similarity_metric_raises(self):
+        with self.assertRaises(ValueError):
+            MLConfig(similarity_metric="manhattan")
+
+
+# ---------------------------------------------------------------------------
 # 3. historical q trajectory가 올바르게 연결된다 / 4. training-free physical run 재사용
 # ---------------------------------------------------------------------------
 
@@ -232,6 +300,56 @@ class TestFutureStageFeasibility(unittest.TestCase):
         self.assertEqual((fit_split, validation_split), (80, 20))
         fit_full, validation_full = compute_stage_training_lengths("fit_full_prefix", 100)
         self.assertEqual((fit_full, validation_full), (100, 0))
+
+
+class TestInferenceBatchLengthResolution(unittest.TestCase):
+    """test_length에 넣을 값 결정: inference_batch_length가 있으면 그대로 쓰고
+    (기존 model_feasibility.assess_candidate 계약과 의미 일치), 없으면 검증되지
+    않은 inference_rows_per_day proxy로 fallback한다."""
+
+    def test_explicit_batch_length_takes_priority_and_is_flagged_validated(self):
+        rows, used_proxy = _steady_state_inference_rows(
+            {"inference_batch_length": 10, "inference_rows_per_day": 99999},
+        )
+        self.assertEqual(rows, 10)
+        self.assertFalse(used_proxy)
+
+    def test_falls_back_to_inference_rows_per_day_when_batch_length_absent(self):
+        rows, used_proxy = _steady_state_inference_rows({"inference_rows_per_day": 50})
+        self.assertEqual(rows, 50)
+        self.assertTrue(used_proxy)
+
+    def test_falls_back_when_batch_length_is_none_or_zero(self):
+        for value in (None, 0):
+            rows, used_proxy = _steady_state_inference_rows(
+                {"inference_batch_length": value, "inference_rows_per_day": 20},
+            )
+            self.assertEqual(rows, 20)
+            self.assertTrue(used_proxy)
+
+    def test_both_missing_returns_zero_and_flags_proxy(self):
+        rows, used_proxy = _steady_state_inference_rows({})
+        self.assertEqual(rows, 0)
+        self.assertTrue(used_proxy)
+
+    def test_feasibility_outcome_actually_changes_with_batch_length(self):
+        # PCA_LEGACY window=5: test_length>=5이어야 feasible. inference_rows_per_day
+        # 근사치(3)로는 infeasible이지만, 실제 배치 길이(inference_batch_length=10)를
+        # 쓰면 feasible로 뒤집힌다 — resolution이 실제로 결과에 영향을 준다는 증거.
+        candidate = {"model": "PCA_LEGACY", "parameters": {"window": 5},
+                     "target_use": "training_free", "recipe": {}}
+        proxy_rows, _ = _steady_state_inference_rows({"inference_rows_per_day": 3})
+        batch_rows, _ = _steady_state_inference_rows(
+            {"inference_rows_per_day": 3, "inference_batch_length": 10},
+        )
+        with_proxy = assess_future_feasibility(
+            candidate, stage_training_rows=1000, stage_inference_rows=proxy_rows, channel_count=3,
+        )
+        with_batch_length = assess_future_feasibility(
+            candidate, stage_training_rows=1000, stage_inference_rows=batch_rows, channel_count=3,
+        )
+        self.assertEqual(with_proxy["status"], "structurally_infeasible")
+        self.assertEqual(with_batch_length["status"], "feasible")
 
 
 # ---------------------------------------------------------------------------
@@ -457,6 +575,12 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             calibration_inference_seconds REAL, actual_runtime_seconds REAL,
             available_training_rows INTEGER, test_observations INTEGER
         );
+        CREATE TABLE model_configs (
+            config_id TEXT, model TEXT, settings_json TEXT
+        );
+        CREATE TABLE channel_features (
+            prefix_feature_id TEXT, channel_index INTEGER
+        );
     """)
 
 
@@ -667,6 +791,82 @@ class TestFullPipelineSyntheticDatabase(unittest.TestCase):
         self.assertIn("top_k_ranking_policy", output.metadata)
         self.assertIn("provisional_arbitrary", output.metadata["top_k_ranking_policy"])
         self.assertTrue(any("test_length" in w for w in output.metadata["warnings"]))
+
+
+class TestSimilaritySummaryMetadata(unittest.TestCase):
+    """metadata["similarity_summary"] 및 "부족한 매치" warning을 검증한다.
+
+    임의의 저유사도 threshold 숫자를 도입하지 않는다는 원칙에 따라, 이 테스트는
+    특정 distance 컷오프가 아니라 (1) 실제 관측된 distance 분포가 그대로
+    노출되는지, (2) 요청한 k보다 매치가 적을 때만 warning이 붙는지만 확인한다.
+    """
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.database = Path(self.temporary.name) / "pipeline.sqlite3"
+        with sqlite3.connect(self.database) as connection:
+            _create_schema(connection)
+            connection.execute(
+                "INSERT INTO prefix_features VALUES ('p1','csv1','s1.csv','famA','s1',100,1000,1000,"
+                "1.0,0.5,0.3,2.0,0.4,0.2,0.6)"
+            )
+            connection.execute("INSERT INTO results VALUES ('p1','c1',1,'',1,'complete',0.8)")
+            connection.execute("INSERT INTO cost_result_links VALUES ('p1','c1',1,'','run-c1')")
+            connection.execute(
+                "INSERT INTO cost_executions VALUES "
+                "('run-c1','p1','complete',NULL,5.0,NULL,NULL,NULL,NULL,NULL,100)"
+            )
+
+        self.ml_input = {
+            "input": {"row_count": 10, "channel_count": 3, "sensor_columns": ["a", "b", "c"]},
+            "normal_prefix": pd.DataFrame({"a": [1.0], "b": [1.0], "c": [1.0]}),
+            "current_model": {"model": "MWVAR", "settings": "c1"},
+            "operating_conditions": {"operating_days": 100, "collection_rows_per_second": 0.0001,
+                                      "inference_rows_per_day": 50},
+            "candidates": [
+                {"config_id": "c1", "head": "", "model": "MWVAR", "target_use": "training_free",
+                 "parameters": {"window": 3}, "recipe": {}},
+            ],
+            "current_features": {"summary": _summary()},
+        }
+
+    def test_similarity_summary_present_with_matching_distance_stats(self):
+        output = run_ml_pipeline(self.ml_input, db_path=self.database)
+        summary = output.metadata["similarity_summary"]
+        self.assertEqual(summary["similarity_metric"], DEFAULT_CONFIG.similarity_metric)
+        self.assertEqual(summary["requested_k"], DEFAULT_CONFIG.similarity_knn_k)
+        self.assertEqual(summary["matches_found"], len(output.similarity_matches))
+        self.assertEqual(summary["matches_found"], 1)  # DB에 historical prefix가 1개뿐
+        distances = [m.distance for m in output.similarity_matches]
+        self.assertAlmostEqual(summary["min_distance"], min(distances))
+        self.assertAlmostEqual(summary["max_distance"], max(distances))
+        self.assertAlmostEqual(summary["mean_distance"], sum(distances) / len(distances))
+
+    def test_fewer_matches_than_requested_k_produces_warning(self):
+        # 기본 similarity_knn_k(10) > historical prefix 1개 -> warning이 붙는다.
+        output = run_ml_pipeline(self.ml_input, db_path=self.database)
+        self.assertTrue(any("similarity kNN" in w and "k=" in w for w in output.metadata["warnings"]))
+
+    def test_enough_matches_does_not_produce_fewer_than_k_warning(self):
+        # similarity_knn_k=1로 낮추면 historical prefix 1개로 충분하므로 warning이 없어야 한다.
+        config = MLConfig(similarity_knn_k=1)
+        output = run_ml_pipeline(self.ml_input, db_path=self.database, config=config)
+        self.assertEqual(output.metadata["similarity_summary"]["matches_found"], 1)
+        self.assertFalse(any("similarity kNN" in w and "k=" in w for w in output.metadata["warnings"]))
+
+    def test_similarity_summary_reports_none_when_no_matches_found(self):
+        # current_features를 historical과 공통 feature가 전혀 없도록 만들면 (전부 None)
+        # matches_found=0이 되고 min/max/mean은 None이어야 한다 (억지로 값을 만들지 않는다).
+        ml_input = {**self.ml_input, "current_features": {
+            "summary": {column: None for column in SIMILARITY_FEATURE_COLUMNS}
+        }}
+        output = run_ml_pipeline(ml_input, db_path=self.database)
+        summary = output.metadata["similarity_summary"]
+        self.assertEqual(summary["matches_found"], 0)
+        self.assertIsNone(summary["min_distance"])
+        self.assertIsNone(summary["max_distance"])
+        self.assertIsNone(summary["mean_distance"])
 
 
 # ---------------------------------------------------------------------------

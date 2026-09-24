@@ -1,4 +1,10 @@
-"""feature standardization + Euclidean distance + distance-weighted kNN.
+"""feature standardization + Euclidean/Cosine distance + distance-weighted kNN.
+
+**V1 기본값은 Euclidean이다** (README: "특징 표준화와 Euclidean 거리, 거리 가중
+kNN을 첫 비교안으로 둔다"). Cosine은 `config.similarity_metric`으로 선택하는
+비교 실험용 대안이다 — 어느 쪽이 더 나은지는 문서 근거가 없으므로 기본값을
+바꾸지 않았고(임의로 확정하지 않는다는 원칙), N/k sensitivity와 같은 성격의
+비교 실험 대상으로만 추가했다.
 
 설계 원칙 (docstring에 명시적으로 기록):
 
@@ -24,7 +30,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from streamlit_website.ml.config import DEFAULT_CONFIG, SIMILARITY_FEATURE_COLUMNS, MLConfig
+from streamlit_website.ml.config import (
+    DEFAULT_CONFIG,
+    SIMILARITY_FEATURE_COLUMNS,
+    SIMILARITY_METRIC_COSINE,
+    SIMILARITY_METRIC_EUCLIDEAN,
+    MLConfig,
+)
 from streamlit_website.ml.features import extract_historical_features
 from streamlit_website.ml.schemas import SimilarityMatch
 
@@ -95,6 +107,44 @@ def euclidean_distance(
     return math.sqrt(total), tuple(used)
 
 
+def cosine_distance(
+    current_standardized: dict[str, float | None], historical_standardized: dict[str, float | None],
+) -> tuple[float | None, tuple[str, ...]]:
+    """두 표준화 벡터 사이의 1 - cosine similarity를 "거리"로 반환한다.
+
+    Euclidean과 같은 원칙을 따른다: 공통으로 값이 있는 feature만 쓰고(NULL을
+    0으로 대체하지 않음), 공통 feature가 없거나 둘 중 하나라도 그 부분벡터의
+    크기(norm)가 0이면(cosine이 정의되지 않음) 비교 불가로 `(None, ())`를
+    반환한다 — 억지로 거리를 만들지 않는다는 원칙은 Euclidean과 동일하다.
+    반환값 범위는 [0, 2]이며 0이면 완전히 같은 방향(가장 유사), 값이 클수록
+    덜 유사하다 — `find_similar_historical_prefixes`의 "거리가 작을수록 유사"
+    라는 정렬/가중치(1/(distance+epsilon)) 규약과 그대로 호환된다.
+    """
+    used = []
+    dot = 0.0
+    norm_a = 0.0
+    norm_b = 0.0
+    for column in SIMILARITY_FEATURE_COLUMNS:
+        a, b = current_standardized.get(column), historical_standardized.get(column)
+        if a is None or b is None:
+            continue
+        used.append(column)
+        dot += a * b
+        norm_a += a * a
+        norm_b += b * b
+    if not used or norm_a == 0.0 or norm_b == 0.0:
+        return None, ()
+    cosine_similarity = dot / (math.sqrt(norm_a) * math.sqrt(norm_b))
+    cosine_similarity = max(-1.0, min(1.0, cosine_similarity))  # 부동소수점 오차 clamp
+    return 1.0 - cosine_similarity, tuple(used)
+
+
+_DISTANCE_FUNCTIONS = {
+    SIMILARITY_METRIC_EUCLIDEAN: euclidean_distance,
+    SIMILARITY_METRIC_COSINE: cosine_distance,
+}
+
+
 def find_similar_historical_prefixes(
     current_features: dict[str, float | None],
     historical_prefixes: list[dict],
@@ -105,9 +155,15 @@ def find_similar_historical_prefixes(
 
     `historical_prefixes`는 `db.load_historical_prefixes()`의 반환값이다.
     반환된 리스트는 거리 오름차순으로, 최대 `config.similarity_knn_k`개다.
+    `config.similarity_metric`으로 Euclidean(V1 기본값)/Cosine(비교 실험용)을
+    고른다 — 둘 다 "공통으로 값 있는 feature만 쓰고, NULL을 0으로 대체하지
+    않는다"는 같은 원칙을 따른다 (`euclidean_distance`/`cosine_distance` 참고).
     """
     if not historical_prefixes:
         raise ValueError("과거 prefix가 없다 — DB가 비어있는지 확인하라")
+    if config.similarity_metric not in _DISTANCE_FUNCTIONS:
+        raise ValueError(f"지원하지 않는 similarity_metric: {config.similarity_metric!r}")
+    distance_function = _DISTANCE_FUNCTIONS[config.similarity_metric]
     historical_feature_rows = [(row, extract_historical_features(row)) for row in historical_prefixes]
     standardizer = build_standardizer([features for _, features in historical_feature_rows])
     current_standardized = standardizer.standardize(current_features)
@@ -115,7 +171,7 @@ def find_similar_historical_prefixes(
     scored = []
     for row, hist_features in historical_feature_rows:
         hist_standardized = standardizer.standardize(hist_features)
-        distance, features_used = euclidean_distance(current_standardized, hist_standardized)
+        distance, features_used = distance_function(current_standardized, hist_standardized)
         if distance is None:
             continue  # 공통으로 비교할 feature가 없음 — 거리를 억지로 만들지 않는다
         scored.append((distance, features_used, row))

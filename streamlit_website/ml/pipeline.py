@@ -57,19 +57,21 @@ MLOutput (DP가 이 스키마만 소비한다)
   DP가 이 정렬을 신뢰하지 않는다면 두 리스트를 합쳐 직접 재정렬할 수 있다.
   `run_ml_pipeline()`은 이 정책을 `metadata["top_k_ranking_policy"]`에
   명시적으로 "provisional/arbitrary"로 표시한다.
-- **feasibility의 `test_length`에 넣는 값(`_steady_state_inference_rows()`)의
-  의미론은 아직 검증되지 않았다.** 저장소 기존 계약(`check_dev18_resources.py`,
+- **feasibility의 `test_length`에 넣는 값 — `inference_batch_length` 입력 추가로
+  해결(2026-09-24).** 저장소 기존 계약(`check_dev18_resources.py`,
   `select_conditional_policy.py`의 `assess_candidate()` 호출부)에서 `test_length`는
   "한 번에 평가되는 연속 구간의 길이"(예: `row_count - training_boundary`)를
-  뜻하며, "누적 추론 총량"이 아니다. 이 파이프라인이 쓰는 `inference_rows_per_day`
-  (일 단위 처리율)도, 후보였던 `stage.inference_volume`(그 stage 구간 누적량)도
-  원래 계약과 정확히 일치하지 않는다 — 둘 다 "연속 구간 길이"라는 축의 값이
-  아니다. 운영 조건 입력에 "한 번에 들어오는 배치/스트림 길이"에 해당하는 값이
-  없으므로 **현재로서는 새 입력을 추가하거나 기존 입력을 재해석해야 하며,
-  문서만으로 최종 확정할 수 없다.** `inference_rows_per_day`를 유지하는 이유는
-  "0이 아닌 값이라는 점에서 그나마 `stage.inference_volume`(누적, 무한정
-  증가)보다는 왜곡이 작다"는 상대적 판단일 뿐, 검증된 결론이 아니다.
-  `run_ml_pipeline()`은 이 사실을 `metadata["warnings"]`에 남긴다.
+  뜻하며, "누적 추론 총량"이나 "일 단위 처리율"이 아니다. `operating_conditions`에
+  `inference_batch_length`("한 번에 모델이 보는 연속 데이터 길이", 선택 입력)가
+  있으면 `_steady_state_inference_rows()`가 이 값을 그대로 써서 원래 계약과
+  의미가 정확히 일치하게 됐다. 없으면 여전히 `inference_rows_per_day`(일 단위
+  처리율, 검증 안 된 근사치)로 fallback한다 — `stage.inference_volume`(그 stage
+  구간 누적량, stage 0은 0)을 쓰지 않는 이유는 그대로다: 구조적 최소 길이는
+  누적량이 아니라 "한 번에 들어오는 스트림 길이"로 결정되고, stage 0에 0을
+  넣으면 "지금 도입 가능한가"가 항상 infeasible 처리되는 오류가 생긴다.
+  `run_ml_pipeline()`은 매 실행마다 어느 쪽을 썼는지 `metadata["warnings"]`에
+  명시한다. UI(`view.py`)에는 이 값을 위한 선택 입력을 추가했다 — 기본값은
+  비워둔 상태(=기존 fallback 동작 그대로)라 기존 사용자 흐름을 바꾸지 않는다.
 """
 
 from __future__ import annotations
@@ -161,18 +163,31 @@ def _candidate_id(config_id: str, head: str) -> str:
     return f"{config_id}::{head}"
 
 
-def _steady_state_inference_rows(operating_conditions: dict) -> int:
-    """feasibility 판정에 쓸 "한 번에 흐르는 추론 스트림 길이".
+def _steady_state_inference_rows(operating_conditions: dict) -> tuple[int, bool]:
+    """feasibility 판정에 쓸 "한 번에 흐르는 추론 스트림 길이"와, 그 값이
 
-    stage.inference_volume(그 구간 누적량, stage 0은 0)과는 다른 개념이다 —
-    구조적 최소 길이(window/patch/context 등)는 "그 stage까지 누적된 추론량"이
-    아니라 "실제로 한 번에 들어오는 스트림 길이"에 의해 결정되므로,
-    `inference_rows_per_day`(일 단위 예상 추론량)를 모든 stage에 동일하게 쓴다.
-    stage 0(지금)도 이 값을 쓴다 — 그래야 "지금 도입 가능한가"를 0행 기준으로
-    항상 infeasible 처리하는 오류를 피할 수 있다.
+    `inference_batch_length`(명시적 입력, 있으면 최우선)에서 왔는지 아니면
+    `inference_rows_per_day`(기존 proxy, 검증 안 됨)에서 왔는지를 함께 반환한다.
+
+    `inference_batch_length`는 "한 번에 모델에 입력되는 연속 데이터 길이"를
+    직접 받는 값이다 — 기존 `model_feasibility.assess_candidate()`의
+    `test_length` 계약("연속 평가 구간 길이", `check_dev18_resources.py`에서
+    `row_count - training_boundary`로 쓰이는 것과 같은 축)과 의미가 정확히
+    일치한다. 이 값이 있으면 더 이상 proxy를 쓸 이유가 없으므로 그대로 쓴다.
+
+    없으면 기존 `inference_rows_per_day`(일 단위 처리율) proxy로 fallback한다 —
+    stage.inference_volume(그 구간 누적량, stage 0은 0)을 안 쓰는 이유는 여전히
+    같다: 구조적 최소 길이는 "누적 추론량"이 아니라 "한 번에 들어오는 스트림
+    길이"로 결정되고, stage 0에 0을 넣으면 "지금 도입 가능한가"가 항상
+    infeasible 처리되는 오류가 생긴다. 다만 이 proxy는 여전히 검증되지 않은
+    근사치이므로, 두 번째 반환값(`used_unvalidated_proxy`)으로 어느 쪽이
+    쓰였는지 호출자가 알 수 있게 한다.
     """
+    batch_length = operating_conditions.get("inference_batch_length")
+    if batch_length:
+        return int(batch_length), False
     value = operating_conditions.get("inference_rows_per_day")
-    return int(value) if value else 0
+    return (int(value) if value else 0), True
 
 
 def _build_candidate_estimate(
@@ -183,9 +198,10 @@ def _build_candidate_estimate(
     target_use = candidate.get("target_use", "")
     candidate_id = _candidate_id(config_id, head)
 
+    stage_inference_rows, _used_unvalidated_proxy = _steady_state_inference_rows(operating_conditions)
     feasibility = assess_future_feasibility(
         candidate, stage_training_rows=stage.future_rows,
-        stage_inference_rows=_steady_state_inference_rows(operating_conditions),
+        stage_inference_rows=stage_inference_rows,
         channel_count=channel_count,
     )
     feasible = feasibility["status"] == "feasible"
@@ -256,10 +272,11 @@ def _build_checkpoint_maintenance_options(
             results_rows, matches, current_rows=ml_input.row_count,
         )
         cost_model = build_candidate_cost_model(results_rows)
+        stage_inference_rows, _used_unvalidated_proxy = _steady_state_inference_rows(ml_input.operating_conditions)
         for stage in future_stages:
             feasibility = assess_future_feasibility(
                 candidate, stage_training_rows=stage.future_rows,
-                stage_inference_rows=_steady_state_inference_rows(ml_input.operating_conditions),
+                stage_inference_rows=stage_inference_rows,
                 channel_count=ml_input.channel_count,
             )
             feasible = feasibility["status"] == "feasible"
@@ -309,11 +326,23 @@ def run_ml_pipeline(
         "(candidate_selection.py). 요구사항에 근거 없음 — 탈락 후보는 "
         "stage_candidates_excluded_from_top_k에 전부 보존됨."
     )
-    metadata["warnings"].append(
-        "feasibility의 test_length(_steady_state_inference_rows)는 inference_rows_per_day를 쓰는데, "
-        "기존 model_feasibility.assess_candidate() 계약의 test_length는 '연속 평가 구간 길이'를 뜻하고 "
-        "'누적 추론량'이 아니다 — 의미론이 완전히 검증되지 않은 상태다."
+    _stage_inference_rows, used_unvalidated_test_length_proxy = _steady_state_inference_rows(
+        ml_input.operating_conditions,
     )
+    if used_unvalidated_test_length_proxy:
+        metadata["warnings"].append(
+            "operating_conditions에 inference_batch_length가 없어서 feasibility의 test_length에 "
+            "inference_rows_per_day(일 단위 처리율)를 대신 쓴다 — 기존 model_feasibility."
+            "assess_candidate() 계약의 test_length는 '연속 평가 구간 길이'를 뜻하고 '누적 추론량'이나 "
+            "'일 단위 처리율'이 아니므로, 이 값은 검증되지 않은 근사치다. operating_conditions에 "
+            "'한 번에 모델이 보는 연속 데이터 길이'를 뜻하는 inference_batch_length를 넣으면 이 "
+            "근사치 대신 정확한 값을 쓴다."
+        )
+    else:
+        metadata["warnings"].append(
+            "operating_conditions.inference_batch_length가 제공되어 feasibility의 test_length에 "
+            "그대로 사용했다 — 기존 model_feasibility.assess_candidate() 계약과 의미가 일치한다."
+        )
 
     summary = (ml_input.current_features or {}).get("summary")
     if summary is None:
@@ -331,6 +360,25 @@ def run_ml_pipeline(
         "zero_variance_columns": sorted(standardizer.zero_variance_columns),
         "insufficient_data_columns": sorted(standardizer.insufficient_data_columns),
     }
+    # "저유사도 warning"을 임의의 숫자 threshold로 확정하지 않는다 (요구사항에 근거
+    # 없음) — 대신 실제 관측된 거리 분포를 그대로 노출해서, 사람이나 downstream
+    # 소비자가 스스로 판단할 수 있게 한다. distance는 클수록(similarity_metric에
+    # 따라 스케일이 다름) 덜 유사하다는 것만 공통이다.
+    metadata["similarity_summary"] = {
+        "similarity_metric": config.similarity_metric,
+        "requested_k": config.similarity_knn_k,
+        "matches_found": len(matches),
+        "min_distance": min((m.distance for m in matches), default=None),
+        "max_distance": max((m.distance for m in matches), default=None),
+        "mean_distance": (sum(m.distance for m in matches) / len(matches)) if matches else None,
+    }
+    if len(matches) < config.similarity_knn_k:
+        metadata["warnings"].append(
+            f"similarity kNN이 요청한 k={config.similarity_knn_k}개보다 적은 {len(matches)}개만 찾았다 "
+            "(historical prefix 수가 부족하거나 공통 feature가 없는 경우가 많음) — 예측 신뢰도가 "
+            "낮을 수 있다. 구체적인 저유사도 기준값은 문서 근거가 없어 이 파이프라인이 임의로 "
+            "정하지 않는다 — metadata['similarity_summary']의 실제 거리 분포로 직접 판단하라."
+        )
 
     future_stages = build_future_stages(ml_input.row_count, ml_input.operating_conditions, config=config)
     if len(future_stages) == 1:

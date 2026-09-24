@@ -49,6 +49,9 @@ lightning_logs/
 __pycache__/
 *.pyc
 
+# run_holdout_experiments.py가 재생성하는 CSV 산출물
+streamlit_website/ml/experiments/output/
+
 
 experiments/checks/reference_code/active_models/full_prefix_v2/
 

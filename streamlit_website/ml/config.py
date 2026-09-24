@@ -24,12 +24,25 @@ SIMILARITY_FEATURE_COLUMNS: tuple[str, ...] = (
 )
 
 
+# similarity.py가 지원하는 거리/유사도 방법. "euclidean"이 V1 기본값(README 근거:
+# "특징 표준화와 Euclidean 거리, 거리 가중 kNN을 첫 비교안으로 둔다"). "cosine"은
+# 비교 실험용으로 추가한 대안이며, 어느 쪽이 더 나은지는 문서 근거가 없으므로
+# 기본값을 바꾸지 않는다 — sensitivity 실험에서 둘을 나란히 비교하기 위한 옵션이다.
+SIMILARITY_METRIC_EUCLIDEAN = "euclidean"
+SIMILARITY_METRIC_COSINE = "cosine"
+SUPPORTED_SIMILARITY_METRICS = (SIMILARITY_METRIC_EUCLIDEAN, SIMILARITY_METRIC_COSINE)
+
+
 @dataclass(frozen=True)
 class MLConfig:
     """ML pipeline 전체에서 쓰는 조정 가능한 값들."""
 
     # distance-weighted kNN에서 사용할 이웃 수. 과거 사례가 이보다 적으면 있는 만큼만 쓴다.
     similarity_knn_k: int = 10
+
+    # similarity 거리 방법. SUPPORTED_SIMILARITY_METRICS 중 하나. 기본값(euclidean)은
+    # 바꾸지 않는다 — cosine은 실험(k/N sensitivity와 같은 성격의 비교 실험)용이다.
+    similarity_metric: str = SIMILARITY_METRIC_EUCLIDEAN
 
     # 0 거리(완전히 동일한 feature) 이웃의 weight 처리: 아주 작은 값으로 나누기 오류를 피한다.
     zero_distance_epsilon: float = 1e-9
@@ -49,6 +62,8 @@ class MLConfig:
     def __post_init__(self):
         if self.similarity_knn_k < 1:
             raise ValueError("similarity_knn_k는 1 이상이어야 한다")
+        if self.similarity_metric not in SUPPORTED_SIMILARITY_METRICS:
+            raise ValueError(f"similarity_metric은 {SUPPORTED_SIMILARITY_METRICS} 중 하나여야 한다")
         if self.top_k_candidates < 1:
             raise ValueError("top_k_candidates는 1 이상이어야 한다")
         if self.minimum_cost_observations_for_regression < 1:

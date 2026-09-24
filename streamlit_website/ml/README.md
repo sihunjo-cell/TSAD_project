@@ -32,6 +32,14 @@ DB→Streamlit 연결 다음, DP(경로 최적화) 이전에 들어가는 ML 단
 | `candidate_selection.py` | stage별 top-k 축소, 탈락 후보 보존 |
 | `pipeline.py` | 위 전부를 묶는 `run_ml_pipeline()` |
 | `test_ml_pipeline.py` | unit + 임시 DB + 실제 dev18 DB 통합 테스트 |
+| `experiments/holdout_validation.py` | leave-series-out held-out 검증(Recall@N), N/observed_q_percent sweep |
+| `experiments/run_holdout_experiments.py` | 위 sweep을 실제 DB에 돌려 표로 출력하는 재현 스크립트 |
+| `experiments/RESULTS.md` | 실제 dev18 DB에 대한 held-out 검증 결과와 해석 (2026-09-24) |
+
+`similarity_metric`(euclidean/cosine, `config.py`)과 `similarity_knn_k`는 held-out
+harness에 `config=MLConfig(...)`로 그대로 넘길 수 있어, k-sensitivity/similarity
+방법 비교도 같은 harness로 실험할 수 있다 (아직 실행하지 않음 — `RESULTS.md`의
+"다음 단계" 참고).
 
 DB 경로는 인자 > 환경변수 `TSAD_RECOMMENDATION_DB` > 기본값
 (`experiments/tuning/results/recommendation.sqlite3`, git에 커밋되지 않음) 순으로 정한다.

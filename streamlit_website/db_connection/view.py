@@ -58,6 +58,11 @@ def render_candidate_intake():
         collection, inference = st.columns(2)
         collection_rate = collection.number_input("예상 수집 속도 (행/초)", min_value=0.0, value=1.0)
         inference_rows = inference.number_input("예상 추론량 (행/일)", min_value=0, value=86400, step=1)
+        inference_batch_length = st.number_input(
+            "한 번에 모델이 보는 연속 추론 데이터 길이 (선택)", min_value=0, value=0, step=1,
+            help="비워두면(0) ML 단계가 '예상 추론량 (행/일)'로 근사한다 — 이 근사치는 검증되지 않았다. "
+                 "실제로 한 번에 모델에 들어가는 연속 구간 길이를 알고 있다면 여기에 입력하면 더 정확하다.",
+        )
         submitted = st.form_submit_button("전체 계획 후보 풀 확인", use_container_width=True)
     if not submitted:
         return
@@ -76,7 +81,8 @@ def render_candidate_intake():
         operating_conditions={"cpu": cpu, "gpu": gpu, "cpu_cores": cpu_cores,
                               "ram_gib": ram, "vram_gib": vram, "performance_metric": performance_metric,
                               "performance_floor": performance_floor, "operating_days": operating_days,
-                              "collection_rows_per_second": collection_rate, "inference_rows_per_day": inference_rows},
+                              "collection_rows_per_second": collection_rate, "inference_rows_per_day": inference_rows,
+                              "inference_batch_length": inference_batch_length or None},
     )
     st.session_state["ml_input"] = ml_input
     st.subheader("전체 계획에서 검토할 후보 풀")
