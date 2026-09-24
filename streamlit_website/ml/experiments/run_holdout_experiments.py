@@ -6,9 +6,10 @@
   `python3 -m streamlit_website.ml.experiments.run_holdout_experiments <db_path> <csv_dir>`
 
 콘솔에는 지금까지처럼 마크다운 표를 출력하고, 추가로 각 sweep 결과를
-`<csv_dir>`(기본값: `streamlit_website/ml/experiments/output/`) 아래 CSV 파일 4개로도
+`<csv_dir>`(기본값: `streamlit_website/ml/experiments/output/`) 아래 CSV 파일 5개로도
 저장한다: `n_sensitivity.csv`, `observed_q_percent_sensitivity.csv`,
-`k_sensitivity.csv`, `similarity_metric_comparison.csv`.
+`k_sensitivity.csv`, `similarity_metric_comparison.csv`,
+`performance_only_validation_gap.csv`(Method 1/2, 2026-09-25 추가 — 아래 참고).
 
 **N과 관측%(observed_q_percent)는 서로 다른 축이므로 항상 한쪽을 고정하고 다른
 쪽만 바꾼다** (팀 피드백 문서의 "두 축을 섞지 않는다" 원칙). 이 스크립트는 그 둘을
@@ -111,6 +112,31 @@ def run_k_sensitivity(database=None) -> list[dict]:
     return rows
 
 
+def run_performance_only_validation_gap(database=None) -> list[dict]:
+    """"recall_at_n은 성능만 검증한다"는 팀 리뷰 지적 보완(Method 1/2)의 series별 실측치.
+
+    N/관측%는 다른 sweep들의 기준값(N=10, 관측%=20)과 동일하게 고정한다 — 새 축을
+    또 하나 섞지 않기 위함이다. `holdout_validation.py` 모듈 docstring의 Method 1/2
+    설명을 그대로 따른다.
+    """
+    series_list = _series_list(database)
+    rows = []
+    for series in series_list:
+        result = evaluate_holdout(
+            series, FIXED_OBSERVED_Q_PERCENT_FOR_N_SWEEP, database=database, top_n=FIXED_N_FOR_Q_SWEEP,
+        )
+        rows.append({
+            "series": series,
+            "recall_at_n": result.recall_at_n,
+            "recall_policy_at_n": result.recall_policy_at_n,
+            "actual_mean_cost_seconds_of_predicted_top_n": result.actual_mean_cost_seconds_of_predicted_top_n,
+            "actual_mean_cost_seconds_of_performance_only_ground_truth_top_n": (
+                result.actual_mean_cost_seconds_of_performance_only_ground_truth_top_n
+            ),
+        })
+    return rows
+
+
 def run_similarity_metric_comparison(database=None) -> list[dict]:
     series_list = _series_list(database)
     per_metric_recalls = {metric: [] for metric in SUPPORTED_SIMILARITY_METRICS}
@@ -183,6 +209,41 @@ def main() -> None:
     print(f"\n## Euclidean vs Cosine (관측%={FIXED_OBSERVED_Q_PERCENT_FOR_N_SWEEP}, N={FIXED_N_FOR_METRIC_COMPARISON} 고정)\n")
     _print_table(metric_rows)
     _write_csv(metric_rows, csv_dir / "similarity_metric_comparison.csv")
+
+    gap_rows = run_performance_only_validation_gap(database)
+    print(
+        f"\n## 성능만 검증 지적 보완: Method 1/2 (관측%={FIXED_OBSERVED_Q_PERCENT_FOR_N_SWEEP}, "
+        f"N={FIXED_N_FOR_Q_SWEEP} 고정)\n"
+    )
+    _print_table(gap_rows)
+    _write_csv(gap_rows, csv_dir / "performance_only_validation_gap.csv")
+    recall_vals = [r["recall_at_n"] for r in gap_rows if r["recall_at_n"] is not None]
+    recall_policy_vals = [r["recall_policy_at_n"] for r in gap_rows if r["recall_policy_at_n"] is not None]
+    pred_costs = [
+        r["actual_mean_cost_seconds_of_predicted_top_n"] for r in gap_rows
+        if r["actual_mean_cost_seconds_of_predicted_top_n"] is not None
+    ]
+    gt_costs = [
+        r["actual_mean_cost_seconds_of_performance_only_ground_truth_top_n"] for r in gap_rows
+        if r["actual_mean_cost_seconds_of_performance_only_ground_truth_top_n"] is not None
+    ]
+    if recall_vals and recall_policy_vals:
+        print(
+            f"\nmean recall_at_n={statistics.mean(recall_vals):.4f} vs "
+            f"mean recall_policy_at_n={statistics.mean(recall_policy_vals):.4f}"
+        )
+    if pred_costs and gt_costs:
+        cheaper = sum(1 for r in gap_rows if (
+            r["actual_mean_cost_seconds_of_predicted_top_n"] is not None
+            and r["actual_mean_cost_seconds_of_performance_only_ground_truth_top_n"] is not None
+            and r["actual_mean_cost_seconds_of_predicted_top_n"]
+            < r["actual_mean_cost_seconds_of_performance_only_ground_truth_top_n"]
+        ))
+        print(
+            f"mean actual cost: predicted_top_n={statistics.mean(pred_costs):.2f}s vs "
+            f"performance_only_ground_truth_top_n={statistics.mean(gt_costs):.2f}s "
+            f"(predicted_top_n이 더 싼 series: {cheaper}/{len(gap_rows)})"
+        )
 
     print(f"\nCSV 저장 위치: {csv_dir}")
 

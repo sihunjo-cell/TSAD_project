@@ -175,6 +175,49 @@ Top-N을 정렬한다 (held-out series 자신의 실제 미래 규모를 학습/
 변경은 "production 정책과 일치시킨 것" 자체가 목적이었고, 지금 규모에서 결과를
 바꾸지는 않는다(예상된 결과이며, 회귀 아님).
 
+## "성능만 검증하는 것 아니냐" 지적 보완: Method 1/2 실제 결과 (2026-09-25)
+
+팀 리뷰에서 나온 지적("`recall_at_n`은 VUS-PR에 동률이 거의 없어 사실상 성능
+예측만 검증하고, 비용까지 고려한 정책이 맞는 선택을 하는지는 검증 못 한다")을
+보완하기 위해 `ground_truth_policy_top_n`/`recall_policy_at_n`(Method 1)과
+`actual_mean_cost_seconds_of_predicted_top_n`/`actual_mean_cost_seconds_of_performance_only_ground_truth_top_n`
+(Method 2)을 추가했다 (설계는 `holdout_validation.py` 모듈 docstring 참고,
+기존 `recall_at_n` 등 기존 필드의 정의는 그대로 유지). 실제 DB(관측%=20, N=10,
+18 series 전체)에 돌린 결과:
+
+**Method 1 (`recall_policy_at_n`)**: 18개 series **전부** `recall_at_n ==
+recall_policy_at_n`로 정확히 같았다 (평균 0.3667로 동일, series별 표는
+`streamlit_website/ml/experiments/output/performance_only_validation_gap.csv`).
+`ground_truth_policy_top_n`(정답도 예측과 동일하게 "성능desc→실측비용asc"로
+재정렬한 것)이 기존 `ground_truth_top_n`(성능 desc만)과 순위가 갈리지 않았다는
+뜻이다 — **"VUS-PR 동률이 거의 없어 비용이 개입할 일이 드물다"는 팀 리뷰의
+가설이 실측으로 정량 확인됐다.** 이는 버그가 아니라, "지금 recall_at_n이 사실상
+성능 예측 검증과 같다"는 기존 지적이 옳았음을 보여주는 결과다.
+
+**Method 2 (실측 비용 비교)**: ML이 실제로 고른 top-N(`predicted_top_n`)과
+"성능만 봤을 때 골랐을 top-N"(`ground_truth_top_n`)이 held-out series에서 실제로
+쓴 비용(`actual_runtime_seconds`)을 18개 series에서 나란히 비교하면:
+
+- 평균: predicted_top_n **507.14초** vs performance-only ground_truth_top_n
+  **235.27초** — 평균적으로는 ML이 고른 쪽이 오히려 더 비쌌다.
+- series 단위로는 18개 중 **7개는 ML 쪽이 더 쌌고, 11개는 ML 쪽이 더 비쌌다**
+  (동률 0개). 예를 들어 series 05/06은 ML 쪽이 훨씬 쌌지만(각각 77s vs 445s,
+  7s vs 432s), series 13/14는 ML 쪽이 훨씬 비쌌다(2991s vs 1241s, 3606s vs 243s).
+
+**해석과 남은 질문**: `recall_at_n`(성능 예측이 맞는가)과 이 비용 비교는 서로
+다른 질문에 답한다 — ML이 성능 예측을 틀리면(recall 낮은 series, 예: 01/06/15는
+recall=0) 그 predicted_top_n은 애초에 ground_truth_top_n과 후보 구성 자체가
+다르므로, "더 싸다/비싸다"는 비교도 우연에 가깝다. 즉 이 비용 격차가 "ML이
+의도적으로 비싼 후보를 고르는 경향"인지, 아니면 단순히 "성능 예측이 series마다
+들쭉날쭉해서 생기는 부산물"인지는 이 결과만으로는 구분할 수 없다 — recall이 높은
+series(03/07/08처럼 0.8~0.9)만 따로 떼서 비용 격차를 다시 보는 후속 분석이
+필요하다(아직 하지 않음, 다음 단계에 추가).
+
+재현: `python3 -m streamlit_website.ml.experiments.run_holdout_experiments` 실행 시
+"성능만 검증 지적 보완: Method 1/2" 표와 요약 줄로 그대로 출력되고,
+`streamlit_website/ml/experiments/output/performance_only_validation_gap.csv`에도
+저장된다.
+
 ## 남은 항목: "최적화 단계까지 포함한 N 비교"
 
 팀 피드백이 요구한 최종 비교(N별로 **이후 최적화 결과** — 최종 성능/최종 cost/최적화

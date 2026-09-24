@@ -37,14 +37,22 @@ def _insert_result(connection, prefix_feature_id, config_id, vus_pr):
     )
 
 
-def _insert_cost(connection, prefix_feature_id, config_id, run_id, *, test_observations, test_inference_seconds):
-    """`_insert_result`가 쓰는 seed=1, score_variant=''과 맞춰 cost를 연결한다."""
+def _insert_cost(
+    connection, prefix_feature_id, config_id, run_id, *,
+    test_observations, test_inference_seconds, actual_runtime_seconds=None,
+):
+    """`_insert_result`가 쓰는 seed=1, score_variant=''과 맞춰 cost를 연결한다.
+
+    `actual_runtime_seconds`는 기본값 None(관측 없음)이다 — Method 1/2(실측 비용 기반
+    검증, `TestPerformanceOnlyValidationGap`)만 명시적으로 채우고, 그 외 기존 테스트들은
+    이 값과 무관하게(cost.py 추정 회귀만 씀) 동작한다.
+    """
     connection.execute(
         "INSERT INTO cost_result_links VALUES (?,?,1,'',?)", (prefix_feature_id, config_id, run_id),
     )
     connection.execute(
-        "INSERT INTO cost_executions VALUES (?,?,'complete',NULL,?,NULL,NULL,NULL,NULL,NULL,?)",
-        (run_id, prefix_feature_id, test_inference_seconds, test_observations),
+        "INSERT INTO cost_executions VALUES (?,?,'complete',NULL,?,NULL,NULL,NULL,?,NULL,?)",
+        (run_id, prefix_feature_id, test_inference_seconds, actual_runtime_seconds, test_observations),
     )
 
 
@@ -301,6 +309,122 @@ class TestFeasibilityIntegration(unittest.TestCase):
         self.assertFalse(result.feasibility_evaluated)
         self.assertIsNone(result.stage_inference_rows_used)
         self.assertEqual(result.predicted_top_n, ("c1::",))  # feasibility 미평가 -> 걸러내지 않는다
+
+
+class TestPerformanceOnlyValidationGap(unittest.TestCase):
+    """"recall_at_n은 성능만 검증한다"는 팀 리뷰 지적에 대한 보완(Method 1/2, 2026-09-25
+    추가): `ground_truth_policy_top_n`/`recall_policy_at_n`/두 실측 평균비용 필드를
+    검증한다. `actual_runtime_seconds`(held-out series 자신의 q=100 실측 실행시간)를
+    `_insert_cost`에 명시적으로 채운 DB를 쓴다 — cost.py 추정치가 아니라 실측이어야
+    한다는 설계를 그대로 반영한다.
+    """
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.database = Path(self.temporary.name) / "policy.sqlite3"
+        with sqlite3.connect(self.database) as connection:
+            _create_schema(connection)
+            _insert_prefix(connection, "s1-20", "s1", 20, 20)
+            _insert_prefix(connection, "s1-100", "s1", 100, 100)
+            _insert_prefix(connection, "s2-100", "s2", 100, 100)
+            # ground truth(s1 실제 q=100): c1이 성능은 가장 높지만(0.9) 실측 비용도 가장
+            # 비싸다(100초). c2는 성능은 낮지만(0.5) 훨씬 싸다(10초). c3는 성능은 c2와
+            # 같지만(0.5) 실측 비용 관측 자체가 없다 — policy 정답 집합에서 제외돼야 한다.
+            _insert_result(connection, "s1-100", "c1", 0.9)
+            _insert_result(connection, "s1-100", "c2", 0.5)
+            _insert_result(connection, "s1-100", "c3", 0.5)
+            # 예측 근거(s2): c2가 c1보다 높게 설계해서 predicted_top_n이 성능만-정답과
+            # 어긋나도록 만든다(=ML이 실제로는 더 싼 c2를 고르는 시나리오).
+            _insert_result(connection, "s2-100", "c1", 0.2)
+            _insert_result(connection, "s2-100", "c2", 0.7)
+            _insert_result(connection, "s2-100", "c3", 0.1)
+            _insert_cost(
+                connection, "s2-100", "c1", "run-c1-pred", test_observations=100, test_inference_seconds=5.0,
+            )
+            _insert_cost(
+                connection, "s2-100", "c2", "run-c2-pred", test_observations=100, test_inference_seconds=5.0,
+            )
+            _insert_cost(
+                connection, "s2-100", "c3", "run-c3-pred", test_observations=100, test_inference_seconds=5.0,
+            )
+            _insert_cost(
+                connection, "s1-100", "c1", "run-c1-actual", test_observations=100,
+                test_inference_seconds=100.0, actual_runtime_seconds=100.0,
+            )
+            _insert_cost(
+                connection, "s1-100", "c2", "run-c2-actual", test_observations=100,
+                test_inference_seconds=10.0, actual_runtime_seconds=10.0,
+            )
+            # c3: 실측 비용 관측 없음(의도적) — actual_runtime_seconds 기본값 None.
+
+    def test_predicted_top_n_disagrees_with_performance_only_ground_truth(self):
+        # 이 시나리오의 전제 확인: 성능만-정답은 c1, ML 예측은 c2 -> recall_at_n=0.
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=1)
+        self.assertEqual(result.ground_truth_top_n, ("c1::",))
+        self.assertEqual(result.predicted_top_n, ("c2::",))
+        self.assertEqual(result.recall_at_n, 0.0)
+
+    def test_ground_truth_policy_top_n_excludes_candidate_without_actual_cost(self):
+        # c3는 vus_pr=0.5로 c2와 동률이지만 실측 비용이 없어 policy 정답 집합에서 빠진다.
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=3)
+        self.assertNotIn("c3::", result.ground_truth_policy_top_n)
+        self.assertEqual(set(result.ground_truth_policy_top_n), {"c1::", "c2::"})
+
+    def test_recall_policy_at_n_uses_actual_cost_reordered_ground_truth(self):
+        # top_n=1: 성능(0.9 vs 0.5)이 동률이 아니므로 정책 정답도 여전히 c1(비쌈)이
+        # 1등이다 — recall_policy_at_n도 recall_at_n과 마찬가지로 0.0이어야 한다
+        # (비용이 성능 차이를 뒤집지는 않는다는 걸 확인).
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=1)
+        self.assertEqual(result.ground_truth_policy_top_n, ("c1::",))
+        self.assertEqual(result.recall_policy_at_n, 0.0)
+
+    def test_actual_mean_cost_fields_show_predicted_choice_is_cheaper(self):
+        # Method 2: ML이 실제로 고른 top-N(predicted_top_n=c2, 10초)이 성능만 봤을 때
+        # 골랐을 top-N(ground_truth_top_n=c1, 100초)보다 held-out series에서 실제로
+        # 훨씬 쌌다는 것을 직접 비교로 보여준다.
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=1)
+        self.assertAlmostEqual(result.actual_mean_cost_seconds_of_predicted_top_n, 10.0)
+        self.assertAlmostEqual(
+            result.actual_mean_cost_seconds_of_performance_only_ground_truth_top_n, 100.0,
+        )
+
+    def test_policy_tie_break_prefers_cheaper_candidate_when_performance_ties(self):
+        # c2/c4를 성능 동률(0.5)로 추가하되 c4가 c2보다 비싸게 만들면, policy 정답은
+        # 동률을 실측 비용 오름차순으로 tie-break해야 한다(=c2가 c4보다 먼저).
+        with sqlite3.connect(self.database) as connection:
+            _insert_result(connection, "s1-100", "c4", 0.5)
+            _insert_result(connection, "s2-100", "c4", 0.1)
+            _insert_cost(
+                connection, "s2-100", "c4", "run-c4-pred", test_observations=100, test_inference_seconds=5.0,
+            )
+            _insert_cost(
+                connection, "s1-100", "c4", "run-c4-actual", test_observations=100,
+                test_inference_seconds=50.0, actual_runtime_seconds=50.0,
+            )
+        result = evaluate_holdout("s1", 20, database=self.database, top_n=4)
+        c2_index = result.ground_truth_policy_top_n.index("c2::")
+        c4_index = result.ground_truth_policy_top_n.index("c4::")
+        self.assertLess(c2_index, c4_index)  # c2(10초)가 c4(50초)보다 먼저
+
+    def test_policy_fields_are_none_when_no_actual_cost_observations_exist(self):
+        # `_insert_cost`에 actual_runtime_seconds를 전혀 채우지 않은 기존 스타일 DB에서는
+        # (`TestHoldoutEvaluation.setUp`과 동일한 패턴) policy 관련 필드가 전부 "값 없음"으로
+        # 남아야 한다 — 억지로 채우지 않는다는 원칙.
+        database = Path(self.temporary.name) / "no_actual_cost.sqlite3"
+        with sqlite3.connect(database) as connection:
+            _create_schema(connection)
+            _insert_prefix(connection, "s1-20", "s1", 20, 20)
+            _insert_prefix(connection, "s1-100", "s1", 100, 100)
+            _insert_prefix(connection, "s2-100", "s2", 100, 100)
+            _insert_result(connection, "s1-100", "c1", 0.9)
+            _insert_result(connection, "s2-100", "c1", 0.8)
+            _insert_cost(connection, "s2-100", "c1", "run-c1", test_observations=100, test_inference_seconds=5.0)
+        result = evaluate_holdout("s1", 20, database=database, top_n=1)
+        self.assertEqual(result.ground_truth_policy_top_n, ())
+        self.assertIsNone(result.recall_policy_at_n)
+        self.assertIsNone(result.actual_mean_cost_seconds_of_predicted_top_n)
+        self.assertIsNone(result.actual_mean_cost_seconds_of_performance_only_ground_truth_top_n)
 
 
 class TestCandidateCountIsNotHardcoded(unittest.TestCase):

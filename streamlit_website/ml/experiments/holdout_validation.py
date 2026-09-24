@@ -49,6 +49,33 @@
   "held-out의 미래 비용을 예측"한다면서 실제로는 그 series 자신의 실측 비용
   관측치가 회귀 학습 데이터에 섞여 있던 데이터 누수였다. 이제 cost 회귀에 넘기는
   데이터도 `results_rows`에서 held-out series 행을 제외해서 만든다.
+
+## "성능만 검증하는 것 아니냐"는 팀 리뷰 지적에 대한 보완 (2026-09-25 추가)
+
+기존 `ground_truth_top_n`(정답)은 실제 VUS-PR만으로 순위를 매긴다. `predicted_top_n`
+(예측)은 "성능 desc → 비용 asc"로 순위를 매기는데, VUS-PR이 연속값이라 동률이
+거의 없어 비용이 순위에 개입할 일이 드물다 — 즉 `recall_at_n`은 사실상 "성능
+예측이 얼마나 맞는가"만 검증하고, 비용까지 고려한 정책이 맞는 선택을 하는지는
+검증하지 못한다는 지적이 팀 리뷰에서 나왔다. 이를 보완하기 위해 두 가지를
+추가했다 (코드 변경 없이 새 필드만 추가 — 기존 `recall_at_n`의 정의/의미는
+그대로 유지):
+
+- **`ground_truth_policy_top_n`/`recall_policy_at_n`**: 정답도 예측과 **똑같은
+  정책**("성능 desc → 비용 asc")을 적용해서 다시 만든다. 다만 정답 쪽 비용은
+  `cost.py`로 추정한 값이 아니라, held-out series에서 **실제로 관측된**
+  `actual_runtime_seconds`(q=100, `status='complete'`인 실행들의 평균)를 쓴다 —
+  정답은 추정이 아니라 실측이어야 하므로 예측 파이프라인이 쓰는 회귀 추정치를
+  그대로 재사용하지 않는다. `actual_runtime_seconds` 관측이 없는 candidate는
+  이 정답 집합에서 제외한다(억지로 채우지 않는다). 이 값이 기존 `recall_at_n`과
+  크게 다르지 않다면 "비용을 고려해도 결론이 바뀌지 않는다"는 뜻이고, 크게
+  다르다면 지금 검증이 성능에만 치우쳐 있었다는 뜻이다.
+- **`actual_mean_cost_seconds_of_predicted_top_n`/
+  `actual_mean_cost_seconds_of_performance_only_ground_truth_top_n`**: "성능만
+  봤을 때 골랐을 top-N"과 "ML이 실제로 고른 top-N"이 held-out series에서 **실제로
+  얼마나 비용이 들었는지**(`actual_runtime_seconds` 실측 평균)를 나란히 비교한다.
+  후보 구성이 다르더라도, ML이 평균적으로 더 싼 후보를 고르는 경향이 있는지를
+  직접 잰다 — 순위 일치 여부(Recall)와는 별개의, "선택이 비용 효율적이었는가"에
+  대한 답이다.
 """
 
 from __future__ import annotations
@@ -88,6 +115,11 @@ class HoldoutEvaluationResult:
     stage_inference_rows_used: int | None  # feasibility에 쓴 held-out series의 실제 test_observations
     candidates_feasible: int              # feasible=True인 candidate 수 (미평가 시 0)
     candidates_usable: int                # feasible+performance+cost가 모두 있어 top-N 경쟁에 실제로 들어간 candidate 수
+    # "성능만 검증" 지적 보완 (Method 1/2, 2026-09-25 추가) — 모듈 docstring 참고.
+    ground_truth_policy_top_n: tuple[str, ...]  # 정답도 예측과 동일 정책("성능desc,실측비용asc")으로 재정렬한 top_n
+    recall_policy_at_n: float | None            # ground_truth_policy_top_n이 비어 있으면 None
+    actual_mean_cost_seconds_of_predicted_top_n: float | None  # predicted_top_n의 실측 평균 비용(초)
+    actual_mean_cost_seconds_of_performance_only_ground_truth_top_n: float | None  # ground_truth_top_n(성능만)의 실측 평균 비용(초)
 
 
 GOOD_CANDIDATE_DEFINITION = (
@@ -175,6 +207,7 @@ def evaluate_holdout(
     ground_truth: dict[str, float] = {}
     predicted: dict[str, float] = {}
     estimated_cost: dict[str, float] = {}
+    actual_cost_of_held_out: dict[str, float] = {}  # Method 1/2: held-out series 자신의 실측 비용(초)
     feasible_candidates: set[str] = set()
     evaluated_for_feasibility: set[str] = set()
     for (config_id, head), results_rows in results_by_candidate.items():
@@ -185,6 +218,16 @@ def evaluate_holdout(
         gt_point = trajectory_point_at_q(held_out_points, 100)
         if gt_point is not None and gt_point.vus_pr is not None:
             ground_truth[candidate_id] = gt_point.vus_pr
+
+        # Method 1/2: held-out series 자신의 q=100 실측 실행시간(actual_runtime_seconds) 평균.
+        # 추정치(cost.py)가 아니라 실측이므로 "정답" 쪽에만 쓴다 — 관측이 없으면 채우지 않는다.
+        actual_runtimes = [
+            row["actual_runtime_seconds"] for row in results_rows
+            if row["series"] == held_out_series and row["q_percent"] == 100
+            and row.get("status") == "complete" and row.get("actual_runtime_seconds") is not None
+        ]
+        if actual_runtimes:
+            actual_cost_of_held_out[candidate_id] = sum(actual_runtimes) / len(actual_runtimes)
 
         estimate = estimate_stage_performance(
             results_rows, matches,
@@ -243,6 +286,29 @@ def evaluate_holdout(
         len(set(predicted_top_n) & set(ground_truth_top_n)) / len(ground_truth_top_n)
         if ground_truth_top_n else None
     )
+
+    # Method 1: 정답도 예측과 동일 정책("성능desc, 비용asc")으로 재정렬 — 단, 비용은
+    # cost.py 추정치가 아니라 held-out series 자신의 실측(actual_cost_of_held_out)을 쓴다.
+    # 실측 비용이 없는 candidate는 이 정답 집합에 넣지 않는다(억지로 채우지 않는다).
+    policy_candidates = [cid for cid in ground_truth if cid in actual_cost_of_held_out]
+    ground_truth_policy_ranked = sorted(
+        policy_candidates, key=lambda cid: (-ground_truth[cid], actual_cost_of_held_out[cid], cid),
+    )
+    ground_truth_policy_top_n = tuple(ground_truth_policy_ranked[:top_n])
+    recall_policy_at_n = (
+        len(set(predicted_top_n) & set(ground_truth_policy_top_n)) / len(ground_truth_policy_top_n)
+        if ground_truth_policy_top_n else None
+    )
+
+    # Method 2: "성능만 봤을 때 골랐을 top-N"(ground_truth_top_n) vs "ML이 실제로 고른
+    # top-N"(predicted_top_n)이 held-out series에서 실제로 얼마나 비용이 들었는지 비교.
+    def _mean_actual_cost(candidate_ids: tuple[str, ...]) -> float | None:
+        costs = [actual_cost_of_held_out[cid] for cid in candidate_ids if cid in actual_cost_of_held_out]
+        return sum(costs) / len(costs) if costs else None
+
+    actual_mean_cost_of_predicted_top_n = _mean_actual_cost(predicted_top_n)
+    actual_mean_cost_of_performance_only_ground_truth_top_n = _mean_actual_cost(ground_truth_top_n)
+
     total_candidates = len(results_by_candidate)
     top_n_costs = [estimated_cost[cid] for cid in predicted_top_n if cid in estimated_cost]
     return HoldoutEvaluationResult(
@@ -260,6 +326,12 @@ def evaluate_holdout(
         stage_inference_rows_used=held_out_test_observations,
         candidates_feasible=len(feasible_candidates),
         candidates_usable=len(usable),
+        ground_truth_policy_top_n=ground_truth_policy_top_n,
+        recall_policy_at_n=recall_policy_at_n,
+        actual_mean_cost_seconds_of_predicted_top_n=actual_mean_cost_of_predicted_top_n,
+        actual_mean_cost_seconds_of_performance_only_ground_truth_top_n=(
+            actual_mean_cost_of_performance_only_ground_truth_top_n
+        ),
     )
 
 
