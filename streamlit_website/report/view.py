@@ -1,4 +1,4 @@
-"""데이터 입력에서 제출한 ML 추정과 DP 경로를 인쇄용 운영 계획 보고서로 보여 준다."""
+"""기업 의사결정 창에서 제출한 ML 추정과 DP 경로를 인쇄용 운영 계획 보고서로 보여 준다."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -15,7 +15,7 @@ def render_report():
     payload, ml_input, ml_output = (st.session_state.get(key) for key in ("dp_input", "ml_input", "ml_output"))
     if payload is None or ml_input is None or ml_output is None:
         st.title("운영 계획 보고서")
-        st.info("데이터 입력에서 CSV와 운영 조건을 제출하면 보고서가 만들어집니다.")
+        st.info("첫 화면(기업 의사결정 창)에서 CSV와 운영 조건을 제출하면 보고서가 만들어집니다.")
         return
     try:
         result = optimize_plan(payload)

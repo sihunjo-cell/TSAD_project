@@ -115,7 +115,7 @@ p는 같은 단위 Wilcoxon이다. 일회성 검증이라 코드는 남기지 �
 
 ## Streamlit 연결
 
-`streamlit_website/db_connection/view.py`의 `render_candidate_intake()`는 후보 풀과
+`streamlit_website/db_connection/view.py`의 `run_intake()`는 후보 풀과
 현재 feature를 만든 뒤 `run_ml_pipeline()`을 바로 실행한다. form 제출 뒤에 따로 누르는
 버튼은 Streamlit 재실행에서 제출 상태가 사라져 동작하지 않으므로 제출과 함께 돌린다.
 결과는 `build_dp_input()`으로 바꿔 `st.session_state["dp_input"]`에 두며, 상단
