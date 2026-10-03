@@ -1,11 +1,16 @@
 # 로컬 전용 문서와 정리 보관함
 AGENTS.md
 CLAUDE.md
+.claude
+.impeccable/
+PRODUCT.md
+DESIGN.md
 *.local.md
 /docs/
 dummy/
 .runtime/
 .superpowers/
+graphify-out/
 
 # 로컬 원본 데이터: 저장소 밖에 두고 경로·SHA-256·분석 결과만 추적한다.
 TSB-AD-M/
