@@ -1,9 +1,10 @@
-"""원격에서 작은 입력과 임시 DB로 1차 후보 축소를 확인한다."""
+"""작은 입력과 임시 DB로 후보 1차 축소를 확인한다."""
 
 import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 import numpy as np
@@ -15,15 +16,20 @@ from streamlit_website.db_connection.filter_candidates import (
 )
 
 
+def is_full_pca(row):
+    return row["model"] == "PCA_LEGACY" and row["parameters"].get("n_components") is None
+
+
 class TestCandidateFilter(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.database = Path(self.temporary.name) / "evidence.sqlite3"
         self.registry = load_model_registry()
-        with sqlite3.connect(self.database) as connection:
+        with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.executescript("""
                 CREATE TABLE model_configs (config_id TEXT, model TEXT, settings_json TEXT);
+                CREATE TABLE cost_executions (config_id TEXT, actual_backend TEXT, execution_details_json TEXT);
             """)
             for model, settings in self.registry["models"].items():
                 for candidate in settings["candidates"]:
@@ -43,11 +49,37 @@ class TestCandidateFilter(unittest.TestCase):
         self.assertEqual(sum(row["status"] == "infeasible" for row in graph), 1)
         single = filter_candidates(candidates, channel_count=1)
         self.assertTrue(all(row["status"] == "infeasible" for row in single
-                            if row["model"] in {"GDN", "TimeRCD"}))
+                            if row["model"] in {"GDN", "TimeRCD"} or is_full_pca(row)))
         self.assertTrue(all(row["status"] == "eligible" for row in single
-                            if row["model"] not in {"GDN", "TimeRCD"}))
+                            if row["model"] not in {"GDN", "TimeRCD"} and not is_full_pca(row)))
         self.assertTrue(all(row["status"] == "eligible" for row in
-                            filter_candidates(candidates, channel_count=30)))
+                            filter_candidates(candidates, channel_count=30) if not is_full_pca(row)))
+
+    def test_pca_without_component_count_is_excluded(self):
+        rows = filter_candidates(load_candidates(self.database), channel_count=19)
+        pca = [row for row in rows if row["model"] == "PCA_LEGACY"]
+        self.assertEqual([row["status"] for row in pca if is_full_pca(row)], ["infeasible"])
+        self.assertTrue(all(row["status"] == "eligible" for row in pca if not is_full_pca(row)))
+
+    def test_non_tspulse_heads_match_db_score_variant_and_timercd_stays_eligible(self):
+        candidates = load_candidates(self.database)
+        self.assertTrue(all(row["head"] == "" for row in candidates if row["model"] != "TSPulse"))
+        rows = filter_candidates(candidates, channel_count=19)
+        self.assertTrue(all(row["status"] == "eligible" for row in rows if row["model"] == "TimeRCD"))
+
+    def test_gpu_measured_candidates_need_a_gpu(self):
+        with closing(sqlite3.connect(self.database)) as connection, connection:
+            connection.execute("INSERT INTO cost_executions SELECT config_id, 'cuda', "
+                               "'{\"resource_usage\": {\"gpu_reserved_peak_bytes\": 1073741824}}' "
+                               "FROM model_configs WHERE model='PaAno'")
+        candidates = load_candidates(self.database)
+        self.assertTrue(all(row["gpu_peak_gib"] == 1.0 for row in candidates if row["model"] == "PaAno"))
+        without_gpu = filter_candidates(candidates, channel_count=19, gpu_available=False)
+        with_gpu = filter_candidates(candidates, channel_count=19)
+        self.assertTrue(all(row["status"] == "infeasible" for row in without_gpu if row["model"] == "PaAno"))
+        self.assertTrue(all(row["status"] == "eligible" for row in with_gpu if row["model"] == "PaAno"))
+        self.assertEqual([row["status"] for row in without_gpu if row["model"] != "PaAno"],
+                         [row["status"] for row in with_gpu if row["model"] != "PaAno"])
 
     def test_data_growth_and_changing_features_do_not_reduce_plan_pool(self):
         candidates = load_candidates(self.database)
@@ -59,7 +91,8 @@ class TestCandidateFilter(unittest.TestCase):
         ):
             summary, _ = profile_normal_data(frame, list(frame.columns))
             self.assertEqual(filter_candidates(candidates, channel_count=summary["input_column"]), expected)
-        self.assertTrue(all(row["status"] == "eligible" for row in expected if row["model"] != "GDN"))
+        self.assertTrue(all(row["status"] == "eligible" for row in expected
+                            if row["model"] != "GDN" and not is_full_pca(row)))
 
     def test_ml_input_keeps_full_prefix_model_state_and_registered_settings(self):
         candidates = load_candidates(self.database)
@@ -88,7 +121,7 @@ class TestCandidateFilter(unittest.TestCase):
         self.assertIn("source_checkpoint_sha256", candidate["settings"])
 
     def test_missing_recipe_and_unknown_model_stay_unverified(self):
-        with sqlite3.connect(self.database) as connection:
+        with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute("UPDATE model_configs SET settings_json='{}' WHERE model='MWVAR'")
             connection.execute("INSERT INTO model_configs VALUES ('unknown', 'UnknownModel', '{}')")
         candidates = load_candidates(self.database)
