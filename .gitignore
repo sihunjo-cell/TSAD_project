@@ -38,6 +38,7 @@ experiments/02_hai_extension/scores/**/.*.npz.tmp
 experiments/02_hai_extension/scores/**/.*.json.tmp
 experiments/02_hai_extension/scores/**/*.ckpt
 experiments/02_hai_extension/scores/**/COMPLETE
+experiments/01_ghl_main/results/
 experiments/01_ghl_main/logs/*
 !experiments/01_ghl_main/logs/.gitkeep
 experiments/02_hai_extension/logs/*
