@@ -10,7 +10,7 @@
 #SBATCH --partition=laal_3090
 #SBATCH --gres=gpu:rtx3090:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --mem=60G
 #SBATCH --time=12:00:00
 #SBATCH --dependency=singleton
 #SBATCH --output=experiments/01_ghl_main/logs/%x_%j.out
