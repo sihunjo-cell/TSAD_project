@@ -19,8 +19,9 @@ GHL을 돌린 장치는 DB와 달라 실행 시간을 견줄 수 없으므로 �
 후보가 있는 파일도 빼지 않는다. 계획이 실패한 후보를 고르면 그 구간 VUS-PR을 0으로 세고 missing_actual로 드러낸다.
 
 멈춤 규칙은 결과를 보기 전에 정했다. 점검한 파일이 10·15·20·25개일 때만 보고, 모든 예산에서 웹사이트 추천과
-cheapest·no_similarity의 파일별 차이 평균의 95% 신뢰구간(t) 반폭이 0.03 이하이면 멈추고, 아니면 25개까지
-돈다. 10개는 Dev18 롤링 백테스트의 표본 단위 수(family 10개)다. 0.03은 ml/README.md에 p와 함께 적힌 유의
+cheapest·no_similarity·dp의 파일별 차이 평균의 95% 신뢰구간(t) 반폭이 0.03 이하이면 멈추고, 아니면 25개까지
+돈다. 빠듯한 예산에서는 앞의 셋이 같은 가장 싼 경로를 골라 차이가 0이므로, 그 예산에서 웹사이트 규칙이 맞았는지는
+dp와의 비교가 정한다. 10개는 Dev18 롤링 백테스트의 표본 단위 수(family 10개)다. 0.03은 ml/README.md에 p와 함께 적힌 유의
 차이 0.04(데이터 증가에 따른 성능 향상을 빼면 예산 무제한에서 0.04 낮음, p=0.008)보다 작다.
 유의성이 아니라 추정 폭으로 멈추므로 p값은 멈춘 뒤 한 번만 보고한다. random은 예산을 보지 않으므로 예산
 제한이 없는 줄에만 둔다.
@@ -64,7 +65,7 @@ OPERATING_DAYS = 100
 INFERENCE_SEGMENTS = 20
 BUDGET_MULTIPLES = (1.5, 10, 100, None)
 BASELINES = ("cheapest", "no_similarity", "random")
-STOPPING_BASELINES = ("cheapest", "no_similarity")
+STOPPING_BASELINES = ("cheapest", "no_similarity", "dp")
 STOPPING_CHECKPOINTS = (10, 15, 20, 25)
 CONFIDENCE_HALF_WIDTH = 0.03
 NOT_YET = 10
