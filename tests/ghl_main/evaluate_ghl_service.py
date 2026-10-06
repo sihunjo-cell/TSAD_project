@@ -378,8 +378,10 @@ def load_results(identity) -> list[dict]:
 
 def summarize(database, data_directory, specs, identity) -> None:
     pool, means = load_pool(database), load_dev18_means(database)
+    # 실행을 시작했는데 점검하지 못한 파일만 빠진 파일로 남긴다. 아직 손대지 않은 파일은 세지 않는다.
     skipped = [ghl_series(csv_name) for index, csv_name in enumerate(ghl_file_names())
-               if not evaluate_index(index, database, data_directory, pool, means, specs, identity)]
+               if run_paths(ghl_series(csv_name))[0].exists()
+               and not evaluate_index(index, database, data_directory, pool, means, specs, identity)]
     results = load_results(identity)
     if not results:
         raise SystemExit("점검한 파일이 없다")
