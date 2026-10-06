@@ -115,6 +115,20 @@ class TestVusPR(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     vus_pr(score, label, l_max=l_max, n_thresholds=n_thresholds)
 
+    def test_fast_vus_pr_matches_original_exactly(self):
+        from src.채점기.fast_vus_pr import fast_vus_pr
+
+        generator = np.random.default_rng(0)
+        for length, l_max in ((300, 0), (300, 7), (800, 40), (2000, 61)):
+            label = np.zeros(length, dtype=int)
+            for start in generator.choice(length - 30, 4, replace=False):
+                label[start:start + generator.integers(1, 30)] = 1
+            score = generator.random(length) + label * generator.random(length)
+            score[::17] = 0.5  # 같은 값이 있어도 threshold 순위가 같아야 한다
+            with self.subTest(length=length, l_max=l_max):
+                self.assertEqual(fast_vus_pr(score, label, l_max, n_thresholds=50),
+                                 vus_pr(score, label, l_max, n_thresholds=50))
+
 
 if __name__ == "__main__":
     unittest.main()

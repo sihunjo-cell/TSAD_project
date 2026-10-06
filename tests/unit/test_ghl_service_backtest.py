@@ -3,7 +3,7 @@
 import unittest
 
 from streamlit_website.DP.planner import optimize_plan
-from tests.ghl_main.evaluate_ghl_service import oracle_payload, simulate
+from tests.ghl_main.evaluate_ghl_service import simulate, substitute_predictions
 from tests.ghl_main.run_ghl_candidates import SERVICE_RATIOS
 
 
@@ -51,13 +51,30 @@ class TestGhlServiceBacktest(unittest.TestCase):
                                for name in ("a", "b")],
                 "training_options": training, "inference_options": inference, "current_checkpoint": None}
         # a 25초(15일) 뒤 20%에서 b로 바꾼다: 10 + 15 + 100 + 170.
-        unlimited = optimize_plan(oracle_payload(base, ACTUAL, None))
+        measured = substitute_predictions(base, ACTUAL)
+        unlimited = optimize_plan(measured)
         self.assertAlmostEqual(unlimited["timeline_performance"], 0.74)
         self.assertAlmostEqual(unlimited["total_cost"], 295.0)
         # b로 바꾸는 가장 싼 경로(80%에서 교체)도 235초라 200초 예산에서는 a만 남는다.
-        limited = optimize_plan(oracle_payload(base, ACTUAL, 200.0))
+        limited = optimize_plan({**measured, "budget": 200.0})
         self.assertAlmostEqual(limited["timeline_performance"], 0.4)
         self.assertAlmostEqual(limited["total_cost"], 110.0)
+
+
+    def test_substitution_replaces_or_drops_kept_checkpoint(self):
+        payload = {"stages": [{"stage": 0, "ratio_percent": 20}],
+                   "training_options": [{"stage": 0, "candidate_id": "b", "predicted_performance": 0.5}],
+                   "inference_options": [{"stage": 0, "candidate_id": "a", "trained_stage": -1},
+                                         {"stage": 0, "candidate_id": "b", "trained_stage": 0}],
+                   "current_checkpoint": {"candidate_id": "a", "predicted_performance": 0.5}}
+        replaced = substitute_predictions(payload, ACTUAL, ("a", 10))
+        self.assertEqual(replaced["current_checkpoint"]["predicted_performance"], 0.4)
+        self.assertEqual(replaced["training_options"][0]["predicted_performance"], 0.8)
+        self.assertEqual(len(replaced["inference_options"]), 2)
+        # b를 5%에서 학습한 checkpoint는 실측이 없어 유지 선택지가 빠진다.
+        dropped = substitute_predictions({**payload, "current_checkpoint": {"candidate_id": "b"}}, ACTUAL, ("b", 5))
+        self.assertIsNone(dropped["current_checkpoint"])
+        self.assertEqual([row["trained_stage"] for row in dropped["inference_options"]], [0])
 
 
 if __name__ == "__main__":

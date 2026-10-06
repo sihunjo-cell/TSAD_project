@@ -2,14 +2,14 @@
 
 `run_ghl_candidates.sbatch`가 GPU 한 장으로 파일을 차례대로 넘긴다. 모델은 GPU에서 하나씩 돌고,
 그동안 작업에 할당된 CPU에서 하나를 뺀 수만큼 프로세스가 끝난 점수를 VUS-PR로 채점한다. GHL 검증의
-비용은 웹사이트의 추정을 그대로 쓰므로 실행 시간은 재지 않는다. 끝난 실행과 채점은 기록을 보고
+비용은 웹사이트의 추정을 그대로 쓰므로 실행 시간은 재지 않는다. 끝난 실행(성공·실패)과 채점은 기록을 보고
 건너뛰므로 다시 제출하면 이어서 돈다.
 
 후보와 recipe는 Dev18 DB와 같다. 웹사이트가 GHL(센서 19개)에서 제외하는 PCA_LEGACY
 `n_components=None`과 top-k가 센서 수보다 큰 GDN만 뺀다. 학습형 후보는 계획이 학습하는
 비율(5~80%)만 돌린다. 100%는 운영 기간 끝이라 학습하지 않는다. seed는 registry의 final seed이며,
-모든 후보에서 첫 seed를 먼저 끝낸 뒤 다음 seed로 넘어간다. 채점은 Dev18과 같은 VUS-PR이다
-(ℓ_max는 학습 구간 ACF 첫 peak의 중앙값, threshold 250개).
+모든 후보에서 첫 seed를 먼저 끝낸 뒤 다음 seed로 넘어간다. 채점은 Dev18과 같은 VUS-PR이며
+(ℓ_max는 학습 구간 ACF 첫 peak의 중앙값, threshold 250개) 같은 값을 내는 `fast_vus_pr`로 계산한다.
 """
 
 import argparse
@@ -56,8 +56,8 @@ from src.common.execution_identity import validate_input_manifest_role
 from src.common.model_registry import load_model_registry_with_sha
 from src.common.run_registered_model import execute_registered_model
 from src.common.save_model_artifacts import save_execution_result
+from src.채점기.fast_vus_pr import fast_vus_pr
 from src.채점기.parser import load_and_validate_score
-from src.채점기.vus_pr import vus_pr
 from tests.ghl_main.run_registered_models import (
     DEFAULT_INPUT_MANIFEST_PATH, build_output_directory, build_specs, load_registered_inputs,
 )
@@ -147,15 +147,6 @@ def build_ghl_specs(seeds=None) -> list[dict]:
                                            spec["ratio"], spec["config_id"]))
 
 
-def file_complete(series: str, specs) -> bool:
-    """이 파일에서 모든 spec이 끝났고 그 점수를 모두 채점했는가."""
-    runs_path, vus_path = run_paths(series)
-    complete = [row for row in read_rows(runs_path) if row["status"] == "complete"]
-    scored = {row["score_file"] for row in read_rows(vus_path)}
-    return ({run_key(spec) for spec in specs} <= {run_key(row) for row in complete}
-            and all(row["score_file"] in scored for row in complete))
-
-
 def require_clean_commit() -> str:
     def git(*arguments):
         return subprocess.run(["git", *arguments], cwd=REPOSITORY_ROOT, capture_output=True,
@@ -210,7 +201,7 @@ def score_file(relative_path: str) -> dict:
     started = time.perf_counter()
     scores, _, score_metadata = load_and_validate_score(REPOSITORY_ROOT / relative_path)
     start, end = score_metadata["label_slice"]
-    value = vus_pr(scores, _LABELS[start:end], _L_MAX, n_thresholds=N_THRESHOLDS)
+    value = fast_vus_pr(scores, _LABELS[start:end], _L_MAX, n_thresholds=N_THRESHOLDS)
     return {"score_file": relative_path, "vus_pr": value, "l_max_samples": _L_MAX,
             "n_thresholds": N_THRESHOLDS, "vus_seconds": time.perf_counter() - started}
 
@@ -259,7 +250,8 @@ def run_file(file_index: int, seeds, data_directory: Path) -> None:
     write_environment(RUN_DIRECTORY / f"GHL_{series}_environment.json", commit=commit, l_max=l_max)
     context = {"series": series, "csv_file": csv_name, "project_commit": commit}
     rows = read_rows(runs_path)
-    done = {run_key(row) for row in rows if row["status"] == "complete"}
+    # 예외로 끝난 실행은 같은 GPU에서 다시 돌려도 같은 결과라 끝난 것으로 본다. 다시 돌리려면 그 행을 지운다.
+    done = {run_key(row) for row in rows if row["status"] in ("complete", "failed")}
     scored = {row["score_file"] for row in read_rows(vus_path)}
     unscored = [row["score_file"] for row in rows if row["status"] == "complete" and row["score_file"] not in scored]
     pending = [spec for spec in specs if run_key(spec) not in done]
@@ -289,24 +281,17 @@ def run_file(file_index: int, seeds, data_directory: Path) -> None:
                   f"s{spec['seed']}: {rows[0]['status']}, 채점 대기 {len(futures)}건", flush=True)
         print(f"GHL {series}: 실행 끝, 남은 채점 {len(futures)}건을 기다린다", flush=True)
         collect_scores(futures, vus_path, wait=True)
-    print(f"GHL {series}: 끝, 완료 여부 {file_complete(series, specs)}", flush=True)
+    print(f"GHL {series}: 실행·채점 끝", flush=True)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--file-index", type=int, choices=range(25),
+    parser.add_argument("--file-index", type=int, required=True, choices=range(25),
                         help="configs/input_manifest.yaml의 GHL 파일을 이름순으로 센 위치")
-    parser.add_argument("--check-complete", action="store_true",
-                        help="25개 파일의 실행·채점이 모두 끝났으면 0, 아니면 1로 끝난다")
     parser.add_argument("--seeds", type=int, nargs="+",
                         help="PaAno·GDN seed. 기본은 registry final seed 전부, 결정론 모델은 첫 seed 하나")
     parser.add_argument("--data-directory", type=Path, default=DATA_DIRECTORY)
     arguments = parser.parse_args()
-    if arguments.check_complete:
-        specs = build_ghl_specs(arguments.seeds)
-        raise SystemExit(0 if all(file_complete(ghl_series(name), specs) for name in ghl_file_names()) else 1)
-    if arguments.file_index is None:
-        parser.error("--file-index 또는 --check-complete가 필요하다")
     run_file(arguments.file_index, arguments.seeds, arguments.data_directory)
 
 
