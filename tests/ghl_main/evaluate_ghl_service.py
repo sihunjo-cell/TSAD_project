@@ -4,7 +4,8 @@ GHL 파일마다 학습 구간의 5%에서 운영을 시작해 100일 뒤 100%�
 20개 분량을 기간에 고르게 나눈다. 데이터가 5·10·20·40·60·80%에 닿을 때마다 그 prefix로 웹사이트와
 같은 ML·DP를 다시 돌리고, 다음 비율까지 계획의 첫 구간을 실행한다. 실현값은 배치한 후보의 GHL 실측
 VUS-PR(seed 평균)을 기간으로 가중한 값이다. 비용은 웹사이트의 추정(DB 실측 기반)을 정답으로 둔다.
-GHL을 돌린 장치는 DB와 달라 실행 시간을 견줄 수 없으므로 이 점검은 성능 예측과 경로 선택만 본다.
+GHL을 돌린 장치는 DB와 달라 실행 시간의 절대값은 견줄 수 없다. 요약에서 (파일, 비율, 장치)마다 웹사이트 비용 추정과
+실측 시간(.meta.json의 execution_evidence)의 후보 순위 상관만 본다(cost_ranks.csv).
 
 전략
 - website: 웹사이트 추천(유사도 ML + DP + 빠듯한 예산 규칙)
@@ -51,12 +52,13 @@ from streamlit_website.db_connection.filter_candidates import (
     build_ml_input, filter_candidates, load_candidates, profile_normal_data,
 )
 from streamlit_website.ml import db
+from streamlit_website.ml.cost import build_candidate_cost_model
 from streamlit_website.ml.dp_input import build_dp_input
 from streamlit_website.ml.performance import estimate_stage_performance
-from streamlit_website.ml.pipeline import run_ml_pipeline
+from streamlit_website.ml.pipeline import TRAINING_REQUIRED_TARGET_USE, run_ml_pipeline
 from streamlit_website.ml.schemas import SimilarityMatch
 from tests.ghl_main.run_ghl_candidates import (
-    DATA_DIRECTORY, EXPERIMENT_DIRECTORY, GHL_SENSOR_COUNT, SERVICE_RATIOS,
+    DATA_DIRECTORY, EXPERIMENT_DIRECTORY, GHL_SENSOR_COUNT, REPOSITORY_ROOT, SERVICE_RATIOS,
     build_ghl_specs, ghl_file_names, ghl_series, read_rows, require_clean_commit, run_key, run_paths,
 )
 
@@ -158,19 +160,25 @@ def simulate(plan_input, choose, budget, actual, *, segments) -> dict:
 
 
 def random_choice(base, actual) -> dict:
-    """비율마다 실행할 수 있는 후보를 무작위로 골라 그 비율에서 학습할 때의 기대값."""
+    """비율마다 실행할 수 있는 후보를 무작위로 골라 그 비율에서 학습할 때의 기대값.
+
+    실행에 실패해 실측이 없는 후보는 simulate처럼 0으로 센다. 빼고 평균하면 웹사이트만 실패를 떠안는다.
+    missing_actual은 그렇게 0으로 센 (비율, 후보) 수다.
+    """
     total = sum(stage["weight"] for stage in base["stages"])
     vus = spent = 0.0
+    missing = 0
     for stage in base["stages"]:
         ratio = stage["ratio_percent"]
-        options = [option for option in base["training_options"]
-                   if option["stage"] == stage["stage"] and (option["candidate_id"], ratio) in actual]
+        options = [option for option in base["training_options"] if option["stage"] == stage["stage"]]
         inference = {row["candidate_id"]: row["inference_cost"] for row in base["inference_options"]
                      if row["stage"] == row["trained_stage"] == stage["stage"]}
-        vus += stage["weight"] / total * numpy.mean([actual[option["candidate_id"], ratio] for option in options])
+        missing += sum((option["candidate_id"], ratio) not in actual for option in options)
+        vus += stage["weight"] / total * numpy.mean([actual.get((option["candidate_id"], ratio), 0.0)
+                                                     for option in options])
         spent += numpy.mean([option["training_cost"] + inference[option["candidate_id"]] for option in options])
     return {"vus_pr": float(vus), "spent_seconds": float(spent), "trainings": len(base["stages"]),
-            "missing_actual": 0, "path": "비율마다 무작위 후보"}
+            "missing_actual": missing, "path": "비율마다 무작위 후보"}
 
 
 def evaluate_file(series, csv_file, frame, actual, database, pool, means) -> dict:
@@ -323,6 +331,71 @@ def summarize_predictions(prediction_rows) -> dict:
     }
 
 
+def load_cost_models(database) -> dict:
+    """{(설정, head): 웹사이트가 쓰는 후보별 학습·추론 비용 곡선}. 웹사이트 ML 단계와 같은 DB 행으로 만든다."""
+    models = {(row["config_id"], row["head"]): row["model"] for row in load_candidates(database)}
+    return {key: build_candidate_cost_model(rows, model=models[key])
+            for key, rows in db.load_all_results_grouped_by_candidate(database).items() if key in models}
+
+
+def cost_ranks(series, runs, pool, cost_models, *, boundary, test_rows, sensors) -> list[dict]:
+    """(비율, 장치, 비용 종류)마다 웹사이트 비용 추정과 실측 시간의 후보 순위 상관.
+
+    추정은 웹사이트 비용 곡선을 실측 실행과 같은 작업량(학습 행 = 그 비율의 prefix, 추론 행 = test 구간)에 넣은
+    값이다. 실측은 .meta.json의 training_seconds·test_inference_seconds·runtime_seconds이고 seed가 여럿이면 평균한다.
+    head는 한 실행을 나눠 쓰므로 설정마다 한 번 센다. 학습은 학습하는 후보만 보고, 총 시간은 학습 + 추론 추정을
+    runtime_seconds와 견준다.
+    """
+    timings = defaultdict(dict)
+    for row in runs:
+        if row["status"] != "complete":
+            continue
+        trains = row["target_use"] == TRAINING_REQUIRED_TARGET_USE
+        key = row["config_id"], int(row["ratio"]) if trains else None
+        if int(row["seed"]) not in timings[key]:
+            meta = (REPOSITORY_ROOT / row["score_file"]).with_suffix(".meta.json")
+            evidence = json.loads(meta.read_text(encoding="utf-8"))["execution_evidence"]
+            timings[key][int(row["seed"])] = (evidence["timing"]["training_seconds"],
+                                             evidence["timing"]["test_inference_seconds"], evidence["runtime_seconds"])
+    candidates = {}
+    for row in pool:
+        if row["status"] == "eligible":
+            candidates.setdefault(row["config_id"], row)
+    rows = []
+    for ratio in SERVICE_RATIOS:
+        points = defaultdict(list)
+        for config_id, candidate in candidates.items():
+            trains = candidate["target_use"] == TRAINING_REQUIRED_TARGET_USE
+            measured = timings.get((config_id, ratio if trains else None))
+            if not measured:
+                continue
+            training, inference, runtime = numpy.mean(list(measured.values()), axis=0)
+            model = cost_models[config_id, candidate["head"]]
+            estimated_inference = model.inference_curve.predict(test_rows, sensors)
+            estimated_training = model.training_curve.predict(ratio * boundary // 100, sensors) if trains else 0.0
+            device = candidate["backend"]
+            if trains:
+                points[device, "training"].append((estimated_training, training))
+            points[device, "inference"].append((estimated_inference, inference))
+            points[device, "runtime"].append((estimated_training + estimated_inference, runtime))
+        for (device, kind), pairs in sorted(points.items()):
+            estimated, measured = zip(*pairs)
+            rows.append({"series": series, "ratio": ratio, "device": device, "kind": kind, "candidates": len(pairs),
+                         "spearman": float(spearmanr(estimated, measured).statistic) if len(pairs) > 2 else None})
+    return rows
+
+
+def summarize_cost_ranks(rows) -> list[dict]:
+    """장치·비용 종류마다 (파일, 비율) 묶음의 Spearman ρ 요약."""
+    groups = defaultdict(list)
+    for row in rows:
+        if row["spearman"] is not None and numpy.isfinite(row["spearman"]):
+            groups[row["device"], row["kind"]].append(row["spearman"])
+    return [{"device": device, "kind": kind, "groups": len(values), "spearman_median": float(numpy.median(values)),
+             "spearman_mean": float(numpy.mean(values)), "share_positive": float(numpy.mean(numpy.array(values) > 0))}
+            for (device, kind), values in sorted(groups.items())]
+
+
 def csv_text(rows) -> str:
     stream = io.StringIO()
     writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
@@ -391,12 +464,21 @@ def summarize(database, data_directory, specs, identity) -> None:
     summary = summarize_plans(plan_rows)
     stopping = {**stopping_status(plan_rows), "skipped_series": skipped}
     prediction_summary = summarize_predictions(prediction_rows)
+    keys, cost_models, cost_rows = {run_key(spec) for spec in specs}, load_cost_models(database), []
+    for series, csv_file in dict.fromkeys((row["series"], row["csv_file"]) for row in plan_rows):
+        boundary = int(TRAIN_BOUNDARY_PATTERN.search(csv_file).group(1))
+        rows = len(pandas.read_csv(data_directory / csv_file, usecols=["Label"]))
+        runs = [row for row in read_rows(run_paths(series)[0]) if run_key(row) in keys]
+        cost_rows += cost_ranks(series, runs, pool, cost_models, boundary=boundary, test_rows=rows - boundary,
+                                sensors=GHL_SENSOR_COUNT)
     write_text(OUTPUT_DIRECTORY / "plans.csv", csv_text(plan_rows))
     write_text(OUTPUT_DIRECTORY / "predictions.csv", csv_text(prediction_rows))
     write_text(OUTPUT_DIRECTORY / "summary.csv", csv_text(summary))
+    write_text(OUTPUT_DIRECTORY / "cost_ranks.csv", csv_text(cost_rows))
     write_text(OUTPUT_DIRECTORY / "prediction_summary.json", json.dumps(prediction_summary, ensure_ascii=False, indent=2) + "\n")
     write_text(OUTPUT_DIRECTORY / "stopping.json", json.dumps(stopping, ensure_ascii=False, indent=2) + "\n")
     print(pandas.DataFrame(summary).to_string(index=False))
+    print(pandas.DataFrame(summarize_cost_ranks(cost_rows)).to_string(index=False))
     print(json.dumps({"prediction": prediction_summary, "stopping": stopping}, ensure_ascii=False, indent=2))
 
 

@@ -15,6 +15,7 @@ EXECUTION_IDENTITY_FIELDS = (
 SPLIT_DATASETS = {
     "dev18_selection": ("development", "DEV18"),
     "ghl25_final": ("final", "GHL"),
+    "tsb_final": ("final", "TSB"),
     "train1_to_test1": ("final", "HAI"),
     "train1_train2_to_test2": ("final", "HAI"),
 }

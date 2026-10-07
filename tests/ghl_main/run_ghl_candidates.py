@@ -154,12 +154,12 @@ def require_clean_commit() -> str:
 
     status = git("status", "--porcelain")
     if status:
-        raise SystemExit(f"작업 트리가 clean하지 않다. 커밋한 코드로만 GHL을 실행한다:\n{status}")
+        raise SystemExit(f"작업 트리가 clean하지 않다. 커밋한 코드로만 실행한다:\n{status}")
     return git("rev-parse", "HEAD")
 
 
-def run_spec(spec, inputs, *, series: str) -> list[dict]:
-    """한 spec을 실행해 head마다 점수를 저장하고 기록 행을 만든다."""
+def run_spec(spec, inputs, *, series: str, dataset="GHL", experiment_directory=EXPERIMENT_DIRECTORY) -> list[dict]:
+    """한 spec을 실행해 head마다 점수를 저장하고 기록 행을 만든다. 다른 dataset은 저장 위치와 이름을 넘긴다."""
     result = execute_registered_model(
         spec, normal_training=inputs["normal_training"], test_sessions=inputs["test_sessions"], device="cuda",
     )
@@ -168,13 +168,13 @@ def run_spec(spec, inputs, *, series: str) -> list[dict]:
         retry_count=0, training_session_durations=[dict(UNMEASURED_DURATION)] if result["split"] else [],
         test_input_sessions=inputs["test_sessions"], test_session_durations=[dict(UNMEASURED_DURATION)],
         peak_memory_mb=None, model_artifact_bytes=0,
-        resource_usage={"status": "not_measured", "reason": "GHL 검증은 웹사이트 비용 추정을 쓰고 실행 자원을 재지 않는다"},
+        resource_usage={"status": "not_measured", "reason": f"{dataset} 검증은 웹사이트 비용 추정을 쓰고 실행 자원을 재지 않는다"},
     )
     rows = []
     for variant in spec["score_variants"]:
         saved = save_execution_result(
-            result, build_output_directory(EXPERIMENT_DIRECTORY, spec, score_variant=variant or None),
-            spec=spec, dataset="GHL", series=int(series), score_variant=variant or None,
+            result, build_output_directory(experiment_directory, spec, score_variant=variant or None),
+            spec=spec, dataset=dataset, series=int(series), score_variant=variant or None,
             execution_evidence=evidence,
         )
         raw_score = next(Path(path) for path in saved["score_paths"]

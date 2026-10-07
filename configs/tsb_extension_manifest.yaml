@@ -1,0 +1,66 @@
+# GHL·Dev18 밖 TSB-AD-M 파일의 정확한 지문. configs/input_manifest.yaml은 SHA가 Dev18·GHL 실행 증거에 봉인돼 있어
+# 따로 둔다. 파일 선택 규칙: TSB-AD-M 원본 목록 200개(TheDatumOrg/TSB-AD Datasets/File_List/TSB-AD-M.csv) 중
+# Dev18 밖 family이면서 파일명 도메인 태그가 Sensor·Facility인 파일 전부. GHL은 주실험이라 뺀다. 맞는 파일은 이
+# 다섯 개(Genesis·SWaT×2·GECCO·PSM)이고, 규칙에 걸리지 않은 Dev18 밖 family는 CreditCard(Finance)·Daphnet(HumanActivity)다.
+# PSM은 원본 TSB-AD-M.zip에서 꺼냈다. 같은 zip의 나머지 네 파일 SHA가 아래 값과 같다.
+# series는 실행·점검 순서이자 기록·점수 파일 이름이라 한 번 돌린 뒤에는 바꾸지 않는다. 파일명의 id는 dataset마다
+# 겹쳐서(넷이 id_1) 쓰지 않는다.
+# SWaT id_2는 PCA_LEGACY가 메모리를 가장 많이 써서 마지막에 둔다.
+
+roles:
+  tsb_final:
+    dataset: TSB
+
+datasets:
+  TSB:
+    files:
+      - series: "01"
+        family: Genesis
+        source_directory: TSB-AD-M
+        name: 001_Genesis_id_1_Sensor_tr_4055_1st_15538.csv
+        training_boundary: 4055
+        row_count: 16220
+        feature_count: 18
+        feature_names_sha256: d9a7cb09025ea3b9befe12d7fe0a75b1ba88aabb9dace16aeb8ed210e2aa10ba
+        size_bytes: 803413
+        sha256: 9c9a48eaab91e515ff488e71f392664eb548736e3260fe156a0d461c72199cf7
+      - series: "02"
+        family: SWaT
+        source_directory: TSB-AD-M
+        name: 171_SWaT_id_1_Sensor_tr_3749_1st_9522.csv
+        training_boundary: 3749
+        row_count: 14996
+        feature_count: 66
+        feature_names_sha256: 5c7466bd395f6ca5f72d763cc78f544ffe19fa68e63de5911552bbf806d67df7
+        size_bytes: 5389970
+        sha256: 91f3a03ba1ffcd9e4584a1f98c8ec0948f6d12ff80131d28111befb1c50a8c2b
+      - series: "03"
+        family: GECCO
+        source_directory: TSB-AD-M
+        name: 173_GECCO_id_1_Sensor_tr_16165_1st_16265.csv
+        training_boundary: 16165
+        row_count: 138521
+        feature_count: 9
+        feature_names_sha256: cad6284fad5d2e72c71679b7945be2ee8abb79d68c15a32b3f5590fa78e4e910
+        size_bytes: 7401202
+        sha256: f65cfcf34db8e4d7fac73e8a6d1284a381cffa92bd8fccd8f7433b709d8ed32d
+      - series: "04"
+        family: PSM
+        source_directory: TSB-AD-M
+        name: 115_PSM_id_1_Facility_tr_50000_1st_129872.csv
+        training_boundary: 50000
+        row_count: 217624
+        feature_count: 25
+        feature_names_sha256: 00bdae779c7e0348bcc48009c0e3a1cc6091e1dd70bfc4ecbfd0f8031e47a2ab
+        size_bytes: 101183628
+        sha256: c5ca30a546a6d1f636e68bc497211f05d96f6a2694725c6a256e46e08865530f
+      - series: "05"
+        family: SWaT
+        source_directory: TSB-AD-M
+        name: 172_SWaT_id_2_Sensor_tr_23700_1st_23800.csv
+        training_boundary: 23700
+        row_count: 399919
+        feature_count: 51
+        feature_names_sha256: 337709d1314ae610dbd0b02b24b5274d83a029b5eae462fa659ecc9333fb5064
+        size_bytes: 108291874
+        sha256: 8189bb3f05e3616a484cad733f39d2a153e2b96a166a6d0406f78a50163d133e

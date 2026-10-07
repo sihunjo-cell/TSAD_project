@@ -144,6 +144,7 @@ Streamlit 입력과 계획 후보 연결
 | `tests/tuning/` | Dev18 튜닝·예산·채점·선택·DB 기록 |
 | `tests/ghl_main/` | GHL 및 공통 모델 실행·출력 검사 |
 | `tests/hai_extension/` | HAI 외부 확인 실험 영역 |
+| `tests/tsb_extension/` | GHL·Dev18 밖 TSB-AD-M 파일(Genesis·SWaT·GECCO·PSM)의 웹사이트 외부 확인 실행·점검. 평가 기준은 그 폴더의 README.md에 사전 등록 |
 | `tests/checks/` | 데이터·환경·참고 구현 점검 |
 | `tests/unit/` | 재사용하는 단위 검증 |
 | `experiments/` | 실험 산출물 |
@@ -155,6 +156,7 @@ Streamlit 입력과 계획 후보 연결
 | Dev18 튜닝 | `experiments/tuning/` |
 | GHL 주실험 | `experiments/01_ghl_main/` |
 | HAI 외부 확인 | `experiments/02_hai_extension/` |
+| TSB-AD-M 외부 확인 | `experiments/03_tsb_extension/` |
 | 사전 점검 | `experiments/checks/` |
 
 튜닝 결과와 DB는 `experiments/tuning/results/`, 예산과 기준 파일은 `experiments/tuning/snapshots/`에 바로 저장한다. 점수와 실행 로그의 경로는 각각 `scores/`, `logs/`다. 결과 안의 `figures/`, `tables/`, `metadata/` 등 내용별 하위 폴더는 유지한다.
