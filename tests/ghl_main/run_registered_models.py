@@ -38,6 +38,7 @@ DEFAULT_SPLIT_ROLES = {
 OUTPUT_SPLITS = {
     "dev18_selection": ("dev18",),
     "ghl25_final": ("ghl25",),
+    "tsb_final": ("tsb",),
     "train1_to_test1": ("hai", "train1_to_test1"),
     "train1_train2_to_test2": ("hai", "train1_train2_to_test2"),
 }
@@ -169,6 +170,21 @@ def load_registered_inputs(
         entry = _unique_manifest_entry(manifest, dataset, csv_path.name)
         verified_files = (_verify_manifest_file(csv_path, entry),)
         inputs = load_ghl_registered_inputs(csv_path)
+    elif split_role == "tsb_final":
+        # Dev18과 같은 항목 형식(series·family·source_directory·지문)이라 같은 loader로 읽는다.
+        if csv_path is not None or series is None or data_root is None:
+            raise ValueError("TSB final 입력에는 series와 data root가 필요하다")
+        matches = [
+            entry for entry in _dataset_files(manifest, dataset)
+            if isinstance(entry, dict) and entry.get("series") == series
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"TSB series는 manifest에서 유일해야 한다: {series}")
+        entry = matches[0]
+        verified_files = (_verify_manifest_file(
+            Path(data_root) / entry["source_directory"] / entry["name"], entry,
+        ),)
+        inputs = load_dev18_registered_inputs(entry, data_root)
     elif split_role in {"train1_to_test1", "train1_train2_to_test2"}:
         if csv_path is not None or series is not None or data_root is None:
             raise ValueError("HAI final 입력에는 data root와 split_role이 필요하다")
